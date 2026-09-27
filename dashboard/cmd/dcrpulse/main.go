@@ -23,6 +23,7 @@ import (
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/gamingbridge"
+	"dcrpulse/internal/gamingcore"
 	"dcrpulse/internal/handlers"
 	dcrlog "dcrpulse/internal/log"
 	"dcrpulse/internal/mcp"
@@ -209,7 +210,7 @@ func main() {
 	services.StartBrclientdNotifs(context.Background())
 	// Game frames come from Bison Relay's GCMStream replay log, on the same
 	// WS, and are routed to the gaming bridge from there.
-	services.StartGamingIntake(context.Background())
+	gamingcore.StartGamingIntake(context.Background())
 
 	// Shared-wallet coordination frames arrive as typed "msig" events on
 	// the same notification pipeline. The ladder's deferred rescans ride
@@ -978,13 +979,13 @@ func waitForWalletLoaded(ctx context.Context) bool {
 // that also holds a wallet, a node and a Lightning daemon, and refusing to start
 // any of that because a game could not be served would be the wrong trade.
 func startGamingBridge() {
-	services.LoadGamingAllowlist()
+	gamingcore.LoadGamingAllowlist()
 
 	addr := net.JoinHostPort(
 		getEnv("GAMING_BRIDGE_HOST", "0.0.0.0"),
 		getEnv("GAMING_BRIDGE_PORT", "8443"),
 	)
-	cfg, err := services.GamingBridgeConfig(addr, auth.Enabled)
+	cfg, err := gamingcore.GamingBridgeConfig(addr, auth.Enabled)
 	if err != nil {
 		gameLog.Errorf("the gaming bridge has no certificate, so no game can connect: %v", err)
 		return
@@ -998,13 +999,13 @@ func startGamingBridge() {
 	// What the console reports as connected. A live stream is the only honest
 	// answer: a game is registered here and run on a machine of the person's
 	// choosing, so registered and connected are different questions.
-	services.SetGamingConnected(srv.SubscriberCount)
-	services.SetGamingRequest(srv.Request)
-	services.SetGamingState(srv.State)
-	services.SetGamingLockTerms(srv.LockTerms)
+	gamingcore.SetGamingConnected(srv.SubscriberCount)
+	gamingcore.SetGamingRequest(srv.Request)
+	gamingcore.SetGamingState(srv.State)
+	gamingcore.SetGamingLockTerms(srv.LockTerms)
 	// How a loss upstream of the bridge reaches the games. The bridge cannot
 	// see that kind of gap for itself, so the notification stream tells it.
-	services.Gaming().SetGamingResync(srv.ResyncAll)
+	gamingcore.Gaming().SetGamingResync(srv.ResyncAll)
 
 	go func() {
 		if err := srv.Serve(); err != nil {

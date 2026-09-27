@@ -1,0 +1,260 @@
+// Copyright (c) 2015-2026 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
+package gamingcore
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/karamble/dcrgaming-sdk/pkg/finance"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
+
+	"dcrpulse/internal/gamingbridge"
+	"dcrpulse/internal/rpc"
+)
+
+// ErrGamingGameNotConnected is a registered game that is not holding a stream.
+var ErrGamingGameNotConnected = gamingbridge.ErrGameNotConnected
+
+// The staged calls creating a table passes through: the height its deadline is
+// set from, and the chat the invitation is posted to. Settable for the same
+// reason as the spend seams - the order they run in is what stops a table being
+// announced that its creator never took a seat at, and a rule only exercisable
+// against a live node is one nobody has exercised. Production sets neither.
+var (
+	tableChainTip  = GamingChainTipNow
+	tableGCMessage = rpc.BrclientdGCMessage
+	tableAuthorize = authorizeGamingTable
+)
+
+// AcceptGamingInvite hands an invitation to the game that can act on it, and
+// reports the table it joined.
+//
+// Before the game sees the invitation, the bridge validates and durably binds
+// its financial terms to the selected wallet account.  The game is then only
+// told about a table the bridge is prepared to fund and recover independently.
+func AcceptGamingInvite(ctx context.Context, game, invite, gcid string) (string, error) {
+	if !gamingGameRegistered(game) {
+		return "", ErrGamingGameNotRegistered
+	}
+	if gamingRequest == nil {
+		return "", ErrGamingGameNotConnected
+	}
+	// A connected game that never answers would otherwise hold the request
+	// open for as long as the person's browser waits.
+	ctx, cancel := context.WithTimeout(ctx, gamingJoinTimeout)
+	defer cancel()
+
+	if err := tableAuthorize(ctx, game, invite, gcid); err != nil {
+		return "", err
+	}
+
+	reply, err := gamingRequest(ctx, game, &gamingpb.BridgeRequest{
+		Req: &gamingpb.BridgeRequest_AcceptInvite{
+			AcceptInvite: &gamingpb.AcceptInvite{Invite: invite, Gcid: gcid},
+		},
+	})
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "", fmt.Errorf("%s did not answer within %s", game, gamingJoinTimeout)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !reply.GetOk() {
+		// The game's own refusal is the useful part: it knows why the
+		// invitation was not one it could act on.
+		return "", fmt.Errorf("%s did not join: %s", game, reply.GetError())
+	}
+	return reply.GetAcceptInvite().GetSid(), nil
+}
+
+// A game has no host: an invitation is terms plus a session id, and a table
+// exists once enough peers join under the same ones. Creating one is composing
+// that link and putting it in a group chat.
+
+const (
+	// gamingInviteScheme and gamingInviteKind must stay the shape a game's
+	// own parser accepts.
+	gamingInviteScheme = "gaming"
+	gamingInviteKind   = "table"
+
+	// gamingOpenBlocks is the default for how long registration stays open,
+	// in blocks. A height rather than a time because every peer has to read
+	// the same deadline and clocks disagree.
+	//
+	// One block, because seating cannot begin until a block past the close
+	// and every block of waiting is paid by a table that has already agreed.
+	// A peer who does not accept within the block misses the table, so a
+	// caller expecting anybody it has not already spoken to should ask for
+	// more.
+	gamingOpenBlocks = 1
+
+	// gamingMaxOpenBlocks bounds it. A day is already far longer than an
+	// invitation nobody has taken up is worth keeping.
+	gamingMaxOpenBlocks = 288
+
+	// gamingRefundBlocks is the relative timelock on every seat's refund
+	// branch. It has to outlast a hand by enough that nobody can pull their
+	// stake mid-play.
+	gamingRefundBlocks = 288
+
+	gamingMinSeats = 2
+	gamingMaxSeats = 6
+
+	// gamingJoinTimeout bounds how long taking a seat may take. Joining
+	// builds an escrow, so it is the weight of the other write routes rather
+	// than of a read.
+	gamingJoinTimeout = 30 * time.Second
+)
+
+// GamingTable is a table this host has just proposed.
+type GamingTable struct {
+	SID    string `json:"sid"`
+	Invite string `json:"invite"`
+	Until  uint32 `json:"until"`
+	Height int64  `json:"height"`
+	GCID   string `json:"gcid"`
+}
+
+// gamingSessionID mints the id that identifies one table. It becomes the
+// routing key on the wire, which is 1 to 32 lowercase hex.
+func gamingSessionID() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw[:]), nil
+}
+
+// gamingInviteLink renders the link that goes in a chat message.
+func gamingInviteLink(game, sid string, buyinAtoms uint64, seats, csvBlocks, until uint32) string {
+	q := url.Values{}
+	q.Set("buyin", strconv.FormatUint(buyinAtoms, 10))
+	q.Set("seats", strconv.FormatUint(uint64(seats), 10))
+	q.Set("sid", sid)
+	q.Set("csv", strconv.FormatUint(uint64(csvBlocks), 10))
+	q.Set("until", strconv.FormatUint(uint64(until), 10))
+	return fmt.Sprintf("%s://%s/%s?%s", gamingInviteScheme, game, gamingInviteKind, q.Encode())
+}
+
+// CreateGamingTable proposes a table and puts it in a group chat.
+//
+// The seat is taken before the invitation is sent. A join that fails leaves an
+// invitation nobody is at; a send that fails leaves a table only this player
+// knows about, which nobody can join and which expires on its own.
+func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64, seats, openBlocks uint32, funds GamingTableFunds) (GamingTable, error) {
+	// Before anything with an effect: a seat taken for a table whose invitation
+	// can never be posted is worse than a refused request.
+	gc, err := parseGamingGCID(gcid)
+	if err != nil {
+		return GamingTable{}, err
+	}
+	if openBlocks == 0 {
+		openBlocks = gamingOpenBlocks
+	}
+	if openBlocks > gamingMaxOpenBlocks {
+		return GamingTable{}, fmt.Errorf("registration can stay open for at most %d blocks, not %d",
+			gamingMaxOpenBlocks, openBlocks)
+	}
+	if seats < gamingMinSeats || seats > gamingMaxSeats {
+		return GamingTable{}, fmt.Errorf("a table holds %d to %d seats, not %d",
+			gamingMinSeats, gamingMaxSeats, seats)
+	}
+	if buyinAtoms == 0 {
+		return GamingTable{}, fmt.Errorf("a table needs a buy-in")
+	}
+	p, registered := ReadGamingSettings().Policies[game]
+	if !registered {
+		return GamingTable{}, ErrGamingGameNotRegistered
+	}
+	if p.PerTableCapAtoms > 0 && int64(buyinAtoms) > p.PerTableCapAtoms {
+		return GamingTable{}, fmt.Errorf("a buy-in of %d atoms is over %q's per-table limit of %d",
+			buyinAtoms, game, p.PerTableCapAtoms)
+	}
+
+	if err := funds.Validate(); err != nil {
+		return GamingTable{}, err
+	}
+	if buyinAtoms > uint64(finance.MaxAtoms)/uint64(seats) {
+		return GamingTable{}, fmt.Errorf("table pot exceeds monetary bound")
+	}
+	minRefund, _ := gamingGameLockTerms(game)
+	if funds.RefundBlocks < minRefund {
+		return GamingTable{}, fmt.Errorf("game requires at least %d refund blocks", minRefund)
+	}
+	csvBlocks := funds.RefundBlocks
+
+	tip, err := tableChainTip(ctx)
+	if err != nil {
+		// Without a height there is no deadline every peer can check, and
+		// a table cannot be formed by guessing.
+		return GamingTable{}, fmt.Errorf("cannot read the chain, so a deadline cannot be set: %w", err)
+	}
+
+	sid, err := gamingSessionID()
+	if err != nil {
+		return GamingTable{}, err
+	}
+	if tip.Height < 0 || tip.Height > int64(^uint32(0)-openBlocks) {
+		return GamingTable{}, fmt.Errorf("invalid admission deadline")
+	}
+	until := uint32(tip.Height) + openBlocks
+	invite := gamingInviteLink(game, sid, buyinAtoms, seats, csvBlocks, until)
+	u, _ := url.Parse(invite)
+	q := u.Query()
+	q.Set("fv", "2")
+	q.Set("bond", strconv.FormatInt(funds.AdmissionAtoms, 10))
+	q.Set("bondcsv", strconv.FormatUint(uint64(funds.AdmissionBlocks), 10))
+	q.Set("tablebond", strconv.FormatInt(funds.TableBondAtoms, 10))
+	q.Set("tablebondcsv", strconv.FormatUint(uint64(funds.TableBondBlocks), 10))
+	u.RawQuery = q.Encode()
+	invite = u.String()
+
+	if _, err := AcceptGamingInvite(ctx, game, invite, gcid); err != nil {
+		return GamingTable{}, err
+	}
+
+	// Prose and the link, not a bare URL: a client that knows nothing about
+	// games must still show a person something they can act on.
+	msg := fmt.Sprintf("Table for %d at %s DCR a seat. Registration closes at block %d.\n%s",
+		seats, gamingAtomsText(buyinAtoms), until, invite)
+	table := GamingTable{SID: sid, Invite: invite, Until: until, Height: tip.Height, GCID: gcid}
+	if err := tableGCMessage(ctx, gc, msg, 0); err != nil {
+		return table, fmt.Errorf("you are seated, but the invitation could not be sent: %w", err)
+	}
+	return table, nil
+}
+
+// gamingAtomsText renders atoms for a chat message, trailing zeros trimmed.
+func gamingAtomsText(atoms uint64) string {
+	whole, fraction := atoms/100000000, atoms%100000000
+	if fraction == 0 {
+		return strconv.FormatUint(whole, 10)
+	}
+	return strings.TrimRight(fmt.Sprintf("%d.%08d", whole, fraction), "0")
+}
+
+// GamingTableFunds is explicit operator input. Defaults belong in the UI.
+type GamingTableFunds struct {
+	RefundBlocks    uint32 `json:"refundBlocks"`
+	AdmissionAtoms  int64  `json:"admissionAtoms"`
+	AdmissionBlocks uint32 `json:"admissionBlocks"`
+	TableBondAtoms  int64  `json:"tableBondAtoms"`
+	TableBondBlocks uint32 `json:"tableBondBlocks"`
+}
+
+func (f GamingTableFunds) Validate() error {
+	if f.RefundBlocks == 0 || f.RefundBlocks > finance.MaxLockBlocks || f.AdmissionAtoms <= 0 || f.AdmissionAtoms > finance.MaxAtoms || f.AdmissionBlocks == 0 || f.AdmissionBlocks > finance.MaxLockBlocks || f.TableBondAtoms < 0 || f.TableBondAtoms > finance.MaxAtoms || (f.TableBondAtoms > 0 && (f.TableBondBlocks == 0 || f.TableBondBlocks > finance.MaxLockBlocks)) {
+		return fmt.Errorf("invalid explicit bond amounts or refund delays")
+	}
+	return nil
+}

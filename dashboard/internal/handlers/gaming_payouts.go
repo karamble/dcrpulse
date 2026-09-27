@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"dcrpulse/internal/services"
+	"dcrpulse/internal/gamingcore"
 	"dcrpulse/internal/utils"
 	"encoding/json"
 	"net/http"
@@ -9,7 +9,7 @@ import (
 
 func BisonrelayGamingPayoutsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		payouts, err := services.GamingPayouts(r.Context())
+		payouts, err := gamingcore.GamingPayouts(r.Context())
 		if err != nil {
 			http.Error(w, "Payout ledger unavailable", http.StatusServiceUnavailable)
 			return
@@ -41,11 +41,11 @@ func BisonrelayGamingPayoutsHandler(w http.ResponseWriter, r *http.Request) {
 	)
 	switch req.Action {
 	case "reject":
-		reply, err = services.RejectGamingPayout(r.Context(), req.ID)
+		reply, err = gamingcore.RejectGamingPayout(r.Context(), req.ID)
 	case "send":
-		reply, err = services.SendGamingPayoutSignatures(r.Context(), req.ID)
+		reply, err = gamingcore.SendGamingPayoutSignatures(r.Context(), req.ID)
 	default:
-		reply, err = services.ApproveGamingPayout(r.Context(), req.ID, passphrase)
+		reply, err = gamingcore.ApproveGamingPayout(r.Context(), req.ID, passphrase)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)

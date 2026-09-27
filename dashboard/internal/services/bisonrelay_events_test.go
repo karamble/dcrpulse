@@ -174,3 +174,26 @@ func TestAckBySequenceIDReadsBisonRelayEvents(t *testing.T) {
 		}
 	}
 }
+
+const testFrame = `--gaming[v=2,game=poker,gv=1,sid=0123456789abcdef,mid=5736684151c34f0a17823de6822769dfafeb3170477c2079dec9d72e35aa5c5f,seq=1/1,exp=1783000000]--eyJhY3Rpb24iOiJmb2xkIn0=`
+
+func TestGCMessageGamingFramesStayOutOfTheBrowser(t *testing.T) {
+	frame, err := json.Marshal(map[string]string{"gcid": "aa", "from": "bb", "message": testFrame})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An unknown game's envelope is still protocol traffic, not chat.
+	if !gcMessageIsGamingFrame(frame) {
+		t.Fatal("a gaming envelope in a gc-message would reach the browser")
+	}
+	chat, err := json.Marshal(map[string]string{"gcid": "aa", "from": "bb", "message": "ordinary chat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gcMessageIsGamingFrame(chat) {
+		t.Fatal("ordinary chat was taken for a gaming frame")
+	}
+	if gcMessageIsGamingFrame(json.RawMessage(`{`)) {
+		t.Fatal("an undecodable event was taken for a gaming frame")
+	}
+}

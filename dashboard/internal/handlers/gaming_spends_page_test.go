@@ -12,17 +12,17 @@ import (
 	"testing"
 	"time"
 
-	"dcrpulse/internal/services"
+	"dcrpulse/internal/gamingcore"
 )
 
 // seedSpendFile writes a spend log the way the service persists one, at the
 // path the redirected state directory makes it read from.
-func seedSpendFile(t *testing.T, spends []services.GamingSpend) {
+func seedSpendFile(t *testing.T, spends []gamingcore.GamingSpend) {
 	t.Helper()
 	dir := t.TempDir()
-	orig := services.GamingStateDir
-	services.GamingStateDir = dir
-	t.Cleanup(func() { services.GamingStateDir = orig })
+	orig := gamingcore.GamingStateDir
+	gamingcore.GamingStateDir = dir
+	t.Cleanup(func() { gamingcore.GamingStateDir = orig })
 	blob, err := json.Marshal(map[string]any{"spends": spends})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -38,18 +38,18 @@ func seedSpendFile(t *testing.T, spends []services.GamingSpend) {
 // so the console never re-derives the number the cap is enforced against.
 func TestSpendHistoryComesAPageAtATime(t *testing.T) {
 	now := time.Now().Unix()
-	var spends []services.GamingSpend
+	var spends []gamingcore.GamingSpend
 	spends = append(spends,
-		services.GamingSpend{ID: "p1", Game: "poker", State: services.GamingSpendPending,
+		gamingcore.GamingSpend{ID: "p1", Game: "poker", State: gamingcore.GamingSpendPending,
 			AmountAtoms: 100, RequestedAt: now - 1, ExpiresAt: now + 300},
-		services.GamingSpend{ID: "p2", Game: "poker", State: services.GamingSpendPending,
+		gamingcore.GamingSpend{ID: "p2", Game: "poker", State: gamingcore.GamingSpendPending,
 			AmountAtoms: 200, RequestedAt: now - 2, ExpiresAt: now + 300},
-		services.GamingSpend{ID: "b1", Game: "poker", State: services.GamingSpendPublishing,
+		gamingcore.GamingSpend{ID: "b1", Game: "poker", State: gamingcore.GamingSpendPublishing,
 			AmountAtoms: 400, RequestedAt: now - 3, ExpiresAt: now + 300},
 	)
 	for i := 0; i < 25; i++ {
-		spends = append(spends, services.GamingSpend{
-			ID: string(rune('a'+i)) + "-done", Game: "poker", State: services.GamingSpendDenied,
+		spends = append(spends, gamingcore.GamingSpend{
+			ID: string(rune('a'+i)) + "-done", Game: "poker", State: gamingcore.GamingSpendDenied,
 			AmountAtoms: 1, RequestedAt: now - int64(100+i), DecidedAt: now - int64(50+i),
 		})
 	}
@@ -62,11 +62,11 @@ func TestSpendHistoryComesAPageAtATime(t *testing.T) {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
 	var got struct {
-		Pending      []services.GamingSpend `json:"pending"`
-		Decided      []services.GamingSpend `json:"decided"`
-		DecidedTotal int                    `json:"decidedTotal"`
-		Page         int                    `json:"page"`
-		UsedToday    map[string]int64       `json:"usedToday"`
+		Pending      []gamingcore.GamingSpend `json:"pending"`
+		Decided      []gamingcore.GamingSpend `json:"decided"`
+		DecidedTotal int                      `json:"decidedTotal"`
+		Page         int                      `json:"page"`
+		UsedToday    map[string]int64         `json:"usedToday"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("parse: %v", err)
@@ -78,7 +78,7 @@ func TestSpendHistoryComesAPageAtATime(t *testing.T) {
 		t.Fatalf("page 2 of 10 came %d rows of %d total, page %d", len(got.Decided), got.DecidedTotal, got.Page)
 	}
 	for _, s := range got.Decided {
-		if s.State == services.GamingSpendPending || s.State == services.GamingSpendPublishing {
+		if s.State == gamingcore.GamingSpendPending || s.State == gamingcore.GamingSpendPublishing {
 			t.Fatalf("history holds %q, which is still in flight", s.State)
 		}
 	}

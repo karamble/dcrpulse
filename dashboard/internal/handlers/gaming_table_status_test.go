@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"dcrpulse/internal/services"
+	"dcrpulse/internal/gamingcore"
 )
 
 func TestGamingTableStatusHandlerChecksItsQuery(t *testing.T) {
-	old := services.GamingStateDir
-	services.GamingStateDir = t.TempDir()
-	t.Cleanup(func() { services.GamingStateDir = old })
+	old := gamingcore.GamingStateDir
+	gamingcore.GamingStateDir = t.TempDir()
+	t.Cleanup(func() { gamingcore.GamingStateDir = old })
 
 	for query, want := range map[string]int{
 		"game=stakewars&sid=8be1b656de75b8d54a12b0ffa4f08ff6": http.StatusOK,

@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	"dcrpulse/internal/gamingcore"
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/services"
 )
 
 func TestGamingLedgerBackupDownloadRestores(t *testing.T) {
-	old := services.GamingStateDir
-	services.GamingStateDir = t.TempDir()
-	t.Cleanup(func() { services.GamingStateDir = old })
+	old := gamingcore.GamingStateDir
+	gamingcore.GamingStateDir = t.TempDir()
+	t.Cleanup(func() { gamingcore.GamingStateDir = old })
 
 	rec := httptest.NewRecorder()
 	BisonrelayGamingLedgerBackupHandler(rec, httptest.NewRequest(http.MethodGet, "/api/br/gaming/recovery/backup", nil))
@@ -31,9 +31,9 @@ func TestGamingLedgerBackupDownloadRestores(t *testing.T) {
 }
 
 func TestGamingLedgerRestoreRefusesLedgerWithRecords(t *testing.T) {
-	old := services.GamingStateDir
-	services.GamingStateDir = t.TempDir()
-	t.Cleanup(func() { services.GamingStateDir = old })
+	old := gamingcore.GamingStateDir
+	gamingcore.GamingStateDir = t.TempDir()
+	t.Cleanup(func() { gamingcore.GamingStateDir = old })
 
 	rec := httptest.NewRecorder()
 	BisonrelayGamingLedgerBackupHandler(rec, httptest.NewRequest(http.MethodGet, "/api/br/gaming/recovery/backup", nil))
@@ -55,7 +55,7 @@ func TestGamingLedgerRestoreRefusesLedgerWithRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	store.Close()
-	services.GamingStateDir = filepath.Dir(populated)
+	gamingcore.GamingStateDir = filepath.Dir(populated)
 	rec = httptest.NewRecorder()
 	BisonrelayGamingLedgerRestoreHandler(rec, httptest.NewRequest(http.MethodPost, "/api/br/gaming/recovery/restore", bytes.NewReader(backup)))
 	if rec.Code != http.StatusConflict {
