@@ -328,12 +328,16 @@ export const confirmRecovery = async (id: string, quote: string, passphrase: str
 // The operator's own stake in a payout and what it pays them; null when they
 // have no stake among its inputs.
 export interface GamingPayoutShare { key: string; address: string; stakeAtoms: number; receiveAtoms: number }
+// The payout transaction as the node sees it. A game reads mempool as
+// publishing; the operator is shown the difference.
+export interface GamingPayoutChain { state: string; confirmations: number }
 export interface GamingPayout {
  id: string; table: string; scope: { game: string }; state: string;
  payments: { key: string; atoms: number }[]; destinations: Record<string, string>;
  feeAtoms: number; expiresAt: number; signatures: Record<string, string[]>;
  mine?: GamingPayoutShare | null;
  signaturesSent?: 'sent' | 'uncertain' | 'unsent';
+ chain?: GamingPayoutChain;
 }
 export const getGamingPayouts = async (): Promise<GamingPayout[]> => {
  const { data } = await api.get<{ payouts: GamingPayout[] }>('/br/gaming/payouts');

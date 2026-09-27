@@ -58,7 +58,7 @@ export function GamingPayoutCard({ payout: p, now, busy, onReview, onSend }: {
   onSend: (p: GamingPayout) => void;
 }) {
   return <article className="space-y-2 rounded-xl border border-gray-700 bg-gray-900/40 p-4">
-    <p className="font-medium">{p.scope.game} · {p.state.replace(/_/g, ' ')}</p>
+    <p className="font-medium">{p.scope.game} · {payoutStateLabel(p)}</p>
     <p className="break-all font-mono text-xs text-gray-400">Table {p.table}</p>
     <PayoutShare payout={p} />
     <PayoutOutputs payout={p} />
@@ -69,6 +69,17 @@ export function GamingPayoutCard({ payout: p, now, busy, onReview, onSend }: {
     </div>}
     {p.state === 'awaiting_approval' && <button type="button" disabled={busy || now >= p.expiresAt} onClick={() => onReview(p)} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm disabled:opacity-40">Review payout</button>}
   </article>;
+}
+
+// payoutStateLabel names a payout's state and, once its transaction is out,
+// where that transaction stands on the chain.
+export function payoutStateLabel(p: GamingPayout): string {
+  if (p.state === 'publishing' && p.chain?.state === 'mempool') return 'in mempool';
+  if (p.state === 'confirmed' && p.chain) {
+    const n = p.chain.confirmations;
+    return `confirmed · ${n} confirmation${n === 1 ? '' : 's'}`;
+  }
+  return p.state.replace(/_/g, ' ');
 }
 
 // payoutWaiting reports whether a payout needs the operator now.

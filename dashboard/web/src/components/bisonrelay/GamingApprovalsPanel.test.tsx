@@ -155,6 +155,20 @@ describe('payout cards', () => {
     expect(await screen.findByText(/could not be confirmed/)).toBeTruthy();
   });
 
+  it('shows where the payout transaction stands on the chain', async () => {
+    payouts = [
+      payout({ id: 'a', table: 'tA', state: 'publishing', chain: { state: 'mempool', confirmations: 0 } }),
+      payout({ id: 'b', table: 'tB', state: 'confirmed', chain: { state: 'confirmed', confirmations: 3 } }),
+      payout({ id: 'c', table: 'tC', state: 'confirmed', chain: { state: 'confirmed', confirmations: 1 } }),
+      payout({ id: 'd', table: 'tD', state: 'publishing', chain: { state: 'publishing', confirmations: 0 } }),
+    ];
+    render(<GamingApprovalsPanel policies={{}} bridgeEnabled gameCount={1} />);
+    expect(await screen.findByText('poker · in mempool')).toBeTruthy();
+    expect(screen.getByText('poker · confirmed · 3 confirmations')).toBeTruthy();
+    expect(screen.getByText('poker · confirmed · 1 confirmation')).toBeTruthy();
+    expect(screen.getByText('poker · publishing')).toBeTruthy();
+  });
+
   it('shows nothing to send once sent', async () => {
     payouts = [payout({ state: 'awaiting_signatures', signaturesSent: 'sent' })];
     render(<GamingApprovalsPanel policies={{}} bridgeEnabled gameCount={1} />);

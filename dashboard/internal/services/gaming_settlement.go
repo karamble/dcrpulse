@@ -127,6 +127,31 @@ type GamingPayoutView struct {
 	// SignaturesSent says whether our signatures reached Bison Relay: "sent",
 	// "uncertain" or "unsent"; empty when we have none waiting on peers.
 	SignaturesSent string `json:"signaturesSent,omitempty"`
+	// Chain is where the payout transaction itself stands, once it exists.
+	Chain *GamingPayoutChain `json:"chain,omitempty"`
+}
+
+// GamingPayoutChain is the payout transaction as the node sees it: publishing,
+// mempool or confirmed. The settlement state a game reads folds mempool into
+// publishing; the operator is shown the difference.
+type GamingPayoutChain struct {
+	State         string `json:"state"`
+	Confirmations int64  `json:"confirmations"`
+}
+
+// gamingPayoutChains maps each payout operation to its chain state.
+func gamingPayoutChains(store *gamingfunds.Store) map[string]*GamingPayoutChain {
+	ops, err := store.Operations()
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]*GamingPayoutChain)
+	for _, op := range ops {
+		if op.Kind == "settlement" {
+			out[op.ID] = &GamingPayoutChain{State: op.State, Confirmations: op.Confirmations}
+		}
+	}
+	return out
 }
 
 // GamingPayoutShare is what the operator put into a payout and gets out of it.
@@ -165,9 +190,10 @@ func GamingPayouts(ctx context.Context) ([]GamingPayoutView, error) {
 	if err != nil {
 		return nil, err
 	}
+	chains := gamingPayoutChains(store)
 	out := make([]GamingPayoutView, 0, len(all))
 	for _, p := range all {
-		view := GamingPayoutView{Settlement: p}
+		view := GamingPayoutView{Settlement: p, Chain: chains[p.ID]}
 		if key, err := store.WalletKey(p.Scope, p.Table); err == nil {
 			if share, ok := payoutShare(p, key); ok {
 				view.Mine = &share
