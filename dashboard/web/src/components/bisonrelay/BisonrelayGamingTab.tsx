@@ -104,6 +104,19 @@ const railItems: BrSidebarItem[] = [
   { id: 'history', label: 'History', hash: 'gaming/history', icon: History },
 ];
 
+// boundAccountState is how a game's stored account stands against the wallet's
+// list: allowed, reserved for another part of the stack, or not listed (yet).
+export const boundAccountState = (
+  bound: string,
+  accounts: AccountInfo[],
+): 'none' | 'allowed' | 'reserved' | 'unknown' => {
+  const name = bound.trim();
+  if (!name) return 'none';
+  const account = accounts.find((a) => a.accountName === name);
+  if (!account) return 'unknown';
+  return isReservedAccount(account) ? 'reserved' : 'allowed';
+};
+
 export const BisonrelayGamingTab = () => {
   const [section, setSection] = useState<GamingSection>(readHashSection);
   useEffect(() => {
@@ -679,16 +692,19 @@ export const BisonrelayGamingTab = () => {
                          * that was stored - and the warning below it disagreed with
                          * the control beside it. */}
                         <select
-                          value={p.account}
+                          value={boundAccountState(p.account, accounts) === 'reserved' ? '' : p.account}
                           onChange={(e) => setPolicy(g.id, { account: e.target.value })}
                           disabled={accountsRes.state.status === 'error'}
                           className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm disabled:opacity-60"
                         >
-                          <option value="">No account bound</option>
-                          {p.account.trim() &&
-                            !selectableAccounts.some((a) => a.accountName === p.account) && (
-                              <option value={p.account}>{p.account}</option>
-                            )}
+                          <option value="">
+                            {boundAccountState(p.account, accounts) === 'reserved'
+                              ? 'Choose an account'
+                              : 'No account bound'}
+                          </option>
+                          {boundAccountState(p.account, accounts) === 'unknown' && (
+                            <option value={p.account}>{p.account}</option>
+                          )}
                           {selectableAccounts.map((a) => (
                             <option key={a.accountNumber} value={a.accountName}>
                               {a.accountName} ({fmtDcr(a.spendableBalance)} spendable)
@@ -702,7 +718,12 @@ export const BisonrelayGamingTab = () => {
                             is what is selected.
                           </span>
                         )}
-                        {p.account.trim() ? (
+                        {boundAccountState(p.account, accounts) === 'reserved' ? (
+                          <span className="text-warning block">
+                            "{p.account}" belongs to another part of the stack and cannot fund{' '}
+                            {g.name}. Choose another account; settings cannot be saved until then.
+                          </span>
+                        ) : p.account.trim() ? (
                           <span className="text-muted-foreground block">
                             Keep this separate from your main account. Only what you move into it is
                             ever at stake for {g.name}, and what it loses is not drawn from another
