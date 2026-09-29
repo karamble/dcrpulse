@@ -35,6 +35,12 @@ func inboundSpend(ctx context.Context, m *Manager, msg *Message, frame *Frame, f
 		}
 		return
 	}
+	// A payment request is checked against its own wallet's UTXOs, so it waits
+	// unjournaled until that wallet is active and the catch-up delivers it again.
+	if msg.Type == TypeSignReq && store.WalletName() != activeWalletSeam() {
+		msigLog.Infof("payment request for %q waits until wallet %q is active", rec.Label, store.WalletName())
+		return
+	}
 	fresh, err := store.MarkProcessed(frame.MID, now)
 	if err != nil {
 		msigLog.Warnf("journal: %v", err)

@@ -7,6 +7,7 @@ package msig
 import (
 	"context"
 	"encoding/hex"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -861,5 +862,84 @@ func TestSpendOwnRequestReplayedBackIsIgnored(t *testing.T) {
 	}
 	if mine.FromUID != "" {
 		t.Errorf("alice's payment now answers to %q", mine.FromNick)
+	}
+}
+
+// A payment request for a shared wallet held by another dcrpulse wallet is
+// checked against that wallet's UTXOs, so it waits until that wallet is loaded
+// and is delivered again by the catch-up.
+func TestSpendRequestWaitsForItsWallet(t *testing.T) {
+	sh, tempID := newSpendHarness(t, 2, "alice", "bob", "carol")
+	rec := sh.record("alice", tempID)
+	sh.fund(rec.Address, 500_000_000, 0)
+
+	sh.as("alice")
+	prop, err := ProposeSpend(sh.ctx, tempID,
+		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
+		false,
+		[]string{sh.nodeByNick("bob").uid, sh.nodeByNick("carol").uid}, "", 0, []byte("pass"))
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	bob := sh.nodeByNick("bob")
+	var req hsFrame
+	for i, f := range sh.queue {
+		if f.to == bob.uid {
+			req = f
+			sh.queue = append(sh.queue[:i], sh.queue[i+1:]...)
+			break
+		}
+	}
+	if req.body == "" {
+		t.Fatal("no payment request queued for bob")
+	}
+
+	nicks := []string{"alice", "bob", "carol"}
+	mids := map[string]int{}
+	for _, n := range nicks {
+		mids[n] = len(sh.store(n).data.ProcessedMids)
+	}
+	queued, imports := len(sh.queue), len(bob.imports)
+
+	// Only bob's store holds the record on his node; the harness keeps every
+	// member's store in one manager, so the others step aside for the delivery.
+	m := manager("simnet")
+	m.mu.Lock()
+	others := map[string]*Store{}
+	for name, st := range m.stores {
+		if name != bob.wallet {
+			others[name] = st
+			delete(m.stores, name)
+		}
+	}
+	m.mu.Unlock()
+	origActive := activeWalletSeam
+	activeWalletSeam = func() string { return "w-dave" }
+	sh.current = bob
+	handleInbound(req.from.uid, req.from.nick, req.body, time.Now())
+	activeWalletSeam = origActive
+	m.mu.Lock()
+	maps.Copy(m.stores, others)
+	m.mu.Unlock()
+
+	for _, n := range nicks {
+		if got := len(sh.store(n).data.ProcessedMids); got != mids[n] {
+			t.Fatalf("%s journaled the request while another wallet was active", n)
+		}
+	}
+	for _, n := range nicks[1:] {
+		if _, _, ok := sh.store(n).Proposal(tempID, prop.TxID); ok {
+			t.Fatalf("%s took the request while another wallet was active", n)
+		}
+	}
+	if len(bob.imports) != imports || len(sh.queue) != queued {
+		t.Fatalf("imports %d -> %d, queued %d -> %d: the request touched the loaded wallet or answered",
+			imports, len(bob.imports), queued, len(sh.queue))
+	}
+
+	sh.current = bob
+	handleInbound(req.from.uid, req.from.nick, req.body, time.Now())
+	if p := sh.proposal(t, "bob", tempID, prop.TxID); p.Status != ProposalIncoming {
+		t.Fatalf("after the switch bob holds %s, want incoming", p.Status)
 	}
 }
