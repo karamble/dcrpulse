@@ -478,7 +478,9 @@ Manual restore:
 # Stop services
 docker compose down
 
-# Restore the app-data volume
+# Restore the app-data volume. The restore deletes the volume before it
+# extracts, so it only runs once tar has read the whole archive.
+tar -tzf backups/app-data-backup-YYYYMMDD-HHMMSS.tar.gz > /dev/null && \
 docker run --rm \
   -v dcrpulse_app-data:/app-data \
   -v $(pwd)/backups:/backup \
@@ -504,7 +506,9 @@ Manual restore:
 # Stop wallet
 docker compose stop dcrwallet
 
-# Restore wallet database into /app-data/dcrwallet
+# Restore wallet database into /app-data/dcrwallet, once tar has read the
+# whole archive
+tar -tzf backups/wallet-backup-YYYYMMDD-HHMMSS.tar.gz > /dev/null && \
 docker run --rm \
   -v dcrpulse_app-data:/app-data \
   -v $(pwd)/backups:/backup \
@@ -616,7 +620,8 @@ docker compose down
 cp .env ../../.env
 cp docker-compose.yml ../../docker-compose.yml
 
-# Restore the shared app-data volume
+# Restore the shared app-data volume, once tar has read the whole archive
+tar -tzf app-data.tar.gz > /dev/null && \
 docker run --rm \
   -v dcrpulse_app-data:/app-data \
   -v $(pwd):/backup \
@@ -849,14 +854,14 @@ docker system prune -a
 docker run --rm -v dcrpulse_app-data:/data alpine chown -R 1000:1000 /data
 
 # Retry restore
-make restore BACKUP=backups/app-data-backup-*.tar.gz
+make restore BACKUP=backups/app-data-backup-YYYYMMDD-HHMMSS.tar.gz
 ```
 
 ### Backup is Corrupted
 
 ```bash
 # Verify backup
-tar -tzf backups/app-data-backup-*.tar.gz
+tar -tzf backups/app-data-backup-YYYYMMDD-HHMMSS.tar.gz
 
 # If corrupted, try previous backup
 ls -lt backups/
@@ -983,14 +988,14 @@ make status
 # Backup all app data (blockchain + wallet + control)
 make backup
 
-# Restore all app data
-make restore BACKUP=backups/app-data-backup-*.tar.gz
+# Restore all app data (name one archive; a pattern is refused)
+make restore BACKUP=backups/app-data-backup-YYYYMMDD-HHMMSS.tar.gz
 
 # Backup wallet only
 make backup-wallet
 
 # Restore wallet only
-make restore-wallet BACKUP=backups/wallet-backup-*.tar.gz
+make restore-wallet BACKUP=backups/wallet-backup-YYYYMMDD-HHMMSS.tar.gz
 
 # Backup configuration
 cp .env .env.backup

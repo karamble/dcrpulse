@@ -494,6 +494,7 @@ make restore BACKUP=backups/app-data-backup-20251006-123456.tar.gz
 ```
 
 **What it does**:
+- Checks that `BACKUP` names exactly one archive and that it reads to the end, and stops otherwise
 - Stops all services
 - Empties `/app-data` and unpacks the specified backup in its place
 - Restarts services
@@ -510,6 +511,7 @@ make restore-wallet BACKUP=backups/wallet-backup-20251006-123456.tar.gz
 ```
 
 **What it does**:
+- Checks that `BACKUP` names exactly one archive and that it reads to the end, and stops otherwise
 - Stops dcrwallet service
 - Empties `/app-data/dcrwallet` and unpacks the specified backup in its place
 - Restarts dcrwallet

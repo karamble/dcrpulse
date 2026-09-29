@@ -291,40 +291,49 @@ backup-certs: ## Backup certificates only
 		alpine tar czf /backup/certs-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /app-data/dcrd rpc.cert rpc.key
 	@echo "Certificates backup created in backups/"
 
-restore: ## Restore all app data from backup (usage: make restore BACKUP=backups/app-data-backup-xxx.tar.gz)
-	@if [ -z "$(BACKUP)" ]; then \
-		echo "Usage: make restore BACKUP=backups/app-data-backup-xxx.tar.gz"; \
+# resolve_backup sets f to the one archive BACKUP names once tar has read it to
+# the end, and stops before anything is changed otherwise: a pattern matching
+# several archives or a missing or broken file would leave the volume empty.
+resolve_backup = n=0; for x in $(BACKUP); do n=$$((n+1)); f="$$x"; done; \
+	if [ "$$n" -ne 1 ] || [ ! -f "$$f" ]; then \
+		echo "BACKUP must name exactly one existing archive, e.g. BACKUP=backups/app-data-backup-YYYYMMDD-HHMMSS.tar.gz"; \
+		exit 1; \
+	fi; \
+	if ! tar -tzf "$$f" > /dev/null; then \
+		echo "$$f is not a complete .tar.gz archive; nothing was changed."; \
 		exit 1; \
 	fi
-	@echo "Restoring from $(BACKUP)..."
-	@echo "WARNING: This will overwrite ALL app data!"
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
+
+restore: ## Restore all app data from backup (usage: make restore BACKUP=backups/app-data-backup-xxx.tar.gz)
+	@$(resolve_backup); \
+	echo "Restoring from $$f ($$(du -h "$$f" | cut -f1))..."; \
+	echo "WARNING: This will overwrite ALL app data!"; \
+	read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		docker compose down; \
 		docker run --rm \
 			-v dcrpulse_app-data:/app-data \
-			-v $(PWD):/backup \
-			alpine sh -c "rm -rf /app-data/* && tar xzf /backup/$(BACKUP) -C /app-data"; \
+			-v "$$(cd "$$(dirname "$$f")" && pwd)":/backup:ro \
+			-e ARCHIVE="/backup/$$(basename "$$f")" \
+			alpine sh -c 'rm -rf /app-data/* && tar xzf "$$ARCHIVE" -C /app-data'; \
 		docker compose up -d; \
 		echo "Restored!"; \
 	fi
 
 restore-wallet: ## Restore wallet data from backup (usage: make restore-wallet BACKUP=backups/wallet-backup-xxx.tar.gz)
-	@if [ -z "$(BACKUP)" ]; then \
-		echo "Usage: make restore-wallet BACKUP=backups/wallet-backup-xxx.tar.gz"; \
-		exit 1; \
-	fi
-	@echo "Restoring wallet from $(BACKUP)..."
-	@echo "WARNING: This will overwrite existing wallet data!"
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	@$(resolve_backup); \
+	echo "Restoring wallet from $$f ($$(du -h "$$f" | cut -f1))..."; \
+	echo "WARNING: This will overwrite existing wallet data!"; \
+	read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		docker compose stop dcrwallet; \
 		docker run --rm \
 			-v dcrpulse_app-data:/app-data \
-			-v $(PWD):/backup \
-			alpine sh -c "rm -rf /app-data/dcrwallet/* && tar xzf /backup/$(BACKUP) -C /app-data/dcrwallet"; \
+			-v "$$(cd "$$(dirname "$$f")" && pwd)":/backup:ro \
+			-e ARCHIVE="/backup/$$(basename "$$f")" \
+			alpine sh -c 'rm -rf /app-data/dcrwallet/* && tar xzf "$$ARCHIVE" -C /app-data/dcrwallet'; \
 		docker compose up -d --no-deps dcrwallet; \
 		echo "Wallet restored!"; \
 	fi
