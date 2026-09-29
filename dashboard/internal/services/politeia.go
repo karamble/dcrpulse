@@ -89,16 +89,6 @@ var (
 	// anchor); both are only touched while holding piListFetchMu.
 	piListFetchMu sync.Mutex
 	piListFailAt  = map[string]time.Time{}
-
-	// vspSignMu serializes every unlock -> sign-with-commitment-keys -> relock
-	// critical section: buildSignedVotes (the one-shot cast and every per-
-	// proposal trickle worker) and the governance VSP sync
-	// (syncVoteChoicesToVSPs). Concurrent signings share owning accounts and
-	// relockAccountsAfterVSP only re-locks what its own call unlocked, so without
-	// this an overlapping signing could re-lock an account while another is still
-	// signing. Only the brief sign step holds it; the trickle's hours-long
-	// submission runs unlocked and outside this lock.
-	vspSignMu sync.Mutex
 )
 
 // piListCacheEntry is one status bucket's cached proposal list + fetch time,
@@ -913,28 +903,6 @@ func buildSignedVotes(ctx context.Context, token, voteOption string, passphrase 
 		return nil, result, nil
 	}
 
-	// Serialize the unlock -> sign -> relock section across all callers so two
-	// overlapping signings can't have one's relock lock an account the other is
-	// still signing with (relockAccountsAfterVSP only re-locks what its own call
-	// unlocked). Registered before the relock defer so, LIFO, the relock runs
-	// first and the lock is released only after it completes.
-	vspSignMu.Lock()
-	defer vspSignMu.Unlock()
-
-	// Unlock the accounts that own the ticket commitment keys so SignMessages
-	// can sign, then re-lock the ones we unlocked when this function returns
-	// (incl. on error). dcrwallet's per-account encryption means a wallet-wide
-	// unlock leaves these keys unusable; this is the same per-account path VSP
-	// fee signing uses. Mirrors Decrediton's UnlockAccount-then-sign.
-	beginUnlockedOp()
-	defer endUnlockedOp()
-
-	unlocked, err := unlockAllAccountsForSpend(ctx, passphrase)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer relockAccountsAfterVSP(unlocked)
-
 	bitHex := fmt.Sprintf("%x", voteBit)
 
 	// Build signature requests. Message format: token||ticketHashHex||voteBitHex.
@@ -949,27 +917,35 @@ func buildSignedVotes(ctx context.Context, token, voteOption string, passphrase 
 		})
 	}
 
-	// Chunk the SignMessages calls.
+	// Sign with the commitment keys in chunks. dcrwallet's per-account
+	// encryption leaves them unusable after a wallet-wide unlock, so this takes
+	// the per-account path VSP fee signing uses. Mirrors Decrediton's
+	// UnlockAccount-then-sign.
 	signatures := make([]string, len(signMsgs))
-	for i := 0; i < len(signMsgs); i += politeiaSignMessagesChunk {
-		end := i + politeiaSignMessagesChunk
-		if end > len(signMsgs) {
-			end = len(signMsgs)
-		}
-		resp, err := rpc.WalletGrpcClient.SignMessages(ctx, &pb.SignMessagesRequest{
-			Messages: signMsgs[i:end],
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("SignMessages: %w", err)
-		}
-		for j, reply := range resp.GetReplies() {
-			if reply.GetError() != "" {
-				result.Errors = append(result.Errors, fmt.Sprintf("sign %s: %s", ticketHexByIndex[i+j], reply.GetError()))
-				result.Skipped++
-				continue
+	if err := withUnlockedAccounts(ctx, passphrase, func() error {
+		for i := 0; i < len(signMsgs); i += politeiaSignMessagesChunk {
+			end := i + politeiaSignMessagesChunk
+			if end > len(signMsgs) {
+				end = len(signMsgs)
 			}
-			signatures[i+j] = hex.EncodeToString(reply.GetSignature())
+			resp, err := rpc.WalletGrpcClient.SignMessages(ctx, &pb.SignMessagesRequest{
+				Messages: signMsgs[i:end],
+			})
+			if err != nil {
+				return fmt.Errorf("SignMessages: %w", err)
+			}
+			for j, reply := range resp.GetReplies() {
+				if reply.GetError() != "" {
+					result.Errors = append(result.Errors, fmt.Sprintf("sign %s: %s", ticketHexByIndex[i+j], reply.GetError()))
+					result.Skipped++
+					continue
+				}
+				signatures[i+j] = hex.EncodeToString(reply.GetSignature())
+			}
 		}
+		return nil
+	}); err != nil {
+		return nil, nil, err
 	}
 
 	votes := make([]piBallotVote, 0, len(signatures))

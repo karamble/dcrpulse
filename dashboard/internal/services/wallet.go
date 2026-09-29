@@ -658,6 +658,32 @@ func unlockAllAccountsForSpend(ctx context.Context, passphrase []byte) ([]uint32
 	return newlyUnlocked, nil
 }
 
+// vspSignSem serializes every window that unlocks all accounts to sign with
+// ticket commitment keys: vote signing, the VSP vote-choice sync and the VSP
+// fee repairs. relockAccountsAfterVSP re-locks only what its own window
+// opened, so an overlapping window could lock an account another still uses.
+var vspSignSem = make(chan struct{}, 1)
+
+// withUnlockedAccounts runs fn with every normal account unlocked for signing
+// and re-locks what it opened afterwards. One window runs at a time; a caller
+// waits for the one in progress, or gives up when ctx ends.
+func withUnlockedAccounts(ctx context.Context, passphrase []byte, fn func() error) error {
+	select {
+	case vspSignSem <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-vspSignSem }()
+	beginUnlockedOp()
+	defer endUnlockedOp()
+	unlocked, err := unlockAllAccountsForSpend(ctx, passphrase)
+	if err != nil {
+		return err
+	}
+	defer relockAccountsAfterVSP(unlocked)
+	return fn()
+}
+
 // vspTicketCommitAccounts returns the set of account numbers that own the
 // commitment addresses of the wallet's currently tracked VSP tickets. The
 // dcrwallet VSP client reconciles those tickets' fees in a background timer

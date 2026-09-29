@@ -901,15 +901,6 @@ func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, accoun
 		return nil, fmt.Errorf("vspHost and vspPubkey are required")
 	}
 
-	beginUnlockedOp()
-	defer endUnlockedOp()
-
-	unlockedAccts, err := unlockAllAccountsForSpend(ctx, passphrase)
-	if err != nil {
-		return nil, err
-	}
-	defer relockAccountsAfterVSP(unlockedAccts)
-
 	normHost := "https://" + strings.TrimPrefix(strings.TrimPrefix(vspHost, "https://"), "http://")
 
 	before := countFeeStatuses(fetchFeeStatusMap(ctx))
@@ -917,21 +908,26 @@ func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, accoun
 	// Retry fee payment for errored tickets, then re-check all managed tickets
 	// so paid-but-unconfirmed fees advance to confirmed. Mirrors Decrediton's
 	// syncVSPTickets followed by processManagedTickets.
-	if _, err := rpc.WalletGrpcClient.SyncVSPFailedTickets(ctx, &pb.SyncVSPTicketsRequest{
-		VspHost:       normHost,
-		VspPubkey:     vspPubkey,
-		Account:       account,
-		ChangeAccount: changeAccount,
+	if err := withUnlockedAccounts(ctx, passphrase, func() error {
+		if _, err := rpc.WalletGrpcClient.SyncVSPFailedTickets(ctx, &pb.SyncVSPTicketsRequest{
+			VspHost:       normHost,
+			VspPubkey:     vspPubkey,
+			Account:       account,
+			ChangeAccount: changeAccount,
+		}); err != nil {
+			return fmt.Errorf("SyncVSPFailedTickets RPC: %w", err)
+		}
+		if _, err := rpc.WalletGrpcClient.ProcessManagedTickets(ctx, &pb.ProcessManagedTicketsRequest{
+			VspHost:       normHost,
+			VspPubkey:     vspPubkey,
+			FeeAccount:    account,
+			ChangeAccount: changeAccount,
+		}); err != nil {
+			return fmt.Errorf("ProcessManagedTickets RPC: %w", err)
+		}
+		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("SyncVSPFailedTickets RPC: %w", err)
-	}
-	if _, err := rpc.WalletGrpcClient.ProcessManagedTickets(ctx, &pb.ProcessManagedTicketsRequest{
-		VspHost:       normHost,
-		VspPubkey:     vspPubkey,
-		FeeAccount:    account,
-		ChangeAccount: changeAccount,
-	}); err != nil {
-		return nil, fmt.Errorf("ProcessManagedTickets RPC: %w", err)
+		return nil, err
 	}
 	invalidateTicketList()
 	rememberVSPUsed(ctx, vspHost, vspPubkey)
@@ -959,26 +955,22 @@ func ProcessUnmanagedVSPTickets(ctx context.Context, vspHost, vspPubkey string, 
 		return nil, fmt.Errorf("vspHost and vspPubkey are required")
 	}
 
-	beginUnlockedOp()
-	defer endUnlockedOp()
-
-	unlockedAccts, err := unlockAllAccountsForSpend(ctx, passphrase)
-	if err != nil {
-		return nil, err
-	}
-	defer relockAccountsAfterVSP(unlockedAccts)
-
 	normHost := "https://" + strings.TrimPrefix(strings.TrimPrefix(vspHost, "https://"), "http://")
 
 	before := countFeeStatuses(fetchFeeStatusMap(ctx))
 
-	if _, err := rpc.WalletGrpcClient.ProcessUnmanagedTickets(ctx, &pb.ProcessUnmanagedTicketsRequest{
-		VspHost:       normHost,
-		VspPubkey:     vspPubkey,
-		FeeAccount:    account,
-		ChangeAccount: changeAccount,
+	if err := withUnlockedAccounts(ctx, passphrase, func() error {
+		if _, err := rpc.WalletGrpcClient.ProcessUnmanagedTickets(ctx, &pb.ProcessUnmanagedTicketsRequest{
+			VspHost:       normHost,
+			VspPubkey:     vspPubkey,
+			FeeAccount:    account,
+			ChangeAccount: changeAccount,
+		}); err != nil {
+			return fmt.Errorf("ProcessUnmanagedTickets RPC: %w", err)
+		}
+		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("ProcessUnmanagedTickets RPC: %w", err)
+		return nil, err
 	}
 	invalidateTicketList()
 	rememberVSPUsed(ctx, vspHost, vspPubkey)

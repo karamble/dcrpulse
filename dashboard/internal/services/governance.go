@@ -491,43 +491,35 @@ func syncVoteChoicesToVSPs(ctx context.Context, passphrase []byte) *types.VSPSyn
 	return sum
 }
 
-// pushVoteChoicesToVSPs runs the unlock -> per-host SetVspdVoteChoices ->
-// relock window. One unlock window for the whole fan-out, the
-// buildSignedVotes shape: the mutex is registered before the relock defer so,
-// LIFO, the relock completes before the lock releases and a concurrent
-// signing flow can never re-lock accounts this one is still using.
+// pushVoteChoicesToVSPs runs the per-host SetVspdVoteChoices fan-out inside one
+// signing window, so every account is unlocked once for all hosts.
 func pushVoteChoicesToVSPs(ctx context.Context, hosts []string, pubkeys map[string]string,
 	feeAcct, changeAcct uint32, passphrase []byte, fail func(host, msg string)) {
 
-	vspSignMu.Lock()
-	defer vspSignMu.Unlock()
-	beginUnlockedOp()
-	defer endUnlockedOp()
-	unlocked, err := unlockAllAccountsForSpend(ctx, passphrase)
-	if err != nil {
-		fail("", "unlock accounts: "+err.Error())
-		return
-	}
-	defer relockAccountsAfterVSP(unlocked)
-
-	for _, host := range hosts {
-		pubkey, ok := pubkeys[host]
-		if !ok {
-			continue
-		}
-		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		_, err := rpc.WalletGrpcClient.SetVspdVoteChoices(callCtx, &pb.SetVspdVoteChoicesRequest{
-			VspHost:       host,
-			VspPubkey:     pubkey,
-			FeeAccount:    feeAcct,
-			ChangeAccount: changeAcct,
-		})
-		cancel()
-		if err != nil {
-			if msg := filterSoloTicketNoise(err.Error()); msg != "" {
-				fail(host, msg)
+	err := withUnlockedAccounts(ctx, passphrase, func() error {
+		for _, host := range hosts {
+			pubkey, ok := pubkeys[host]
+			if !ok {
+				continue
+			}
+			callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			_, err := rpc.WalletGrpcClient.SetVspdVoteChoices(callCtx, &pb.SetVspdVoteChoicesRequest{
+				VspHost:       host,
+				VspPubkey:     pubkey,
+				FeeAccount:    feeAcct,
+				ChangeAccount: changeAcct,
+			})
+			cancel()
+			if err != nil {
+				if msg := filterSoloTicketNoise(err.Error()); msg != "" {
+					fail(host, msg)
+				}
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		fail("", "unlock accounts: "+err.Error())
 	}
 }
 
