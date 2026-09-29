@@ -1789,6 +1789,10 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 	if err != nil {
 		return "", err
 	}
+	// dcrwallet lists the inputs it could not sign instead of failing.
+	if n := len(signResp.UnsignedInputIndexes); n > 0 {
+		return "", fmt.Errorf("%d input(s) could not be signed: %v", n, signResp.UnsignedInputIndexes)
+	}
 	// Detached and wrapped: once the transaction is handed over it may reach the
 	// network whatever this call returns. The signing above is still pre-spend.
 	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)

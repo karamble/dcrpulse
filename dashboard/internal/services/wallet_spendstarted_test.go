@@ -23,6 +23,10 @@ type stubWallet struct {
 	pb.WalletServiceClient
 	signErr error
 	pubErr  error
+	// unsigned is what SignTransaction reports it could not sign; published
+	// records that the transaction was handed to PublishTransaction.
+	unsigned  []uint32
+	published bool
 
 	// publishCtxErr records what the publish call saw, so a test can tell
 	// whether the caller's cancellation reached it.
@@ -45,11 +49,12 @@ func (s *stubWallet) SignTransaction(context.Context, *pb.SignTransactionRequest
 	if s.signErr != nil {
 		return nil, s.signErr
 	}
-	return &pb.SignTransactionResponse{Transaction: []byte{0x01}}, nil
+	return &pb.SignTransactionResponse{Transaction: []byte{0x01}, UnsignedInputIndexes: s.unsigned}, nil
 }
 
 func (s *stubWallet) PublishTransaction(ctx context.Context, _ *pb.PublishTransactionRequest, _ ...grpc.CallOption) (*pb.PublishTransactionResponse, error) {
 	s.publishCtxErr = ctx.Err()
+	s.published = true
 	if s.pubErr != nil {
 		return nil, s.pubErr
 	}
@@ -87,6 +92,20 @@ func TestSignAndPublishMarksOnlyCommittedFailures(t *testing.T) {
 				t.Fatalf("errors.Is(err, ErrSpendStarted) = %v, want %v (err: %v)", got, tc.wantStarted, err)
 			}
 		})
+	}
+}
+
+// WALLET-12: dcrwallet reports inputs it could not sign without an error. Such a
+// transaction is refused before publishing, as a refundable signing failure.
+func TestSignAndPublishRefusesAPartlySignedTransaction(t *testing.T) {
+	s := &stubWallet{unsigned: []uint32{0}}
+	withWallet(t, s)
+	_, err := SignAndPublishTransaction(context.Background(), 0, []byte{0x01}, []byte("pw"))
+	if err == nil || errors.Is(err, ErrSpendStarted) {
+		t.Fatalf("err = %v, want a signing failure that is not ErrSpendStarted", err)
+	}
+	if s.published {
+		t.Fatal("a partly signed transaction was published")
 	}
 }
 
