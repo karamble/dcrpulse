@@ -7,8 +7,11 @@ import { AlertTriangle } from 'lucide-react';
 
 // RouteErrorBoundary keeps a page that throws while rendering from unmounting
 // the whole dashboard: the page is replaced by an error card and the header
-// and navigation keep working. Key it on the route so navigating resets it.
-export class RouteErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+// and navigation keep working. Pass the route as resetKey so navigating clears
+// the error card without remounting the pages.
+type Props = { children: ReactNode; resetKey?: string };
+
+export class RouteErrorBoundary extends Component<Props, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
 
   static getDerivedStateFromError(error: Error) {
@@ -17,6 +20,10 @@ export class RouteErrorBoundary extends Component<{ children: ReactNode }, { err
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Page render failed:', error, info.componentStack);
+  }
+
+  componentDidUpdate(prev: Props) {
+    if (this.state.error && prev.resetKey !== this.props.resetKey) this.setState({ error: null });
   }
 
   render() {

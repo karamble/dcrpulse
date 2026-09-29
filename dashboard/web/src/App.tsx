@@ -173,7 +173,7 @@ function AppContent() {
             : 'max-w-7xl mx-auto px-3 sm:px-6 pt-6 pb-3 sm:pb-6 space-y-6'
         }
       >
-        <RouteErrorBoundary key={location.pathname}>
+        <RouteErrorBoundary resetKey={location.pathname}>
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<NodeDashboard />} />
