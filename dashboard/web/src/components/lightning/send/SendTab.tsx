@@ -5,7 +5,6 @@ import {
   LightningPayment,
   decodeLnPayReq,
   listLnPayments,
-  lnFeeLimitAtoms,
   streamLnPayment,
 } from '../../../services/lightningApi';
 import { DecodedPayRequest } from './DecodedPayRequest';
@@ -119,7 +118,6 @@ export const SendTab = () => {
       {
         payReq: invoice,
         amt: req.numAtoms === 0 ? sendValue : undefined,
-        feeLimitAtoms: lnFeeLimitAtoms(req.numAtoms > 0 ? req.numAtoms : sendValue),
       },
       (snap) => {
         setCurrentSnap(snap);

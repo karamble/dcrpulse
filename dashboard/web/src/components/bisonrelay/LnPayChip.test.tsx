@@ -48,7 +48,7 @@ describe('LnPayChip invoice approval', () => {
     await openConfirmation();
     confirm();
     expect(streamLnPayment).toHaveBeenCalledTimes(1);
-    expect(stream()[0]).toEqual({ payReq: A, feeLimitAtoms: 5_000_000 });
+    expect(stream()[0]).toEqual({ payReq: A });
     settle();
     expect(screen.getByText(/^Paid 1 DCR/)).toBeTruthy();
   });
@@ -77,7 +77,7 @@ describe('LnPayChip invoice approval', () => {
     expect(screen.queryByRole('button', { name: 'Pay now' })).toBeNull();
     await openConfirmation();
     confirm();
-    expect(stream()[0]).toEqual({ payReq: B, feeLimitAtoms: 10_000_000 });
+    expect(stream()[0]).toEqual({ payReq: B });
   });
 
   it('requires new approval even when the replacement has the same amount', async () => {
@@ -113,7 +113,7 @@ describe('LnPayChip invoice approval', () => {
     await openConfirmation();
     expect(screen.getByText(B)).toBeTruthy();
     confirm();
-    expect(stream()[0]).toEqual({ payReq: B, feeLimitAtoms: 10_000_000 });
+    expect(stream()[0]).toEqual({ payReq: B });
   });
 
   it('ignores stale exchange rates after invoice replacement', async () => {

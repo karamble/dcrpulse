@@ -28,12 +28,14 @@ import (
 
 	"encoding/base64"
 
+	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/decred/dcrlnd/lnrpc"
 	"github.com/decred/dcrlnd/lnrpc/autopilotrpc"
 	"github.com/decred/dcrlnd/lnrpc/invoicesrpc"
 	"github.com/decred/dcrlnd/lnrpc/routerrpc"
 	"github.com/decred/dcrlnd/lnrpc/verrpc"
 	"github.com/decred/dcrlnd/lnrpc/wtclientrpc"
+	"github.com/decred/dcrlnd/lnwallet"
 	"github.com/decred/dcrlnd/lnwire"
 )
 
@@ -1242,17 +1244,13 @@ func lastHop(hops []*lnrpc.Hop) *lnrpc.Hop {
 	return hops[len(hops)-1]
 }
 
-// defaultRoutingFeeLimitAtoms mirrors dcrlnd's
-// lnwallet.DefaultRoutingFeeLimitForAmount: a payment is allowed a 100%
-// routing fee up to 1000 atoms, where per-hop base fees dominate, and 5%
-// above that. routerrpc.SendPaymentV2 provides no default of its own, so a
-// caller that omits a fee limit gets this same curve instead of the
-// 0-fee-only behaviour of an unset field.
+// defaultRoutingFeeLimitAtoms is dcrlnd's own default routing fee limit
+// (lnwallet.DefaultRoutingFeeLimitForAmount). routerrpc.SendPaymentV2
+// provides no default of its own, so a caller that omits a fee limit gets
+// this curve instead of the 0-fee-only behaviour of an unset field.
 func defaultRoutingFeeLimitAtoms(amountAtoms int64) int64 {
-	if amountAtoms <= 1000 {
-		return amountAtoms
-	}
-	return amountAtoms * 5 / 100
+	limit := lnwallet.DefaultRoutingFeeLimitForAmount(lnwire.NewMAtomsFromAtoms(dcrutil.Amount(amountAtoms)))
+	return int64(limit.ToAtoms())
 }
 
 // RoutingFeeCeilingAtoms reports the routing fee a payment of amountAtoms may
