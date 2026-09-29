@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -624,15 +623,6 @@ func marketFeeAsset(assetID uint32, convFactor uint64, symbol string) (uint64, s
 	return dexassets.ConvFactor(feeID), strings.ToUpper(dexassets.Symbol(feeID))
 }
 
-// convToAtoms converts a conventional amount to atomic units, rounding to the
-// nearest atom.
-func convToAtoms(amount float64, convFactor uint64) uint64 {
-	if convFactor == 0 {
-		convFactor = uint64(dcrutil.AtomsPerCoin)
-	}
-	return uint64(math.Round(amount * float64(convFactor)))
-}
-
 // dexAssetID parses the assetID query parameter, defaulting to Decred when it is
 // absent. Only assets whose wallet is a NewAddresser (BTC, LTC, DCR) ever supply
 // one; account-based chains reuse a static address and never reach this path.
@@ -975,6 +965,23 @@ func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
+	// -1 leaves an option unchanged (see bisonw.SetBondOptions).
+	targetTier, maxBonded, bondAsset, penaltyComps := -1, -1, -1, -1
+	if req.BondAssetID != nil {
+		bondAsset = *req.BondAssetID
+	}
+	if req.MaxBondedDcr != nil {
+		assetID := bisonw.AssetDCR
+		if bondAsset >= 0 {
+			assetID = uint32(bondAsset)
+		}
+		atoms, err := dexassets.ToAtoms(assetID, *req.MaxBondedDcr)
+		if err != nil {
+			http.Error(w, "maxBondedDcr: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		maxBonded = int(atoms)
+	}
 	web, ok := dexWebSession(w)
 	if !ok {
 		return
@@ -984,23 +991,11 @@ func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// -1 leaves an option unchanged (see bisonw.SetBondOptions).
-	targetTier, maxBonded, bondAsset, penaltyComps := -1, -1, -1, -1
 	if req.TargetTier != nil {
 		targetTier = *req.TargetTier
 	}
-	if req.BondAssetID != nil {
-		bondAsset = *req.BondAssetID
-	}
 	if req.PenaltyComps != nil {
 		penaltyComps = *req.PenaltyComps
-	}
-	if req.MaxBondedDcr != nil {
-		assetID := bisonw.AssetDCR
-		if bondAsset >= 0 {
-			assetID = uint32(bondAsset)
-		}
-		maxBonded = int(convToAtoms(*req.MaxBondedDcr, dexassets.ConvFactor(assetID)))
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -2297,8 +2292,12 @@ func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appPass is required", http.StatusBadRequest)
 		return
 	}
+	atoms, err := dexassets.ToAtoms(req.AssetID, req.Value)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	dexCall(w, r, dexWebSession, 60*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
-		atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
 		coin, err := client.Send(ctx, req.AppPass, req.AssetID, atoms, req.Address, false)
 		if err != nil {
 			return nil, err
@@ -2322,8 +2321,12 @@ func EstimateDcrdexSendFeeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID, value and address are required", http.StatusBadRequest)
 		return
 	}
+	atoms, err := dexassets.ToAtoms(req.AssetID, req.Value)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
-		atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
 		txFee, validAddr, err := client.EstimateSendTxFee(ctx, req.AssetID, req.Address, atoms, req.Subtract, false)
 		if err != nil {
 			return nil, err

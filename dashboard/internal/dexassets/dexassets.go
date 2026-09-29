@@ -12,6 +12,10 @@ package dexassets
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
+	"math"
+
+	"github.com/decred/dcrd/dcrutil/v4"
 )
 
 //go:embed catalog.generated.json
@@ -69,6 +73,35 @@ func Raw() []byte {
 // unit) for an asset or token ID. It returns 0 if the asset is unknown.
 func ConvFactor(assetID uint32) uint64 {
 	return convFactors[assetID]
+}
+
+// dcrAssetID is Decred's asset id in DCRDEX (BIP-44 coin type 42).
+const dcrAssetID = 42
+
+// ToAtoms converts a conventional amount of assetID to atoms. DCR, and an
+// asset with no known factor, goes through dcrutil.NewAmount; other assets use
+// their conversion factor, as bisonw's own send form does. NaN, infinities,
+// negatives and amounts past what the asset can hold are refused.
+func ToAtoms(assetID uint32, v float64) (uint64, error) {
+	cf := ConvFactor(assetID)
+	if assetID == dcrAssetID || cf == 0 {
+		a, err := dcrutil.NewAmount(v)
+		if err != nil {
+			return 0, err
+		}
+		if a < 0 || a > dcrutil.MaxAmount {
+			return 0, fmt.Errorf("amount %v is out of range", v)
+		}
+		return uint64(a), nil
+	}
+	if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
+		return 0, fmt.Errorf("amount %v is not a valid amount", v)
+	}
+	atoms := math.Round(v * float64(cf))
+	if atoms >= 1<<63 {
+		return 0, fmt.Errorf("amount %v is out of range", v)
+	}
+	return uint64(atoms), nil
 }
 
 // FeeAsset returns the asset whose coin pays the network fee to send assetID:

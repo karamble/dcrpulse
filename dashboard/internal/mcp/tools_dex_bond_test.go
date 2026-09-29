@@ -8,6 +8,7 @@ import (
 	"math"
 	"testing"
 
+	"dcrpulse/internal/dexassets"
 	"dcrpulse/pkg/bisonw"
 )
 
@@ -87,7 +88,8 @@ func TestBondCeilingAtomsUsesTheBondAssetScale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bondCeilingAtoms() err = %v", err)
 	}
-	want := int(dexConvToAtoms(1, btc))
+	wantAtoms, _ := dexassets.ToAtoms(btc, 1)
+	want := int(wantAtoms)
 	if got != want {
 		t.Errorf("bondCeilingAtoms(1, btc) = %d, want %d (the bond asset's factor, not DCR's)", got, want)
 	}

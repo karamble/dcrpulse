@@ -211,15 +211,9 @@ func bondCeilingAtoms(v *float64, assetID uint32) (int, error) {
 	if v == nil {
 		return -1, nil
 	}
-	if math.IsNaN(*v) || math.IsInf(*v, 0) {
-		return 0, fmt.Errorf("maxBondedDcr is not a valid amount")
-	}
-	if *v < 0 {
-		return 0, fmt.Errorf("maxBondedDcr must not be negative")
-	}
-	atoms := dexConvToAtoms(*v, assetID)
-	if atoms > math.MaxInt64 {
-		return 0, fmt.Errorf("maxBondedDcr is out of range")
+	atoms, err := dexassets.ToAtoms(assetID, *v)
+	if err != nil {
+		return 0, fmt.Errorf("maxBondedDcr: %w", err)
 	}
 	return int(atoms), nil
 }
@@ -308,16 +302,6 @@ func dexWrite(a *agent, tool, target string, limiter *middleware.Allowance, do f
 		}
 		return do()
 	})
-}
-
-// dexConvToAtoms converts a conventional amount of an asset to its atomic units,
-// rounding to the nearest atom (Decred's atoms-per-coin as the fallback factor).
-func dexConvToAtoms(amount float64, assetID uint32) uint64 {
-	cf := dexassets.ConvFactor(assetID)
-	if cf == 0 {
-		cf = uint64(dcrutil.AtomsPerCoin)
-	}
-	return uint64(math.Round(amount * float64(cf)))
 }
 
 // dexRateEncodingFactor is DCRDEX's message-rate encoding factor
@@ -770,7 +754,10 @@ var dexTools = []toolDef{
 			if err != nil {
 				return nil, err
 			}
-			atoms := dexConvToAtoms(in.Value, in.AssetID)
+			atoms, err := dexassets.ToAtoms(in.AssetID, in.Value)
+			if err != nil {
+				return nil, err
+			}
 			txFee, validAddr, err := c.EstimateSendTxFee(ctx, in.AssetID, in.Address, atoms, in.Subtract, false)
 			if err != nil {
 				return nil, err
