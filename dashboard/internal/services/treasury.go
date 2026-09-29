@@ -297,11 +297,13 @@ func balanceSampleAt(ctx context.Context, h int64) (*types.BalanceSample, error)
 
 // extractTSpendInfo extracts TSpend information from a transaction
 func extractTSpendInfo(tx chainjson.TxRawResult, currentHeight int64) *types.TSpend {
-	// Sum the outputs; the last address-bearing output names the payee.
-	amount := 0.0
+	// Sum the outputs in atoms; the last address-bearing output names the payee.
+	var total dcrutil.Amount
 	payee := ""
 	for _, vout := range tx.Vout {
-		amount += vout.Value
+		if a, err := dcrutil.NewAmount(vout.Value); err == nil {
+			total += a
+		}
 		if len(vout.ScriptPubKey.Addresses) > 0 {
 			payee = vout.ScriptPubKey.Addresses[0]
 		}
@@ -312,7 +314,7 @@ func extractTSpendInfo(tx chainjson.TxRawResult, currentHeight int64) *types.TSp
 
 	return &types.TSpend{
 		TxHash:          tx.Txid,
-		Amount:          amount,
+		Amount:          total.ToCoin(),
 		Payee:           payee,
 		ExpiryHeight:    expiryHeight,
 		CurrentHeight:   currentHeight,

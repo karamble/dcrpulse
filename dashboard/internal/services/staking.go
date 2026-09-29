@@ -799,6 +799,7 @@ func ticketRecordFromResponse(r *pb.GetTicketsResponse) types.TicketRecord {
 		return out
 	}
 	out.Status = ticketStatusNames[td.GetTicketStatus()]
+	var priceAtoms int64
 	if t := td.GetTicket(); t != nil {
 		if h, herr := chainhash.NewHash(t.GetHash()); herr == nil {
 			out.Hash = h.String()
@@ -808,7 +809,6 @@ func ticketRecordFromResponse(r *pb.GetTicketsResponse) types.TicketRecord {
 		// The ticket price is the value of the stake submission output (index 0).
 		// The wallet owns it (it pays to the voting address), so it is the credit
 		// at index 0. Mirrors Decrediton's ticketPrice = credits[0].amount.
-		var priceAtoms int64
 		for _, c := range t.GetCredits() {
 			if c.GetIndex() == 0 {
 				priceAtoms = c.GetAmount()
@@ -829,11 +829,11 @@ func ticketRecordFromResponse(r *pb.GetTicketsResponse) types.TicketRecord {
 			for _, c := range s.GetCredits() {
 				spenderCredit += c.GetAmount()
 			}
-			reward := dcrutil.Amount(spenderCredit).ToCoin() - out.TicketPrice
+			reward := dcrutil.Amount(spenderCredit - priceAtoms)
 			if reward < 0 {
 				reward = 0
 			}
-			out.Reward = reward
+			out.Reward = reward.ToCoin()
 		}
 	}
 	return out
