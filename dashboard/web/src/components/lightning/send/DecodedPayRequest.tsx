@@ -2,9 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, ChevronDown, Copy } from 'lucide-react';
 import type { LightningDecodedPayReq } from '../../../services/lightningApi';
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
-import { formatAtomsDcr } from '../../../utils/amounts';
-
-const atomsPerDcr = 1e8;
+import { formatAtomsDcr, isDcrAmountInput } from '../../../utils/amounts';
 
 const trunc = (s: string, head = 10, tail = 8) =>
   s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
@@ -27,15 +25,16 @@ const fmtExpiry = (endSec: number, nowMs: number): { text: string; expired: bool
 
 interface Props {
   decoded: LightningDecodedPayReq;
-  sendValue: number;
-  onSendValueChange: (atoms: number) => void;
+  // amountText is the amount as typed; the parent converts it to atoms.
+  amountText: string;
+  onAmountTextChange: (text: string) => void;
   onExpiredChange: (expired: boolean) => void;
 }
 
 export const DecodedPayRequest = ({
   decoded,
-  sendValue,
-  onSendValueChange,
+  amountText,
+  onAmountTextChange,
   onExpiredChange,
 }: Props) => {
   const [now, setNow] = useState<number>(Date.now());
@@ -107,18 +106,10 @@ export const DecodedPayRequest = ({
               type="text"
               inputMode="decimal"
               autoFocus
-              value={sendValue > 0 ? (sendValue / atomsPerDcr).toString() : ''}
+              value={amountText}
               onChange={(e) => {
                 const v = e.target.value.trim();
-                if (v === '') {
-                  onSendValueChange(0);
-                  return;
-                }
-                if (!/^\d*\.?\d{0,8}$/.test(v)) return;
-                const dcr = parseFloat(v);
-                if (Number.isFinite(dcr)) {
-                  onSendValueChange(Math.round(dcr * atomsPerDcr));
-                }
+                if (isDcrAmountInput(v)) onAmountTextChange(v);
               }}
               placeholder="0.00000000"
               className="w-40 px-3 py-1.5 rounded-lg bg-background border border-border text-foreground text-right focus:outline-none focus:border-primary"

@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { describe, expect, it } from 'vitest';
-import { formatAtomsDcr, formatDcr } from './amounts';
+import { formatAtomsDcr, formatDcr, isDcrAmountInput } from './amounts';
 
 // Each helper must print exactly what the local copies it replaced printed.
 describe('formatAtomsDcr', () => {
@@ -22,5 +22,19 @@ describe('formatDcr', () => {
       expect(formatDcr(dcr, 4)).toBe(dcr.toFixed(4));
     }
     expect(formatDcr(12.3456789, 4)).toBe('12.3457');
+  });
+});
+
+describe('isDcrAmountInput', () => {
+  it('accepts partial amounts on the way to a valid one', () => {
+    for (const raw of ['', '0', '0.', '.', '.5', '1.00000001', '21000000']) {
+      expect(isDcrAmountInput(raw)).toBe(true);
+    }
+  });
+
+  it('refuses what an amount can never become', () => {
+    for (const raw of ['1e3', '-1', '0x10', '+5', '0.000000001', '1,5', '1.2.3']) {
+      expect(isDcrAmountInput(raw)).toBe(false);
+    }
   });
 });

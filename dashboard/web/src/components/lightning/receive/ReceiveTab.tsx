@@ -11,9 +11,8 @@ import { InvoiceRow } from './InvoiceRow';
 import { InvoiceDetailsModal } from './InvoiceDetailsModal';
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
 import { apiError } from '../../../utils/apiError';
-import { formatAtomsDcr } from '../../../utils/amounts';
+import { formatAtomsDcr, isDcrAmountInput, parseDcrAmount } from '../../../utils/amounts';
 
-const atomsPerDcr = 1e8;
 const truncHash = (s: string) => (s.length <= 18 ? s : `${s.slice(0, 10)}…${s.slice(-6)}`);
 
 type Filter = 'all' | 'open' | 'settled' | 'expired' | 'canceled';
@@ -36,7 +35,9 @@ const fmtExpiry = (endSec: number, nowMs: number): { text: string; expired: bool
 export const ReceiveTab = () => {
   // ---- Form state ---------------------------------------------------------
   const [memo, setMemo] = useState('');
-  const [valueAtoms, setValueAtoms] = useState(0);
+  // The amount as typed; blank or zero asks for an open-amount invoice.
+  const [amountText, setAmountText] = useState('');
+  const amount = parseDcrAmount(amountText, { optional: true, allowZero: true });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -109,17 +110,17 @@ export const ReceiveTab = () => {
   }, [upsert]);
 
   // ---- Create-invoice submit ---------------------------------------------
-  const canCreate = !creating && valueAtoms >= 0;
+  const canCreate = !creating && !amount.error;
   const onCreate = async () => {
     if (!canCreate) return;
     setCreating(true);
     setCreateError(null);
     try {
-      const inv = await addLnInvoice({ memo: memo.trim(), valueAtoms });
+      const inv = await addLnInvoice({ memo: memo.trim(), valueAtoms: amount.atoms });
       setActive(inv);
       upsert(inv);
       setMemo('');
-      setValueAtoms(0);
+      setAmountText('');
     } catch (err: any) {
       setCreateError(apiError(err, 'Create failed'));
     } finally {
@@ -177,16 +178,10 @@ export const ReceiveTab = () => {
                 id="ln-rcv-amount"
                 type="text"
                 inputMode="decimal"
-                value={valueAtoms > 0 ? (valueAtoms / atomsPerDcr).toString() : ''}
+                value={amountText}
                 onChange={(e) => {
                   const v = e.target.value.trim();
-                  if (v === '') {
-                    setValueAtoms(0);
-                    return;
-                  }
-                  if (!/^\d*\.?\d{0,8}$/.test(v)) return;
-                  const dcr = parseFloat(v);
-                  if (Number.isFinite(dcr)) setValueAtoms(Math.round(dcr * atomsPerDcr));
+                  if (isDcrAmountInput(v)) setAmountText(v);
                 }}
                 placeholder="0.00000000 (leave blank for open amount)"
                 className="flex-1 px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary"

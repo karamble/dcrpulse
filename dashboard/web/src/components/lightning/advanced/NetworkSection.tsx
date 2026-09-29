@@ -8,9 +8,8 @@ import {
   queryLnRoutes,
 } from '../../../services/lightningApi';
 import { apiError } from '../../../utils/apiError';
-import { formatAtomsDcr } from '../../../utils/amounts';
+import { formatAtomsDcr, parseDcrAmount } from '../../../utils/amounts';
 
-const atomsPerDcr = 1e8;
 const trunc = (s: string, head = 10, tail = 6) =>
   s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
 const fmtDate = (sec: number) => (!sec ? '-' : toYMDTime(new Date(sec * 1000)));
@@ -131,12 +130,7 @@ const QueryRoutesPanel = () => {
   const [result, setResult] = useState<LightningQueryRoutesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const amtAtoms = (() => {
-    const v = amount.trim();
-    if (!/^\d*\.?\d{0,8}$/.test(v) || v === '') return 0;
-    const dcr = parseFloat(v);
-    return Number.isFinite(dcr) ? Math.round(dcr * atomsPerDcr) : 0;
-  })();
+  const amtAtoms = parseDcrAmount(amount).atoms;
   const canQuery = isPubkey(pubkey) && amtAtoms > 0 && !busy;
 
   const onQuery = async () => {

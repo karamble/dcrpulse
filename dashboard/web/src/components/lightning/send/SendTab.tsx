@@ -13,6 +13,7 @@ import { PaymentRow } from './PaymentRow';
 import { PaymentDetailsModal } from './PaymentDetailsModal';
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
 import { apiError } from '../../../utils/apiError';
+import { parseDcrAmount } from '../../../utils/amounts';
 
 type Filter = 'all' | 'confirmed' | 'pending' | 'failed';
 
@@ -24,7 +25,10 @@ export const SendTab = () => {
   const [decodeError, setDecodeError] = useState<string | null>(null);
   const [decoding, setDecoding] = useState(false);
   const [expired, setExpired] = useState(false);
-  const [sendValue, setSendValue] = useState(0);
+  // The amount for an invoice that carries none, kept as typed so partial
+  // input such as "0." survives; 0 atoms until it is a positive amount.
+  const [amountText, setAmountText] = useState('');
+  const sendValue = parseDcrAmount(amountText).atoms;
 
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -42,6 +46,8 @@ export const SendTab = () => {
     const trimmed = payReq.trim();
     setDecoded(null);
     setExpired(false);
+    // An amount belongs to the invoice it was typed for.
+    setAmountText('');
     if (!trimmed) {
       setDecodeError(null);
       setDecoding(false);
@@ -139,7 +145,7 @@ export const SendTab = () => {
     setPayReq('');
     setDecoded(null);
     setDecodeError(null);
-    setSendValue(0);
+    setAmountText('');
     setCurrentSnap(null);
     setSendError(null);
     setSending(false);
@@ -244,8 +250,8 @@ export const SendTab = () => {
         {decoded && (
           <DecodedPayRequest
             decoded={decoded.req}
-            sendValue={sendValue}
-            onSendValueChange={setSendValue}
+            amountText={amountText}
+            onAmountTextChange={setAmountText}
             onExpiredChange={setExpired}
           />
         )}

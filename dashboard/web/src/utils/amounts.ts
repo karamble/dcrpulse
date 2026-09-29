@@ -22,6 +22,13 @@ export const formatAtomsDcr = (atoms: number): string => `${formatAtoms(atoms)} 
 // formatDcr renders a value already in DCR, such as the wallet's balances.
 export const formatDcr = (dcr: number, decimals = 8): string => dcr.toFixed(decimals);
 
+// DCR_AMOUNT_RE is the shape of a typed amount: digits and up to eight decimals.
+const DCR_AMOUNT_RE = /^\d*\.?\d{0,8}$/;
+
+// isDcrAmountInput reports whether text is acceptable while typing an amount:
+// digits and up to eight decimals, so "0." and "." pass on the way to "0.5".
+export const isDcrAmountInput = (raw: string): boolean => DCR_AMOUNT_RE.test(raw.trim());
+
 export interface AmountRules {
   // optional accepts an empty field; allowZero accepts a zero amount.
   optional?: boolean;
@@ -38,7 +45,7 @@ export const validateDcrAmount = (
 ): string | null => {
   const trimmed = raw.trim();
   if (!trimmed) return optional ? null : 'Amount required';
-  if (!/^\d*\.?\d{0,8}$/.test(trimmed)) return 'Use a positive number with up to 8 decimals';
+  if (!DCR_AMOUNT_RE.test(trimmed)) return 'Use a positive number with up to 8 decimals';
   const n = Number(trimmed);
   if (!Number.isFinite(n) || (allowZero ? n < 0 : n <= 0)) {
     return allowZero ? 'Amount must be zero or positive' : 'Amount must be positive';

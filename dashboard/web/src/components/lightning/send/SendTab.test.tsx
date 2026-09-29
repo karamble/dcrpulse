@@ -63,6 +63,40 @@ describe('SendTab', () => {
     expect(req.feeLimitAtoms).toBe(api.lnFeeLimitAtoms(50_000));
   });
 
+  // FEMONEY-1: an amount typed key by key must keep every character.
+  it.each([
+    ['0.001', 100_000],
+    ['1.5', 150_000_000],
+    ['0.00000001', 1],
+  ])('pays %s DCR typed key by key into an invoice without an amount', async (typed, atoms) => {
+    const resolve = decodes();
+    render(<SendTab />);
+    fireEvent.change(field(), { target: { value: 'lnOpen' } });
+    await resolve('lnOpen', invoice('hashOpen', 0));
+    const amount = (await screen.findByPlaceholderText('0.00000000')) as HTMLInputElement;
+    for (const ch of typed) fireEvent.change(amount, { target: { value: amount.value + ch } });
+
+    expect(amount.value).toBe(typed);
+    fireEvent.click(send());
+    const [req] = vi.mocked(api.streamLnPayment).mock.calls[0];
+    expect(req.amt).toBe(atoms);
+  });
+
+  // LNDEX-5: an amount belongs to the invoice it was typed for.
+  it('starts a new invoice without an amount', async () => {
+    const resolve = decodes();
+    render(<SendTab />);
+    fireEvent.change(field(), { target: { value: 'lnA' } });
+    await resolve('lnA', invoice('hashA', 0));
+    fireEvent.change(await screen.findByPlaceholderText('0.00000000'), { target: { value: '5' } });
+    await waitFor(() => expect(send().disabled).toBe(false));
+
+    fireEvent.change(field(), { target: { value: 'lnB' } });
+    await resolve('lnB', invoice('hashB', 0));
+    expect(((await screen.findByPlaceholderText('0.00000000')) as HTMLInputElement).value).toBe('');
+    expect(send().disabled).toBe(true);
+  });
+
   it('ignores a decode that finishes after the invoice changed', async () => {
     const resolve = decodes();
     render(<SendTab />);
