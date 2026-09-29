@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toYMDTime } from '../../utils/date';
-import { isImageMime, parseEmbeds } from './embedParser';
+import { parseEmbeds, toEmbedSegment } from './embedParser';
 import { EmbedRenderer, ImageViewerOpenFn } from './embedRender';
 import { linkifyChatText } from './chatLinkify';
 import {
@@ -67,7 +67,6 @@ import {
   unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
-import { DownloadEmbed } from './DownloadEmbed';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { TipModal } from './TipModal';
 import { UserProfileView } from './BisonrelayUserProfile';
@@ -1483,13 +1482,17 @@ const CommentBody = ({
                   dangerouslySetInnerHTML={{ __html: seg.html }}
                 />
               ) : (
-                <PostSegmentEmbed
-                  key={i}
-                  seg={seg}
-                  uid={downloadUid}
-                  self={downloadSelf}
-                  onImage={setViewer}
-                />
+                seg.kind === 'embed' && (
+                  <EmbedRenderer
+                    key={i}
+                    embed={toEmbedSegment(seg)}
+                    wide
+                    openViewer={(src, name, mime) => setViewer({ src, name, mime })}
+                    downloadUid={downloadUid}
+                    downloadSelf={downloadSelf}
+                    quoteResolved={seg.quote ?? { available: false }}
+                  />
+                )
               ),
             )}
           </div>
@@ -1856,70 +1859,6 @@ const InlineReplyComposer = ({
   );
 };
 
-// PostSegmentEmbed renders a single non-text segment (quote / file-transfer /
-// inline data embed) from a server-rendered body. Shared by post bodies and
-// comments. onImage opens the caller's image viewer; uid is only needed for a
-// file-transfer download embed (the post author or commenter to fetch from).
-// self marks a download embed referencing our own share (rendered inertly).
-const PostSegmentEmbed = ({
-  seg,
-  uid,
-  self,
-  onImage,
-}: {
-  seg: BisonrelayPostBodySegment;
-  uid?: string;
-  self?: boolean;
-  onImage: (img: ViewerImage) => void;
-}) => {
-  if (seg.kind === 'embed' && seg.quote_from && seg.quote_post) {
-    return (
-      <QuoteEmbedCard
-        from={seg.quote_from}
-        post={seg.quote_post}
-        alt={seg.alt}
-        resolved={seg.quote ?? { available: false }}
-      />
-    );
-  }
-  if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
-    if (self || uid) {
-      return <DownloadEmbed seg={seg} uid={uid ?? ''} self={self} />;
-    }
-    return null;
-  }
-  if (seg.kind === 'embed' && seg.data_b64) {
-    const isImage = isImageMime(seg.mime);
-    if (isImage) {
-      const src = `data:${seg.mime};base64,${seg.data_b64}`;
-      return (
-        <button
-          type="button"
-          onClick={() => onImage({ src, name: seg.name || seg.filename || 'image', mime: seg.mime || '' })}
-          className="block p-0 border-0 bg-transparent cursor-zoom-in"
-        >
-          <img
-            src={src}
-            alt={seg.alt || seg.name || ''}
-            className="rounded-lg border border-border/40 max-w-full h-auto"
-          />
-        </button>
-      );
-    }
-    const href = `data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`;
-    return (
-      <a
-        href={href}
-        download={seg.name || 'attachment'}
-        className="inline-block max-w-full break-words text-xs text-primary underline hover:no-underline"
-      >
-        {seg.name || 'attachment'} ({seg.mime || 'binary'})
-      </a>
-    );
-  }
-  return null;
-};
-
 const PostBodySegments = ({ segments, uid }: { segments: BisonrelayPostBodySegment[]; uid: string }) => {
   const [viewer, setViewer] = useState<ViewerImage | null>(null);
   return (
@@ -1932,7 +1871,16 @@ const PostBodySegments = ({ segments, uid }: { segments: BisonrelayPostBodySegme
             dangerouslySetInnerHTML={{ __html: seg.html }}
           />
         ) : (
-          <PostSegmentEmbed key={i} seg={seg} uid={uid} onImage={setViewer} />
+          seg.kind === 'embed' && (
+            <EmbedRenderer
+              key={i}
+              embed={toEmbedSegment(seg)}
+              wide
+              openViewer={(src, name, mime) => setViewer({ src, name, mime })}
+              downloadUid={uid}
+              quoteResolved={seg.quote ?? { available: false }}
+            />
+          )
         ),
       )}
       {viewer && <ImageViewerModal image={viewer} onClose={() => setViewer(null)} />}

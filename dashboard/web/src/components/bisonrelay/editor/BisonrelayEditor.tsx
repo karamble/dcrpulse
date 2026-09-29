@@ -48,6 +48,8 @@ import { blobToDataB64 } from './imageCompress';
 import { formatAtomsTrimmed } from '../../../utils/amounts';
 import { formatBytes } from '../../../utils/bytes';
 import { apiError } from '../../../utils/apiError';
+import { toEmbedSegment } from '../embedParser';
+import { EmbedRenderer } from '../embedRender';
 
 // MAX_INLINE_BYTES is the per-attachment ceiling for inline embeds. Files
 // above this should use the "Link to shared content" flow instead (which
@@ -730,26 +732,7 @@ const PreviewPageSegments = ({ segments }: { segments: BisonrelayPageSegment[] }
         );
       }
       if (seg.kind === 'embed' && seg.data_b64) {
-        if (seg.mime && seg.mime.startsWith('image/')) {
-          return (
-            <img
-              key={i}
-              src={`data:${seg.mime};base64,${seg.data_b64}`}
-              alt={seg.alt || seg.name || ''}
-              className="rounded-lg border border-border/40 max-w-full h-auto"
-            />
-          );
-        }
-        return (
-          <a
-            key={i}
-            href={`data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`}
-            download={seg.name || 'attachment'}
-            className="inline-block text-xs text-primary underline hover:no-underline"
-          >
-            {seg.name || 'attachment'} ({seg.mime || 'binary'})
-          </a>
-        );
+        return <EmbedRenderer key={i} embed={toEmbedSegment(seg)} wide />;
       }
       if (seg.kind === 'embed' && seg.download) {
         const label = seg.filename || seg.name || 'file';
@@ -814,28 +797,7 @@ const PreviewSegments = ({ segments }: { segments: BisonrelayPostBodySegment[] }
         );
       }
       if (seg.kind === 'embed' && seg.data_b64) {
-        const isImage = !!seg.mime && seg.mime.startsWith('image/');
-        if (isImage) {
-          return (
-            <img
-              key={i}
-              src={`data:${seg.mime};base64,${seg.data_b64}`}
-              alt={seg.alt || seg.name || ''}
-              className="rounded-lg border border-border/40 max-w-full h-auto"
-            />
-          );
-        }
-        const href = `data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`;
-        return (
-          <a
-            key={i}
-            href={href}
-            download={seg.name || 'attachment'}
-            className="inline-block text-xs text-primary underline hover:no-underline"
-          >
-            {seg.name || 'attachment'} ({seg.mime || 'binary'})
-          </a>
-        );
+        return <EmbedRenderer key={i} embed={toEmbedSegment(seg)} wide />;
       }
       return null;
     })}

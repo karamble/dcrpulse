@@ -2,6 +2,8 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
+import type { BisonrelayPageSegment, BisonrelayPostBodySegment } from '../../services/bisonrelayApi';
+
 export interface EmbedSegment {
   kind: 'embed';
   raw: string;
@@ -231,3 +233,21 @@ export function isImageMime(mime?: string): boolean {
   return ALLOWED_IMAGE_MIMES.has((mime || '').toLowerCase().trim());
 }
 
+
+// toEmbedSegment reshapes an embed the server parsed out of a post, comment or
+// page into the chat's segment, so one renderer draws them all.
+export const toEmbedSegment = (seg: BisonrelayPostBodySegment | BisonrelayPageSegment): EmbedSegment => ({
+  kind: 'embed',
+  raw: '',
+  name: seg.name ?? '',
+  mime: seg.mime ?? '',
+  alt: seg.alt ?? '',
+  dataB64: seg.data_b64 ?? '',
+  size: seg.size ?? 0,
+  filename: seg.filename ?? '',
+  download: seg.download ?? '',
+  cost: seg.cost ?? 0,
+  localFilename: '',
+  quoteFrom: ('quote_from' in seg && seg.quote_from) || '',
+  quotePost: ('quote_post' in seg && seg.quote_post) || '',
+});

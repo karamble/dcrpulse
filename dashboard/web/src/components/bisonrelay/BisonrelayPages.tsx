@@ -5,7 +5,8 @@
 import { FormEvent, MouseEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toYMDTime } from '../../utils/date';
 import { useLatestRequest } from '../../hooks/useLatestRequest';
-import { isImageMime } from './embedParser';
+import { isImageMime, toEmbedSegment } from './embedParser';
+import { EmbedRenderer } from './embedRender';
 import {
   ArrowLeft,
   ArrowRight,
@@ -39,7 +40,6 @@ import { isArticlePath, isBlogManaged, rebuildBlogIndex } from '../../services/b
 import { BisonrelayStoreModePanel } from './BisonrelayStoreMode';
 import { BisonrelayStoreManager } from './BisonrelayStoreManager';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
-import { DownloadEmbed } from './DownloadEmbed';
 import { LnPayChip } from './LnPayChip';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { identityToHex } from '../../utils/identity';
@@ -858,38 +858,15 @@ const PageSegments = ({
     if (seg.kind === 'text' && seg.html) {
       return renderTextWithPayChips(rewritePageLinks(seg.html, currentUid), i);
     }
-    if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
-      return <DownloadEmbed key={i} seg={seg} uid={currentUid} />;
-    }
-    if (seg.kind === 'embed' && seg.data_b64) {
-      const isImage = isImageMime(seg.mime);
-      if (isImage) {
-        const src = `data:${seg.mime};base64,${seg.data_b64}`;
-        return (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setViewer({ src, name: seg.name || seg.filename || 'image', mime: seg.mime || '' })}
-            className="block p-0 border-0 bg-transparent cursor-zoom-in"
-          >
-            <img
-              src={src}
-              alt={seg.alt || seg.name || ''}
-              className="rounded-lg border border-border/40 max-w-full h-auto"
-            />
-          </button>
-        );
-      }
-      const href = `data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`;
+    if (seg.kind === 'embed') {
       return (
-        <a
+        <EmbedRenderer
           key={i}
-          href={href}
-          download={seg.name || 'attachment'}
-          className="inline-block max-w-full break-words text-xs text-primary underline hover:no-underline"
-        >
-          {seg.name || 'attachment'} ({seg.mime || 'binary'})
-        </a>
+          embed={toEmbedSegment(seg)}
+          wide
+          openViewer={(src, name, mime) => setViewer({ src, name, mime })}
+          downloadUid={currentUid}
+        />
       );
     }
     if (seg.kind === 'form' && seg.fields) {

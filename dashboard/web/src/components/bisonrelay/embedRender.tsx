@@ -6,7 +6,7 @@ import { Download, FileText } from 'lucide-react';
 import { DownloadEmbed } from './DownloadEmbed';
 import { EmbedSegment, embedFileUrl, isImageMime } from './embedParser';
 import { formatBytes } from '../../utils/bytes';
-import { QuoteEmbedCard } from './QuoteEmbedCard';
+import { QuoteEmbedCard, type ResolvedQuote } from './QuoteEmbedCard';
 import { AudioNoteEmbed } from './audionote/AudioNoteEmbed';
 
 // ImageViewerOpenFn opens the shared image lightbox. Callers supply their own
@@ -28,6 +28,8 @@ export const EmbedRenderer = ({
   openViewer,
   downloadUid,
   downloadSelf,
+  wide,
+  quoteResolved,
 }: {
   embed: EmbedSegment;
   openViewer?: ImageViewerOpenFn | null;
@@ -36,9 +38,13 @@ export const EmbedRenderer = ({
   // as referencing our own share (rendered inertly, nothing to fetch).
   downloadUid?: string;
   downloadSelf?: boolean;
+  // wide draws images full width (posts, comments, pages) instead of the
+  // chat's bounded box; quoteResolved is a quote the server already resolved.
+  wide?: boolean;
+  quoteResolved?: ResolvedQuote | null;
 }) => {
   if (embed.mime === 'quote' && embed.quoteFrom && embed.quotePost) {
-    return <QuoteEmbedCard from={embed.quoteFrom} post={embed.quotePost} alt={embed.alt} />;
+    return <QuoteEmbedCard from={embed.quoteFrom} post={embed.quotePost} alt={embed.alt} resolved={quoteResolved} />;
   }
   if (embed.download && !embed.dataB64) {
     // Without a host uid there is nobody to fetch from. In a group that means
@@ -90,7 +96,11 @@ export const EmbedRenderer = ({
           src={fileUrl}
           alt={embed.alt || displayName}
           loading="lazy"
-          className="max-h-72 max-w-full rounded border border-border/40 object-contain bg-background/40"
+          className={
+            wide
+              ? 'rounded-lg border border-border/40 max-w-full h-auto'
+              : 'max-h-72 max-w-full rounded border border-border/40 object-contain bg-background/40'
+          }
         />
       </button>
     );
