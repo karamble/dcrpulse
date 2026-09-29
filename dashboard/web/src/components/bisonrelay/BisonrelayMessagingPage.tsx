@@ -4,6 +4,7 @@
 
 import { createContext, Fragment, MutableRefObject, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toYMD, toYMDTime } from '../../utils/date';
+import { useLatestRequest } from '../../hooks/useLatestRequest';
 import {
   AlertCircle,
   Check,
@@ -287,9 +288,13 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     refreshGCs();
   }, [refreshContacts, refreshGCs]);
 
+  // Only the history of the thread opened last may fill the message list.
+  const threadReq = useLatestRequest();
+
   const loadMessages = useCallback(async (contact: BisonrelayContact) => {
     const uid = contact.id?.identity;
     if (!uid) return;
+    const current = threadReq.start();
     setMessagesLoading(true);
     setMessagesErr(null);
     try {
@@ -298,32 +303,37 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       // every load); they live in Files > Downloads, and a transient line is
       // shown live via the 'file-download-completed' handler below.
       const resp = await getBisonrelayMessages(uid, 0, 100);
+      if (!current()) return;
       const pmEntries = resp.entries ?? [];
       setMessages([...pmEntries].sort((a, b) => a.timestamp - b.timestamp));
     } catch (err: any) {
-      setMessagesErr(err?.message || 'Could not load messages');
+      if (current()) setMessagesErr(err?.message || 'Could not load messages');
     } finally {
-      setMessagesLoading(false);
+      if (current()) setMessagesLoading(false);
     }
-  }, []);
+  }, [threadReq]);
 
   const loadGCMessages = useCallback(async (gc: BisonrelayGC) => {
+    const current = threadReq.start();
     setMessagesLoading(true);
     setMessagesErr(null);
     try {
       const resp = await getBisonrelayGCHistory(gc.id, 0, 100);
+      if (!current()) return;
       const entries = resp.entries ?? [];
       const sorted = [...entries].sort((a, b) => a.timestamp - b.timestamp);
       setMessages(sorted);
     } catch (err: any) {
-      setMessagesErr(err?.message || 'Could not load group history');
+      if (current()) setMessagesErr(err?.message || 'Could not load group history');
     } finally {
-      setMessagesLoading(false);
+      if (current()) setMessagesLoading(false);
     }
-  }, []);
+  }, [threadReq]);
 
   useEffect(() => {
     if (!selected) {
+      threadReq.cancel();
+      setMessagesLoading(false);
       setMessages([]);
       setActiveUid('');
       setActiveGCID('');
@@ -349,6 +359,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     setActiveGCID,
     clearUnread,
     clearGCUnread,
+    threadReq,
   ]);
 
   // selectedRef tracks the currently-open *contact* (kept narrow because

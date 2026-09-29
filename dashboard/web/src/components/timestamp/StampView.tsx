@@ -6,6 +6,7 @@ import { useCallback, useRef, useState } from 'react';
 import { AlertCircle, FileUp, RotateCcw, ShieldCheck, UploadCloud } from 'lucide-react';
 import { CopyButton } from '../explorer/CopyButton';
 import { hashFile } from '../../utils/hashFile';
+import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { createTimestamp, type TimestampRecord } from '../../services/timestampApi';
 import { StatusBadge } from './StatusBadge';
 import { StageList, type Stage, type StageState } from './StageList';
@@ -32,8 +33,12 @@ export const StampView = ({ onStamped }: Props) => {
   const [duplicate, setDuplicate] = useState<TimestampRecord | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Only the file picked last may set the digest: a replaced file's hash that
+  // finishes later is dropped.
+  const hashReq = useLatestRequest();
 
   const reset = () => {
+    hashReq.cancel();
     setFile(null);
     setDigest('');
     setProgress(0);
@@ -48,17 +53,22 @@ export const StampView = ({ onStamped }: Props) => {
 
   const onFile = useCallback(async (f: File) => {
     reset();
+    const current = hashReq.start();
     setFile(f);
     setPhase('hashing');
     try {
-      const d = await hashFile(f, setProgress);
+      const d = await hashFile(f, (p) => {
+        if (current()) setProgress(p);
+      });
+      if (!current()) return;
       setDigest(d);
       setPhase('ready');
     } catch (err: any) {
+      if (!current()) return;
       setError(err?.message || 'hashing failed');
       setPhase('error');
     }
-  }, []);
+  }, [hashReq]);
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];

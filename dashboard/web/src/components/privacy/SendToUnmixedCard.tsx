@@ -9,6 +9,7 @@ import {
 } from '../../services/api';
 import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
+import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { formatAtoms, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
 import { apiError } from '../../utils/apiError';
 
@@ -37,6 +38,7 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
   const [topLevelError, setTopLevelError] = useState<string | null>(null);
 
   const constructTimerRef = useRef<number | null>(null);
+  const constructReq = useLatestRequest();
 
   useEffect(() => {
     let cancelled = false;
@@ -99,8 +101,11 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
   }, [sourceAccount, destAddress, amountError, amountAtoms, sendAll]);
 
   useEffect(() => {
+    // Any change to the form supersedes a build still in flight.
+    const current = constructReq.start();
     if (constructTimerRef.current) window.clearTimeout(constructTimerRef.current);
     setConstructError(null);
+    setConstructing(false);
     if (!formReady || sourceAccount === null || destAddress === null) {
       setConstruct(null);
       return;
@@ -114,18 +119,23 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
           amountAtoms,
           sendAll,
         });
-        setConstruct(resp);
+        if (current()) setConstruct(resp);
       } catch (err: any) {
+        if (!current()) return;
         setConstructError(apiError(err, 'Failed to construct transaction'));
         setConstruct(null);
       } finally {
-        setConstructing(false);
+        if (current()) setConstructing(false);
       }
     }, CONSTRUCT_DEBOUNCE_MS);
     return () => {
       if (constructTimerRef.current) window.clearTimeout(constructTimerRef.current);
     };
-  }, [formReady, sourceAccount, destAddress, amountAtoms, sendAll]);
+  }, [formReady, sourceAccount, destAddress, amountAtoms, sendAll, constructReq]);
+
+  // The dialog and the Send guard use the built transaction's amount (outputs
+  // minus change), so they always match what gets signed.
+  const builtAmountAtoms = construct ? construct.outputsTotalAtoms - construct.changeAtoms : null;
 
   const handleSuccess = (txHash: string) => {
     // Cached address has just been consumed on-chain - drop it so the next
@@ -181,7 +191,10 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
             <label className="block text-xs text-muted-foreground mb-1">From account</label>
             <select
               value={sourceAccount ?? ''}
-              onChange={(e) => setSourceAccount(Number(e.target.value))}
+              onChange={(e) => {
+                setSourceAccount(Number(e.target.value));
+                setConstruct(null);
+              }}
               className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary"
             >
               {accounts.map((a) => (
@@ -199,7 +212,10 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
                 <input
                   type="checkbox"
                   checked={sendAll}
-                  onChange={(e) => setSendAll(e.target.checked)}
+                  onChange={(e) => {
+                    setSendAll(e.target.checked);
+                    setConstruct(null);
+                  }}
                   className="accent-primary"
                 />
                 Send all
@@ -268,7 +284,12 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
             setTopLevelError(null);
             setModalOpen(true);
           }}
-          disabled={!construct || constructing || sourceAccount === null}
+          disabled={
+            !construct ||
+            constructing ||
+            sourceAccount === null ||
+            (!sendAll && builtAmountAtoms !== null && amountAtoms !== builtAmountAtoms)
+          }
           className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Send className="h-4 w-4" />
@@ -281,7 +302,7 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
           isOpen={modalOpen}
           sourceAccount={sourceAccount}
           recipient={destAddress}
-          amountAtoms={sendAll ? construct.outputsTotalAtoms : amountAtoms}
+          amountAtoms={builtAmountAtoms ?? 0}
           feeAtoms={construct.feeAtoms}
           unsignedTxHex={construct.unsignedTxHex}
           onClose={() => setModalOpen(false)}

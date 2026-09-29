@@ -16,6 +16,7 @@ import {
 import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { formatAtoms, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
 import { apiError } from '../../utils/apiError';
 
@@ -65,6 +66,7 @@ export const SendTab = () => {
 
   const addrTimerRef = useRef<number | null>(null);
   const constructTimerRef = useRef<number | null>(null);
+  const constructReq = useLatestRequest();
 
   // loadAccounts refreshes the account list + balances, preserving the user's
   // current source-account selection (only defaulting to the first account when
@@ -206,8 +208,11 @@ export const SendTab = () => {
   }, [sourceAccount, addrCheck, amountError, amountAtoms, sendAll]);
 
   useEffect(() => {
+    // Any change to the form supersedes a build still in flight.
+    const current = constructReq.start();
     if (constructTimerRef.current) window.clearTimeout(constructTimerRef.current);
     setConstructError(null);
+    setConstructing(false);
     if (!formReady || sourceAccount === null) {
       setConstruct(null);
       return;
@@ -221,19 +226,20 @@ export const SendTab = () => {
           amountAtoms,
           sendAll,
         });
-        setConstruct(resp);
+        if (current()) setConstruct(resp);
       } catch (err: any) {
+        if (!current()) return;
         const msg = apiError(err, 'Failed to construct transaction');
         setConstructError(msg);
         setConstruct(null);
       } finally {
-        setConstructing(false);
+        if (current()) setConstructing(false);
       }
     }, CONSTRUCT_DEBOUNCE_MS);
     return () => {
       if (constructTimerRef.current) window.clearTimeout(constructTimerRef.current);
     };
-  }, [formReady, sourceAccount, recipient, amountAtoms, sendAll]);
+  }, [formReady, sourceAccount, recipient, amountAtoms, sendAll, constructReq]);
 
   // The confirmation dialog derives its amount from the constructed tx (outputs
   // minus change) so it always matches what gets signed, never the live input.
@@ -568,6 +574,7 @@ export const SendTab = () => {
             !construct ||
             constructing ||
             sourceAccount === null ||
+            addrCheck.state !== 'valid' ||
             spendBlocked ||
             (!sendAll && builtAmountAtoms !== null && amountAtoms !== builtAmountAtoms)
           }

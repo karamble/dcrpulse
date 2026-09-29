@@ -4,6 +4,7 @@
 
 import { FormEvent, MouseEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toYMDTime } from '../../utils/date';
+import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { isImageMime } from './embedParser';
 import {
   ArrowLeft,
@@ -562,7 +563,12 @@ const PageView = ({
 
   const peerContact = contacts.find((c) => c.id?.identity === current?.uid);
 
+  // A page reply is shown only while its page is still the one being visited:
+  // navigating starts a new request, and a slow host's late reply is dropped.
+  const pageReq = useLatestRequest();
+
   const load = useCallback(async (target: PageTarget): Promise<PageTarget> => {
+    const current = pageReq.start();
     setLoading(true);
     setErr(null);
     try {
@@ -572,6 +578,7 @@ const PageView = ({
         session_id: target.sessionId || undefined,
         parent_page: target.parentPage || undefined,
       });
+      if (!current()) return target;
       setPage(res);
       setSegments(res.segments ?? []);
       if (res.status !== 200) {
@@ -579,14 +586,15 @@ const PageView = ({
       }
       return { ...target, sessionId: res.session_id, parentPage: res.page_id };
     } catch (e: any) {
+      if (!current()) return target;
       setErr(apiError(e, 'Fetch failed'));
       setPage(null);
       setSegments([]);
       return target;
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
     }
-  }, []);
+  }, [pageReq]);
 
   // (Re)load whenever the cursor moves to a target whose page isn't shown yet.
   useEffect(() => {
@@ -649,6 +657,8 @@ const PageView = ({
       asyncTargetId: string,
     ): Promise<string | null> => {
       const cur = history[cursor];
+      // Bound to the page shown now, without cancelling other forms on it.
+      const onPage = pageReq.current();
       try {
         const res = await fetchBisonrelayPage({
           uid: cur.uid,
@@ -659,6 +669,7 @@ const PageView = ({
           field_types: fieldTypes,
           async_target_id: asyncTargetId || undefined,
         });
+        if (!onPage()) return null;
         // A non-200 reply (e.g. a static host can't process the action, or a
         // dynamic host rejected it) carries no usable content; report it back
         // to the form so the feedback appears where the user clicked, instead
@@ -677,7 +688,7 @@ const PageView = ({
         return apiError(e, 'Form submit failed');
       }
     },
-    [history, cursor, applyAsync],
+    [history, cursor, applyAsync, pageReq],
   );
 
   const title = current ? `${shortUid(current.uid, ownId)} / ${current.path.join('/')}` : '';

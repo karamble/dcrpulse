@@ -32,6 +32,7 @@ import {
   getAccounts,
 } from '../../services/api';
 import { AddressGroups } from '../AddressGroups';
+import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { formatAtoms, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
 import { apiError } from '../../utils/apiError';
 
@@ -88,6 +89,7 @@ const ExportUnsignedPanel = () => {
   const [building, setBuilding] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [construct, setConstruct] = useState<SignRequestExport | null>(null);
+  const buildReq = useLatestRequest();
 
   useEffect(() => {
     getAccounts()
@@ -105,9 +107,11 @@ const ExportUnsignedPanel = () => {
       });
   }, []);
 
-  // Any input change invalidates a previously built transaction so a stale
-  // unsigned tx is never downloaded.
+  // Any input change invalidates a previously built transaction, including one
+  // still being built, so a stale unsigned tx is never downloaded.
   const invalidate = () => {
+    buildReq.cancel();
+    setBuilding(false);
     setConstruct(null);
     setBuildError(null);
   };
@@ -143,6 +147,7 @@ const ExportUnsignedPanel = () => {
 
   const onBuild = async () => {
     if (sourceAccount === null) return;
+    const current = buildReq.start();
     setBuilding(true);
     setBuildError(null);
     setConstruct(null);
@@ -158,11 +163,11 @@ const ExportUnsignedPanel = () => {
               outputs: outputs.map((o) => ({ address: o.recipient.trim(), amountAtoms: amountAtomsOf(o.amount) })),
             },
       );
-      setConstruct(resp);
+      if (current()) setConstruct(resp);
     } catch (err: any) {
-      setBuildError(apiError(err, 'Failed to build transaction'));
+      if (current()) setBuildError(apiError(err, 'Failed to build transaction'));
     } finally {
-      setBuilding(false);
+      if (current()) setBuilding(false);
     }
   };
 
