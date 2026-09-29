@@ -142,9 +142,8 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
         }
       }
       setRandomWordIndices(indices.sort((a, b) => a - b));
-    } catch (err) {
+    } catch {
       setError('Failed to generate seed. Please try again.');
-      console.error(err);
     }
   };
 
@@ -228,6 +227,13 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
 
       if (response.success) {
         setStep('success');
+        setSeedMnemonic('');
+        setSeedHex('');
+        setPublicPassphrase('');
+        setPrivatePassphrase('');
+        setConfirmPublicPass('');
+        setConfirmPrivatePass('');
+        setConfirmWords({});
         // Any further accounts selected from the device file import now,
         // spaced for the importxpub rate limit (one call per 30s); each
         // import kicks an async rescan dcrwallet serializes internally.
@@ -265,7 +271,6 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
     } catch (err: any) {
       setError(apiError(err, 'Failed to create wallet. Please try again.'));
       setStep(failureStep);
-      console.error(err);
     }
   };
 
