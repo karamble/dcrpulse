@@ -6,6 +6,7 @@ package services
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -18,9 +19,11 @@ import (
 	"dcrpulse/internal/types"
 	"dcrpulse/internal/utils"
 
+	"decred.org/dcrwallet/v5/wallet"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrutil/v4"
 	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
+	"github.com/decred/dcrd/wire"
 )
 
 // chainSnapshot fetches each value shared by several dashboard sections once
@@ -576,24 +579,19 @@ func analyzeMempoolTransactions(ctx context.Context) (tickets, votes, revocation
 	return tickets, votes, revocations, regular - coinjoins, coinjoins
 }
 
-// looksLikeCoinJoin reports whether a transaction looks like a CoinJoin: three
-// or more inputs, and three or more outputs sharing one value.
-func looksLikeCoinJoin(numInputs int, values []float64) bool {
-	if numInputs < 3 || len(values) < 3 {
+// isCoinJoinHex reports whether a serialized transaction may be a CSPP mix,
+// by dcrwallet's own test.
+func isCoinJoinHex(txHex string) bool {
+	b, err := hex.DecodeString(txHex)
+	if err != nil {
 		return false
 	}
-	buckets := make(map[dcrutil.Amount]int, len(values))
-	for _, v := range values {
-		atoms, err := dcrutil.NewAmount(v)
-		if err != nil {
-			continue
-		}
-		buckets[atoms]++
-		if buckets[atoms] >= 3 {
-			return true
-		}
+	var mtx wire.MsgTx
+	if err := mtx.FromBytes(b); err != nil {
+		return false
 	}
-	return false
+	isMix, _, _ := wallet.PossibleCoinJoin(&mtx)
+	return isMix
 }
 
 // isCoinJoinMempoolTx reports whether a mempool transaction looks like a
@@ -603,9 +601,5 @@ func isCoinJoinMempoolTx(ctx context.Context, txHash *chainhash.Hash) bool {
 	if err != nil {
 		return false
 	}
-	values := make([]float64, len(tx.Vout))
-	for i, vout := range tx.Vout {
-		values[i] = vout.Value
-	}
-	return looksLikeCoinJoin(len(tx.Vin), values)
+	return isCoinJoinHex(tx.Hex)
 }

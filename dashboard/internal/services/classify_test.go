@@ -56,7 +56,7 @@ func TestCategorizeTransactionInputClass(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := categorizeTransactionTyped(test.vin, vout); got != test.want {
+			if got := categorizeTransactionTyped(test.vin, vout, ""); got != test.want {
 				t.Fatalf("categorizeTransactionTyped = %q, want %q", got, test.want)
 			}
 		})
@@ -71,7 +71,16 @@ func TestCategorizeTransactionFirstOutputWins(t *testing.T) {
 		{Value: 1.0, ScriptPubKey: chainjson.ScriptPubKeyResult{Type: "stakesubmission"}},
 		{Value: 1.0, ScriptPubKey: chainjson.ScriptPubKeyResult{Type: "treasurygen"}},
 	}
-	if got := categorizeTransactionTyped(vin, vout); got != "ticket" {
+	if got := categorizeTransactionTyped(vin, vout, ""); got != "ticket" {
 		t.Fatalf("categorizeTransactionTyped = %q, want ticket", got)
+	}
+}
+
+// The CoinJoin label comes from the serialized transaction the caller passes.
+func TestCategorizeTransactionCoinJoin(t *testing.T) {
+	vin := []chainjson.Vin{{Txid: "ab"}}
+	vout := []chainjson.Vout{{Value: 1.0, ScriptPubKey: chainjson.ScriptPubKeyResult{Type: "pubkeyhash"}}}
+	if got := categorizeTransactionTyped(vin, vout, mixTestHex(t)); got != "coinjoin" {
+		t.Fatalf("categorizeTransactionTyped = %q, want coinjoin", got)
 	}
 }

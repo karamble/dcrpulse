@@ -30,8 +30,8 @@ func listTestTx(t *testing.T, seed byte, numIn int, valueIn int64, outAtoms []in
 		}
 		mtx.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, vi, nil))
 	}
-	for _, v := range outAtoms {
-		mtx.AddTxOut(wire.NewTxOut(v, []byte{0x76}))
+	for i, v := range outAtoms {
+		mtx.AddTxOut(wire.NewTxOut(v, []byte{0x76, byte(i)}))
 	}
 	var buf bytes.Buffer
 	if err := mtx.Serialize(&buf); err != nil {
@@ -63,7 +63,7 @@ func TestDeriveListTxFacts(t *testing.T) {
 		t.Fatalf("mix tx not derived")
 	}
 	if !f.mixed {
-		t.Fatalf("three equal outputs with three inputs must read as CoinJoin")
+		t.Fatalf("a mix shape must read as CoinJoin")
 	}
 	if f.netDCR != -1.0 {
 		t.Fatalf("net = %v, want -1.0 (credits minus debits)", f.netDCR)
@@ -92,6 +92,13 @@ func TestDeriveListTxFacts(t *testing.T) {
 	_, f, ok = deriveListTxFacts(&pb.TransactionDetails{Hash: plainHash, Transaction: plainRaw})
 	if !ok || f.mixed || f.hasReward {
 		t.Fatalf("plain send misclassified: %+v ok=%v", f, ok)
+	}
+
+	// Paying three equal amounts among others is a batch payment, not a mix.
+	batchRaw, batchHash := listTestTx(t, 4, 3, 0, []int64{5e8, 5e8, 5e8, 1e8, 2e8, 3e8, 4e8, 6e8, 7e8, 8e8, 9e8, 1234})
+	_, f, ok = deriveListTxFacts(&pb.TransactionDetails{Hash: batchHash, Transaction: batchRaw})
+	if !ok || f.mixed {
+		t.Fatalf("batch payment read as CoinJoin: %+v ok=%v", f, ok)
 	}
 
 	if _, _, ok := deriveListTxFacts(&pb.TransactionDetails{Hash: plainHash, Transaction: []byte{0x01}}); ok {

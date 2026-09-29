@@ -25,6 +25,7 @@ import (
 	"dcrpulse/internal/utils"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
+	"decred.org/dcrwallet/v5/wallet"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/decred/dcrd/wire"
@@ -1536,10 +1537,7 @@ func deriveListTxFacts(t *pb.TransactionDetails) (string, listTxFacts, bool) {
 	} else {
 		txid = hex.EncodeToString(t.GetHash())
 	}
-	values := make([]float64, len(mtx.TxOut))
-	for i, out := range mtx.TxOut {
-		values[i] = dcrutil.Amount(out.Value).ToCoin()
-	}
+	mixed, _, _ := wallet.PossibleCoinJoin(&mtx)
 	var net int64
 	for _, c := range t.GetCredits() {
 		net += c.GetAmount()
@@ -1548,7 +1546,7 @@ func deriveListTxFacts(t *pb.TransactionDetails) (string, listTxFacts, bool) {
 		net -= d.GetPreviousAmount()
 	}
 	f := listTxFacts{
-		mixed:  looksLikeCoinJoin(len(mtx.TxIn), values),
+		mixed:  mixed,
 		netDCR: dcrutil.Amount(net).ToCoin(),
 	}
 	if t.GetTransactionType() == pb.TransactionDetails_VOTE && len(mtx.TxIn) > 0 {

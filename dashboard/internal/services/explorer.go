@@ -234,7 +234,7 @@ func transactionDetailFromVerbose(ctx context.Context, rawTx *chainjson.TxRawRes
 	fee := totalIn - totalValue
 
 	// Categorize transaction type
-	txType := categorizeTransactionTyped(rawTx.Vin, rawTx.Vout)
+	txType := categorizeTransactionTyped(rawTx.Vin, rawTx.Vout, rawTx.Hex)
 
 	// dcrd's verbose reply carries no size field; the serialized hex is the size.
 	size := len(rawTx.Hex) / 2
@@ -514,7 +514,7 @@ func txSummaryFromRaw(tx chainjson.TxRawResult, blockHeight int64, blockHash str
 
 	return &types.TransactionSummary{
 		TxID:          tx.Txid,
-		Type:          categorizeTransactionTyped(tx.Vin, tx.Vout),
+		Type:          categorizeTransactionTyped(tx.Vin, tx.Vout, tx.Hex),
 		BlockHeight:   blockHeight,
 		BlockHash:     blockHash,
 		Timestamp:     time.Unix(blockTime, 0),
@@ -545,7 +545,7 @@ func classifyScriptType(scriptType string) string {
 }
 
 // categorizeTransactionTyped works with the daemon's own wire types.
-func categorizeTransactionTyped(vin []chainjson.Vin, vout []chainjson.Vout) string {
+func categorizeTransactionTyped(vin []chainjson.Vin, vout []chainjson.Vout, txHex string) string {
 	// Check for stakebase (vote) or coinbase
 	if len(vin) > 0 {
 		if vin[0].Stakebase != "" {
@@ -562,11 +562,7 @@ func categorizeTransactionTyped(vin []chainjson.Vin, vout []chainjson.Vout) stri
 		}
 	}
 
-	values := make([]float64, len(vout))
-	for i, v := range vout {
-		values[i] = v.Value
-	}
-	if looksLikeCoinJoin(len(vin), values) {
+	if isCoinJoinHex(txHex) {
 		return "coinjoin"
 	}
 
