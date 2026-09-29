@@ -66,7 +66,7 @@ import { EmbedRenderer, ImageViewerOpenFn } from './embedRender';
 import { ChatMarkdown } from './chatMarkdown';
 import { splitLnInvoices } from './lnpayParse';
 import { LnPayChip } from './LnPayChip';
-import { QuoteBlock, splitLeadingQuote } from './quoteBlock';
+import { QuoteBlock, quoteBlock, splitLeadingQuote } from './quoteBlock';
 import {
   ImageAttachModal,
   ImageAttachResult,
@@ -1935,15 +1935,6 @@ async function fetchEmbedFile(url: string, mime: string): Promise<File | null> {
   } catch {
     return null;
   }
-}
-
-// quoteBlock renders flattened message text as the markdown quote block other
-// Bison Relay clients send for replies: "> **nick:** first line" with "> "
-// continuation lines, then a blank line for the typed reply.
-function quoteBlock(flat: string, from: string): string {
-  const lines = (flat || '[attachment]').split('\n').map((l) => l.trimEnd());
-  const quoted = lines.map((l, i) => (i === 0 ? `> **${from}:** ${l}` : `> ${l}`)).join('\n');
-  return `${quoted}\n\n`;
 }
 
 interface ChatComposerProps {

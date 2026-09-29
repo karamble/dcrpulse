@@ -22,6 +22,23 @@ export interface LeadingQuote {
 
 const QUOTE_NICK_RE = /^\*\*(.+?):\*\* ?/;
 
+// escapeNick applies Bison Relay's strescape.Nick: a peer picks its own nick,
+// so only printable characters are kept, minus the '<' '>' log delimiters.
+export const escapeNick = (s: string): string =>
+  Array.from(s)
+    .filter((c) => c !== '<' && c !== '>' && c !== '\uFFFD' && /^[\p{L}\p{M}\p{N}\p{P}\p{S} ]$/u.test(c))
+    .join('');
+
+// quoteBlock renders flattened message text as the markdown quote block other
+// Bison Relay clients send for replies: "> **nick:** first line" with "> "
+// continuation lines, then a blank line for the typed reply.
+export function quoteBlock(flat: string, from: string): string {
+  const lines = (flat || '[attachment]').split('\n').map((l) => l.trimEnd());
+  const nick = escapeNick(from);
+  const quoted = lines.map((l, i) => (i === 0 ? `> **${nick}:** ${l}` : `> ${l}`)).join('\n');
+  return `${quoted}\n\n`;
+}
+
 // splitLeadingQuote detects a quote block at the very start of a message.
 // It works on raw lines before embed parsing because a quoted image tag
 // lives inside a "> " line. Messages not starting with a quote line return

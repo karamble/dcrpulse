@@ -165,7 +165,7 @@ export const BisonrelayPage = () => {
         <BrNotifications />
       </nav>
 
-      {activeTab === 'chat' && <BisonrelayMessagingPage ownNick={ready.nick ?? 'unknown'} />}
+      {activeTab === 'chat' && <BisonrelayMessagingPage ownNick={ready.nick ?? ''} />}
       {activeTab === 'feed' && <BisonrelayFeed />}
       {activeTab === 'files' && <BisonrelayFiles />}
       {activeTab === 'stats' && <BisonrelayStats />}
