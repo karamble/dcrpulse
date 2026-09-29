@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"sort"
 	"strconv"
@@ -976,13 +977,20 @@ func bumpCachedVoteTally(ctx context.Context, token, voteOption string, delta in
 			if e.list[i].Token != token {
 				continue
 			}
-			if e.list[i].VoteCounts == nil {
-				e.list[i].VoteCounts = map[string]int64{}
+			// Readers encode the published slice and its maps without the
+			// lock, so the bump goes into copies that replace them.
+			list := append([]types.Proposal(nil), e.list...)
+			counts := maps.Clone(list[i].VoteCounts)
+			if counts == nil {
+				counts = map[string]int64{}
 			}
-			e.list[i].VoteCounts[voteOption] += d
-			e.list[i].TotalVotes += d
-			e.list[i].CurrentChoice = voteOption
-			e.list[i].VotedTicketCount += delta
+			counts[voteOption] += d
+			list[i].VoteCounts = counts
+			list[i].TotalVotes += d
+			list[i].CurrentChoice = voteOption
+			list[i].VotedTicketCount += delta
+			e.list = list
+			piCachedLists["voting"] = e
 			break
 		}
 	}
