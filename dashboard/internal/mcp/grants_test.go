@@ -353,64 +353,45 @@ func TestGrantActionGated(t *testing.T) {
 	}
 }
 
-func TestGrantVSPFees(t *testing.T) {
+func TestGrantVSPRun(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
+	// Caps far below any VSP fee: the run must still go through, because the
+	// fees are an operating cost and never meet the caps.
 	full := GrantSpec{
 		Accounts:    []uint32{0, 1},
-		PerTxAtoms:  5 * dcrAtoms,
-		DailyAtoms:  5 * dcrAtoms,
+		PerTxAtoms:  1,
+		DailyAtoms:  1,
 		Passphrase:  []byte("secret"),
 		WriteScopes: []string{scopeStaking},
 	}
 
 	// The scope alone is not enough: the fee comes out of an account.
-	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("secret"), WriteScopes: []string{scopeStaking}}, now)
-	if _, _, err := s.authorizeVSPFees(context.Background(), "a", 0, 0, dcrAtoms, "", now); err != errAccountNotGranted {
+	s.set("a", GrantSpec{PerTxAtoms: 1, DailyAtoms: 1, Passphrase: []byte("secret"), WriteScopes: []string{scopeStaking}}, now)
+	if _, err := s.authorizeVSPRun("a", 0, 0, now); err != errAccountNotGranted {
 		t.Fatalf("ungranted fee account: want errAccountNotGranted, got %v", err)
 	}
 
 	// An account the grant covers is not enough if the change account escapes it.
 	s.set("a", full, now)
-	if _, _, err := s.authorizeVSPFees(context.Background(), "a", 0, 7, dcrAtoms, "", now); err != errAccountNotGranted {
+	if _, err := s.authorizeVSPRun("a", 0, 7, now); err != errAccountNotGranted {
 		t.Fatalf("ungranted change account: want errAccountNotGranted, got %v", err)
 	}
 
 	// Without the staking scope the accounts do not help.
-	s.set("a", GrantSpec{Accounts: []uint32{0, 1}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("secret")}, now)
-	if _, _, err := s.authorizeVSPFees(context.Background(), "a", 0, 1, dcrAtoms, "", now); err == nil {
-		t.Fatal("VSP fees without scope: want denial, got nil")
+	s.set("a", GrantSpec{Accounts: []uint32{0, 1}, PerTxAtoms: 1, DailyAtoms: 1, Passphrase: []byte("secret")}, now)
+	if _, err := s.authorizeVSPRun("a", 0, 1, now); err == nil {
+		t.Fatal("VSP run without scope: want denial, got nil")
 	}
 
-	// A ceiling over the per-transaction cap is refused and reserves nothing.
+	// Granted: the passphrase comes back and nothing is counted against the caps.
 	s.set("a", full, now)
-	if _, _, err := s.authorizeVSPFees(context.Background(), "a", 0, 1, 6*dcrAtoms, "", now); err != errPerTxExceeded {
-		t.Fatalf("ceiling over per-tx: want errPerTxExceeded, got %v", err)
+	pass, err := s.authorizeVSPRun("a", 0, 1, now)
+	if err != nil || string(pass) != "secret" {
+		t.Fatalf("VSP run: want passphrase copy, got %q err=%v", pass, err)
 	}
 	if got := s.byAgent["a"].spentAtoms; got != 0 {
-		t.Fatalf("refused ceiling reserved %d atoms, want 0", got)
-	}
-
-	// Within the caps: the passphrase comes back and the ceiling is reserved.
-	pass, _, err := s.authorizeVSPFees(context.Background(), "a", 0, 1, 4*dcrAtoms, "", now)
-	if err != nil || string(pass) != "secret" {
-		t.Fatalf("VSP fees within caps: want passphrase copy, got %q err=%v", pass, err)
-	}
-	if got := s.byAgent["a"].spentAtoms; got != 4*dcrAtoms {
-		t.Fatalf("reserved %d atoms, want %d", got, 4*dcrAtoms)
-	}
-
-	// A run with nothing to pay for is refused rather than authorized: the callee
-	// settles whatever the VSP still asks for, so "no local candidates" is not
-	// "no payment", and a zero ceiling would hand over the passphrase with no cap
-	// behind it. A fresh store because re-granting carries the spend window over.
-	s2 := newGrantStore()
-	s2.set("a", full, now)
-	if _, _, err := s2.authorizeVSPFees(context.Background(), "a", 0, 1, 0, "", now); err != errBadAmount {
-		t.Fatalf("zero ceiling: want errBadAmount, got %v", err)
-	}
-	if got := s2.byAgent["a"].spentAtoms; got != 0 {
-		t.Fatalf("refused run reserved %d atoms, want 0", got)
+		t.Fatalf("VSP run counted %d atoms against the caps, want 0", got)
 	}
 }
 
@@ -456,10 +437,6 @@ func TestRefusedApprovalRefundsTheReservation(t *testing.T) {
 		},
 		"lightning": func(s *grantStore, now time.Time) error {
 			_, err := s.authorizeLightning(ctx, "a", 50, now)
-			return err
-		},
-		"vsp fees": func(s *grantStore, now time.Time) error {
-			_, _, err := s.authorizeVSPFees(ctx, "a", 0, 0, 50, "pay VSP fees", now)
 			return err
 		},
 		"scoped": func(s *grantStore, now time.Time) error {

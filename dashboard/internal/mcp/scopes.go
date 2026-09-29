@@ -29,7 +29,7 @@ const (
 // WriteScope is one grantable write/action capability. The dashboard renders the
 // catalog as a checklist; the grant handler validates requests against it; tools
 // gate on Key via grants.authorizeAction / authorizeActionGated / authorizeActionPass
-// / authorizeLightning / authorizeSpendScoped / authorizeVSPFees.
+// / authorizeLightning / authorizeSpendScoped / authorizeVSPRun.
 type WriteScope struct {
 	Key       string `json:"key"`
 	Label     string `json:"label"`

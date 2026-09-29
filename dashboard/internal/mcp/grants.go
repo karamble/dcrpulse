@@ -457,57 +457,26 @@ func (s *grantStore) reserveLightning(agentID string, amountAtoms int64, now tim
 	return g.gen, nil
 }
 
-// authorizeVSPFees checks the staking scope and both fee accounts, reserves a
-// worst-case fee ceiling against the caps, and (when BR oversight is on) blocks
-// for the operator's approval. The real cost of a VSP fee run is only knowable
-// afterwards, so the caller reserves the ceiling here and refunds the unused
-// part once the run settles. Returns a private copy of the passphrase and the
-// hold to refund the unused part with.
-func (s *grantStore) authorizeVSPFees(ctx context.Context, agentID string, account, changeAccount uint32, feeCeilingAtoms int64, action string, now time.Time) ([]byte, hold, error) {
-	pass, gen, err := s.reserveVSPFees(agentID, account, changeAccount, feeCeilingAtoms, now)
-	if err != nil {
-		return nil, hold{}, err
-	}
-	h, err := s.approveHold(ctx, agentID, gen, feeCeilingAtoms, action)
-	if err != nil {
-		utils.Zero(pass)
-		return nil, hold{}, err
-	}
-	return pass, h, nil
-}
-
-// reserveVSPFees performs the locked validation and reservation for a VSP fee
-// run, returning a private copy of the passphrase. A zero ceiling (nothing to
-// pay for) still requires the scope and both accounts.
-func (s *grantStore) reserveVSPFees(agentID string, account, changeAccount uint32, feeCeilingAtoms int64, now time.Time) ([]byte, uint64, error) {
+// authorizeVSPRun checks the staking scope and both accounts a VSP maintenance
+// run moves fees between, and returns a copy of the passphrase. VSP fees are an
+// operating cost, not a transfer, so nothing is reserved against the caps.
+func (s *grantStore) authorizeVSPRun(agentID string, account, changeAccount uint32, now time.Time) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
 	if err != nil {
 		if errors.Is(err, errNoGrant) {
-			return nil, 0, noScopeGrant(scopeStaking)
+			return nil, noScopeGrant(scopeStaking)
 		}
-		return nil, 0, err
+		return nil, err
 	}
 	if !g.writeScopes[scopeStaking] {
-		return nil, 0, scopeDenied(scopeStaking)
+		return nil, scopeDenied(scopeStaking)
 	}
-	// The fee leaves the fee account and the change lands in the change
-	// account, so both must be covered by the grant.
 	if !g.accounts[account] || !g.accounts[changeAccount] {
-		return nil, 0, errAccountNotGranted
+		return nil, errAccountNotGranted
 	}
-	// A run that cannot say what it might spend does not get the passphrase. The
-	// callee pays the fees the VSP asks for, not the ones the local ticket view
-	// predicted, so a zero ceiling would authorize an unbounded run rather than
-	// an empty one.
-	if feeCeilingAtoms <= 0 {
-		return nil, 0, errBadAmount
-	}
-	if err := s.reserveLocked(g, feeCeilingAtoms, now); err != nil {
-		return nil, 0, err
-	}
-	return append([]byte(nil), g.passphrase...), g.gen, nil
+	return append([]byte(nil), g.passphrase...), nil
 }
 
 // authorizeSpendScoped checks the given fund scope and, when amountAtoms>0
