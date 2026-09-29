@@ -108,7 +108,6 @@ export const BisonrelayUserBar = ({
           contact={contact}
           nick={nick}
           contacts={contacts}
-          displayNick={displayNick}
           onClose={() => setShowMenu(false)}
           onSendFile={() => {
             setShowMenu(false);

@@ -57,6 +57,8 @@ import { TipModal } from './TipModal';
 import { usePaidDownload } from './usePaidDownload';
 import { formatAtomsTrimmed } from '../../utils/amounts';
 import { formatBytes as formatBytesPretty } from '../../utils/bytes';
+import { ContactList, filterContacts } from './ContactList';
+import { Modal } from './Modal';
 
 // Layout + action ordering mirrors bruig's chat_side_menu / user_context_menu
 // (companyzero/bisonrelay, ISC). "User Profile" is collapsed into the header
@@ -67,7 +69,6 @@ interface Props {
   contact: BisonrelayContact;
   nick: string;
   contacts: BisonrelayContact[];
-  displayNick: (c: BisonrelayContact) => string;
   onClose: () => void;
   onSendFile: () => void;
   onRenamed?: (newNick: string) => void;
@@ -108,7 +109,6 @@ export const BisonrelayUserSubNav = ({
   contact,
   nick,
   contacts,
-  displayNick,
   onClose,
   onSendFile,
   onRenamed,
@@ -288,7 +288,6 @@ export const BisonrelayUserSubNav = ({
           body={`Picks a contact and asks ${nick} to KX with them. The remote contact gets a message; they decide whether to follow up.`}
           contacts={contacts}
           excludeUid={uid}
-          displayNick={displayNick}
           onClose={() => setModal(null)}
           onPick={(picked) =>
             suggestKxBisonrelayContact(uid, picked.id?.identity ?? '')
@@ -302,7 +301,6 @@ export const BisonrelayUserSubNav = ({
           body={`Picks a common contact and asks them to forward a ratchet-reset request to ${nick}. Use this when a direct reset is not landing.`}
           contacts={contacts}
           excludeUid={uid}
-          displayNick={displayNick}
           onClose={() => setModal(null)}
           onPick={(picked) =>
             transResetBisonrelayContact(picked.id?.identity ?? '', uid)
@@ -403,70 +401,66 @@ const RenameModal = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      as="form"
+      onSubmit={handleSubmit}
+      className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl p-5 space-y-4"
     >
-      <form
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl p-5 space-y-4"
-      >
-        <div className="flex items-start justify-between">
-          <h3 className="text-base font-semibold">Rename {currentNick}</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
+      <div className="flex items-start justify-between">
+        <h3 className="text-base font-semibold">Rename {currentNick}</h3>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          aria-label="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Sets a local alias for this contact. The remote user is not notified
+        and their own nick is unchanged.
+      </p>
+      <div>
+        <label className="block text-xs text-muted-foreground mb-1" htmlFor="br-rename-input">
+          New nick
+        </label>
+        <input
+          id="br-rename-input"
+          type="text"
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          disabled={submitting}
+          maxLength={64}
+          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
+        />
+      </div>
+      {err && (
+        <div className="flex items-start gap-2 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span className="break-words">{err}</span>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Sets a local alias for this contact. The remote user is not notified
-          and their own nick is unchanged.
-        </p>
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1" htmlFor="br-rename-input">
-            New nick
-          </label>
-          <input
-            id="br-rename-input"
-            type="text"
-            autoFocus
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            disabled={submitting}
-            maxLength={64}
-            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
-          />
-        </div>
-        {err && (
-          <div className="flex items-start gap-2 text-sm text-destructive">
-            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span className="break-words">{err}</span>
-          </div>
-        )}
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {submitting ? 'Renaming…' : 'Rename'}
-          </button>
-        </div>
-      </form>
-    </div>
+      )}
+      <div className="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitting ? 'Renaming…' : 'Rename'}
+        </button>
+      </div>
+    </Modal>
   );
 };
 
@@ -589,63 +583,58 @@ export const ContentListModal = ({
   }, [addListener, uid]);
 
   return (
-    <div
-      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      className="w-full max-w-md rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
-      >
-        <div className="p-5 pb-3 flex items-start justify-between">
-          <div>
-            <h3 className="text-base font-semibold">Content shared by {nick}</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Asks {nick} for their list of shared files. If they're offline
-              the reply arrives whenever they come back online.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
+      <div className="p-5 pb-3 flex items-start justify-between">
+        <div>
+          <h3 className="text-base font-semibold">Content shared by {nick}</h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Asks {nick} for their list of shared files. If they're offline
+            the reply arrives whenever they come back online.
+          </p>
         </div>
-        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[160px]">
-          {err ? (
-            <div className="flex items-start gap-2 text-sm text-destructive px-3 py-4">
-              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span className="break-words">{err}</span>
-            </div>
-          ) : files === null ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground px-3 py-4">
-              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-              <span>Waiting for {nick}'s reply…</span>
-            </div>
-          ) : files.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
-              {nick} has no shared content.
-            </p>
-          ) : (
-            files.map((f) => (
-              <ContentFileRow key={f.file_id} uid={uid} nick={nick} file={f} />
-            ))
-          )}
-        </div>
-        <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-          >
-            Close
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          aria-label="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
-    </div>
+      <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[160px]">
+        {err ? (
+          <div className="flex items-start gap-2 text-sm text-destructive px-3 py-4">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span className="break-words">{err}</span>
+          </div>
+        ) : files === null ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground px-3 py-4">
+            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+            <span>Waiting for {nick}'s reply…</span>
+          </div>
+        ) : files.length === 0 ? (
+          <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+            {nick} has no shared content.
+          </p>
+        ) : (
+          files.map((f) => (
+            <ContentFileRow key={f.file_id} uid={uid} nick={nick} file={f} />
+          ))
+        )}
+      </div>
+      <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </Modal>
   );
 };
 
@@ -882,88 +871,83 @@ const PostsListModal = ({
   }, [uid]);
 
   return (
-    <div
-      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      className="w-full max-w-md rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
-      >
-        <div className="p-5 pb-3 flex items-start justify-between">
-          <div>
-            <h3 className="text-base font-semibold">Posts by {nick}</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Click a post to queue its download. The checkmark appears once
-              it arrives; open the Feed tab to read it. Posts you already have
-              are checked and not re-downloadable.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
+      <div className="p-5 pb-3 flex items-start justify-between">
+        <div>
+          <h3 className="text-base font-semibold">Posts by {nick}</h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Click a post to queue its download. The checkmark appears once
+            it arrives; open the Feed tab to read it. Posts you already have
+            are checked and not re-downloadable.
+          </p>
         </div>
-        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[160px]">
-          {err ? (
-            <div className="flex items-start gap-2 text-sm text-destructive px-3 py-4">
-              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span className="break-words">{err}</span>
-            </div>
-          ) : posts === null ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground px-3 py-4">
-              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-              <span>Waiting for {nick}'s reply…</span>
-            </div>
-          ) : posts.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
-              {nick} hasn't published any posts yet.
-            </p>
-          ) : (
-            posts.map((p) => {
-              const isInflight = inflight.has(p.id);
-              const isReceived = received.has(p.id) || have.has(p.id);
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handlePick(p)}
-                  disabled={isInflight || isReceived}
-                  className="w-full text-left px-3 py-2 rounded-md text-sm flex flex-col gap-0.5 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="truncate font-medium text-foreground">
-                      {p.title || '(untitled)'}
-                    </span>
-                    {isInflight ? (
-                      <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                    ) : isReceived ? (
-                      <Check className="h-3 w-3 text-emerald-400" />
-                    ) : null}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {toYMDTime(new Date(p.timestamp * 1000))}
-                  </span>
-                </button>
-              );
-            })
-          )}
-        </div>
-        <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-          >
-            Close
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          aria-label="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
-    </div>
+      <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[160px]">
+        {err ? (
+          <div className="flex items-start gap-2 text-sm text-destructive px-3 py-4">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span className="break-words">{err}</span>
+          </div>
+        ) : posts === null ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground px-3 py-4">
+            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+            <span>Waiting for {nick}'s reply…</span>
+          </div>
+        ) : posts.length === 0 ? (
+          <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+            {nick} hasn't published any posts yet.
+          </p>
+        ) : (
+          posts.map((p) => {
+            const isInflight = inflight.has(p.id);
+            const isReceived = received.has(p.id) || have.has(p.id);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => handlePick(p)}
+                disabled={isInflight || isReceived}
+                className="w-full text-left px-3 py-2 rounded-md text-sm flex flex-col gap-0.5 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="truncate font-medium text-foreground">
+                    {p.title || '(untitled)'}
+                  </span>
+                  {isInflight ? (
+                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  ) : isReceived ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : null}
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {toYMDTime(new Date(p.timestamp * 1000))}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+      <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </Modal>
   );
 };
 
@@ -972,7 +956,6 @@ const ContactPickerModal = ({
   body,
   contacts,
   excludeUid,
-  displayNick,
   onClose,
   onPick,
   onSuccess,
@@ -981,7 +964,6 @@ const ContactPickerModal = ({
   body: string;
   contacts: BisonrelayContact[];
   excludeUid: string;
-  displayNick: (c: BisonrelayContact) => string;
   onClose: () => void;
   onPick: (c: BisonrelayContact) => Promise<void>;
   onSuccess?: () => void;
@@ -990,12 +972,7 @@ const ContactPickerModal = ({
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const q = query.trim().toLowerCase();
-  const filtered = contacts.filter((c) => {
-    if (c.id?.identity === excludeUid) return false;
-    if (!q) return true;
-    return displayNick(c).toLowerCase().includes(q);
-  });
+  const filtered = filterContacts(contacts, query).filter((c) => c.id?.identity !== excludeUid);
 
   const handlePick = async (c: BisonrelayContact) => {
     if (submitting) return;
@@ -1013,78 +990,62 @@ const ContactPickerModal = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
-      >
-        <div className="p-5 pb-3 space-y-3">
-          <div className="flex items-start justify-between">
-            <h3 className="text-base font-semibold pr-4">{title}</h3>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-              aria-label="Close"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <p className="text-xs text-muted-foreground">{body}</p>
-          <input
-            type="text"
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search contacts…"
-            disabled={submitting}
-            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50"
-          />
-        </div>
-        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[120px]">
-          {filtered.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
-              {contacts.length <= 1
-                ? 'You need at least one other contact to use this action.'
-                : 'No contacts match your search.'}
-            </p>
-          ) : (
-            filtered.map((c) => {
-              const n = displayNick(c);
-              return (
-                <button
-                  key={c.id?.identity ?? n}
-                  onClick={() => handlePick(c)}
-                  disabled={submitting}
-                  className="w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <span className="truncate">{n}</span>
-                </button>
-              );
-            })
-          )}
-        </div>
-        {err && (
-          <div className="flex items-start gap-2 text-sm text-destructive px-5 pb-3">
-            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span className="break-words">{err}</span>
-          </div>
-        )}
-        <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
+      <div className="p-5 pb-3 space-y-3">
+        <div className="flex items-start justify-between">
+          <h3 className="text-base font-semibold pr-4">{title}</h3>
           <button
             type="button"
             onClick={onClose}
-            disabled={submitting}
-            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+            aria-label="Close"
           >
-            Cancel
+            <X className="h-4 w-4" />
           </button>
         </div>
+        <p className="text-xs text-muted-foreground">{body}</p>
+        <input
+          type="text"
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search contacts…"
+          disabled={submitting}
+          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50"
+        />
       </div>
-    </div>
+      <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[120px]">
+        <ContactList
+          contacts={filtered}
+          emptyText={
+            contacts.length <= 1
+              ? 'You need at least one other contact to use this action.'
+              : 'No contacts match your search.'
+          }
+          busy={submitting}
+          onPick={handlePick}
+        />
+      </div>
+      {err && (
+        <div className="flex items-start gap-2 text-sm text-destructive px-5 pb-3">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span className="break-words">{err}</span>
+        </div>
+      )}
+      <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </Modal>
   );
 };
 
@@ -1146,70 +1107,65 @@ export const ConfirmActionModal = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl p-5 space-y-4"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl p-5 space-y-4"
-      >
-        <div className="flex items-start justify-between">
-          <h3 className="text-base font-semibold pr-4">{title}</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <p className="text-xs text-muted-foreground">{body}</p>
-        {err && (
-          <div className="flex items-start gap-2 text-sm text-destructive">
-            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span className="break-words">{err}</span>
-          </div>
-        )}
-        {needsTyped && (
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">
-              Type{' '}
-              <span className="font-mono font-semibold text-foreground">{confirmWord}</span> to
-              confirm
-            </label>
-            <input
-              type="text"
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              autoFocus
-              autoComplete="off"
-              spellCheck={false}
-              className="w-full px-3 py-1.5 rounded-lg bg-background border border-border/50 text-sm font-mono focus:outline-none focus:border-primary/50"
-            />
-          </div>
-        )}
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={submitting || !typedOk}
-            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {submitting ? 'Working…' : confirmLabel}
-          </button>
-        </div>
+      <div className="flex items-start justify-between">
+        <h3 className="text-base font-semibold pr-4">{title}</h3>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          aria-label="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
-    </div>
+      <p className="text-xs text-muted-foreground">{body}</p>
+      {err && (
+        <div className="flex items-start gap-2 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span className="break-words">{err}</span>
+        </div>
+      )}
+      {needsTyped && (
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">
+            Type{' '}
+            <span className="font-mono font-semibold text-foreground">{confirmWord}</span> to
+            confirm
+          </label>
+          <input
+            type="text"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            className="w-full px-3 py-1.5 rounded-lg bg-background border border-border/50 text-sm font-mono focus:outline-none focus:border-primary/50"
+          />
+        </div>
+      )}
+      <div className="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={submitting || !typedOk}
+          className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitting ? 'Working…' : confirmLabel}
+        </button>
+      </div>
+    </Modal>
   );
 };
 

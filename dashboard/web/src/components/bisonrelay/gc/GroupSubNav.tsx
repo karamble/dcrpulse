@@ -40,6 +40,7 @@ import {
 import { ConfirmActionModal } from '../BisonrelayUserSubNav';
 import { apiError } from '../../../utils/apiError';
 import { displayNick } from '../bisonrelayNick';
+import { Modal } from '../Modal';
 
 // GroupSubNav is the per-group sliding sidebar (mirror of
 // BisonrelayUserSubNav for contacts). Admin-only actions are gated on
@@ -531,60 +532,56 @@ const PromptModal = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      busy={busy}
+      className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl"
-      >
-        <form onSubmit={submit}>
-          <div className="p-5 pb-3 space-y-3">
-            <h3 className="text-base font-semibold">{title}</h3>
-            <p className="text-xs text-muted-foreground">{body}</p>
-            <input
-              type="text"
-              autoFocus
-              value={val}
-              onChange={(e) => setVal(e.target.value)}
-              placeholder={placeholder}
-              disabled={busy}
-              maxLength={64}
-              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50"
-            />
-            {err && (
-              <div className="flex items-start gap-2 text-xs text-destructive">
-                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span className="break-words">{err}</span>
-              </div>
-            )}
-          </div>
-          <div className="border-t border-border/40 p-3 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={busy}
-              className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={busy}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-50 ${
-                tone === 'rose'
-                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                  : 'bg-gradient-primary text-white'
-              }`}
-            >
-              {busy && <Loader2 className="h-3 w-3 animate-spin" />}
-              {confirmLabel}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+      <form onSubmit={submit}>
+        <div className="p-5 pb-3 space-y-3">
+          <h3 className="text-base font-semibold">{title}</h3>
+          <p className="text-xs text-muted-foreground">{body}</p>
+          <input
+            type="text"
+            autoFocus
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            placeholder={placeholder}
+            disabled={busy}
+            maxLength={64}
+            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50"
+          />
+          {err && (
+            <div className="flex items-start gap-2 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span className="break-words">{err}</span>
+            </div>
+          )}
+        </div>
+        <div className="border-t border-border/40 p-3 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-50 ${
+              tone === 'rose'
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                : 'bg-gradient-primary text-white'
+            }`}
+          >
+            {busy && <Loader2 className="h-3 w-3 animate-spin" />}
+            {confirmLabel}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 };
 
@@ -626,44 +623,40 @@ const ConfirmModal = ({
       : 'bg-gradient-primary text-white';
 
   return (
-    <div
-      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      busy={busy}
+      className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl"
-      >
-        <div className="p-5 pb-3 space-y-3">
-          <h3 className="text-base font-semibold">{title}</h3>
-          <p className="text-xs text-muted-foreground">{body}</p>
-          {err && (
-            <div className="flex items-start gap-2 text-xs text-destructive">
-              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-              <span className="break-words">{err}</span>
-            </div>
-          )}
-        </div>
-        <div className="border-t border-border/40 p-3 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={busy}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-50 ${toneClass}`}
-          >
-            {busy && <Loader2 className="h-3 w-3 animate-spin" />}
-            {confirmLabel}
-          </button>
-        </div>
+      <div className="p-5 pb-3 space-y-3">
+        <h3 className="text-base font-semibold">{title}</h3>
+        <p className="text-xs text-muted-foreground">{body}</p>
+        {err && (
+          <div className="flex items-start gap-2 text-xs text-destructive">
+            <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span className="break-words">{err}</span>
+          </div>
+        )}
       </div>
-    </div>
+      <div className="border-t border-border/40 p-3 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={busy}
+          className={`px-3 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-50 ${toneClass}`}
+        >
+          {busy && <Loader2 className="h-3 w-3 animate-spin" />}
+          {confirmLabel}
+        </button>
+      </div>
+    </Modal>
   );
 };

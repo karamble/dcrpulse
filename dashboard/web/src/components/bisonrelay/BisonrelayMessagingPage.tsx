@@ -1743,7 +1743,6 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           contact={subNavContact}
           nick={displayNick(subNavContact)}
           contacts={contacts}
-          displayNick={displayNick}
           onClose={() => setSubNavContact(null)}
           onSendFile={() => {
             setSelected({ kind: 'contact', value: subNavContact });

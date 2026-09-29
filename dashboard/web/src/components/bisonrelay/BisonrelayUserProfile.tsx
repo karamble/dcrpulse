@@ -572,7 +572,6 @@ export const UserProfileView = ({
           contact={contact}
           nick={nick}
           contacts={contacts}
-          displayNick={displayNick}
           onClose={() => setShowActions(false)}
           onSendFile={() => {
             // The chat page owns the file-attach flow; degrade to opening
