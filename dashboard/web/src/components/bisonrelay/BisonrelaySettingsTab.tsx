@@ -1176,7 +1176,6 @@ const FiltersCard = () => {
   const [err, setErr] = useState<string | null>(null);
   const [formErr, setFormErr] = useState<string | null>(null);
   const [literal, setLiteral] = useState(false);
-  const [sample, setSample] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -1215,19 +1214,12 @@ const FiltersCard = () => {
       return;
     }
     const effective = literal ? quoteMeta(form.regexp.trim()) : form.regexp.trim();
-    try {
-      new RegExp(effective);
-    } catch (e: any) {
-      setFormErr(`Invalid pattern: ${e?.message || 'not a valid regular expression'}`);
-      return;
-    }
     setBusy(true);
     setFormErr(null);
     try {
       await upsertBisonrelayFilter({ ...form, regexp: effective });
       setForm(null);
       setLiteral(false);
-      setSample('');
       await refresh();
     } catch (e: any) {
       setFormErr(apiError(e, 'Could not save filter'));
@@ -1259,16 +1251,6 @@ const FiltersCard = () => {
   };
 
   const pattern = form ? (literal ? quoteMeta(form.regexp.trim()) : form.regexp.trim()) : '';
-  let patternErr = '';
-  let sampleMatches: boolean | null = null;
-  if (pattern) {
-    try {
-      const re = new RegExp(pattern);
-      if (sample.trim()) sampleMatches = re.test(sample);
-    } catch (e: any) {
-      patternErr = e?.message || 'invalid regular expression';
-    }
-  }
 
   return (
     <SectionCard
@@ -1281,7 +1263,6 @@ const FiltersCard = () => {
             onClick={() => {
               setFormErr(null);
               setLiteral(false);
-              setSample('');
               setForm({ ...emptyFilter });
             }}
             className={backupBtnCls}
@@ -1323,7 +1304,6 @@ const FiltersCard = () => {
                   onClick={() => {
                     setFormErr(null);
                     setLiteral(false);
-                    setSample('');
                     setForm({ ...f });
                   }}
                   className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground"
@@ -1368,42 +1348,11 @@ const FiltersCard = () => {
               placeholder={literal ? 'e.g. [m] <kandiru>' : 'e.g. spam|casino'}
               className="w-full rounded-lg bg-background/60 border border-border px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:border-primary/50"
             />
-            {patternErr && (
-              <p className="text-[11px] text-destructive break-all mt-1">
-                Invalid pattern: {patternErr}
-              </p>
-            )}
-            {literal && !patternErr && form.regexp.trim() && (
+            {literal && form.regexp.trim() && (
               <p className="text-[11px] text-muted-foreground break-all mt-1">
                 Stored as: <code className="font-mono text-foreground">{pattern}</code>
               </p>
             )}
-            <div className="mt-2">
-              <label className="text-[11px] text-muted-foreground block mb-1">
-                Test against a sample message (optional)
-              </label>
-              <input
-                type="text"
-                value={sample}
-                onChange={(e) => setSample(e.target.value)}
-                placeholder="paste a real message to test"
-                className="w-full rounded-lg bg-background/60 border border-border px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:border-primary/50"
-              />
-              {sample.trim() && !patternErr && sampleMatches !== null && (
-                <p
-                  className={`text-[11px] mt-1 ${
-                    sampleMatches ? 'text-destructive' : 'text-muted-foreground'
-                  }`}
-                >
-                  {sampleMatches
-                    ? 'This message WOULD be hidden by this filter.'
-                    : 'This message would NOT be hidden.'}
-                </p>
-              )}
-              <p className="text-[10px] text-muted-foreground/70 mt-1">
-                Preview uses the browser regex engine; exact for literal text.
-              </p>
-            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -1475,7 +1424,6 @@ const FiltersCard = () => {
               onClick={() => {
                 setForm(null);
                 setLiteral(false);
-                setSample('');
               }}
               className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground"
             >
