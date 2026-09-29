@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, ChevronLeft, ChevronRight, ArrowRightLeft, FileJson } from 'lucide-react';
-import { getBlockByHeight, BlockDetail as BlockDetailType } from '../services/explorerApi';
+import { getBlockByHash, getBlockByHeight, BlockDetail as BlockDetailType } from '../services/explorerApi';
 import { CopyButton } from '../components/explorer/CopyButton';
 import { TxGroupSections, groupTxsByType } from '../components/explorer/txType';
 import { TimeAgo } from '../components/explorer/TimeAgo';
@@ -23,14 +23,11 @@ export const BlockDetail = () => {
     let cancelled = false;
     setLoading(true);
     setError('');
-    // For now, assume it's a height (we can enhance this later to handle hashes)
-    const height = parseInt(heightOrHash);
-    if (isNaN(height)) {
-      setError('Invalid block height');
-      setLoading(false);
-      return;
-    }
-    getBlockByHeight(height)
+    // A height is all digits; anything else is a block hash for the server to check.
+    const load = /^\d+$/.test(heightOrHash)
+      ? getBlockByHeight(Number(heightOrHash))
+      : getBlockByHash(heightOrHash);
+    load
       .then((blockData) => {
         if (!cancelled) {
           setBlock(blockData);
