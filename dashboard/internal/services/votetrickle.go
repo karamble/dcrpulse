@@ -164,11 +164,14 @@ func StartVoteTrickle(ctx context.Context, token, voteOption string, duration ti
 	// signs, and RE-LOCKS them before returning (its deferred relock fires on
 	// this return), so the worker below holds only signatures - never the
 	// passphrase and no unlocked accounts.
-	votes, _, err := buildSignedVotes(ctx, token, voteOption, passphrase)
+	votes, signed, err := buildSignedVotes(ctx, token, voteOption, passphrase)
 	if err != nil {
 		return err
 	}
 	if len(votes) == 0 {
+		if signed.Skipped > 0 {
+			return fmt.Errorf("none of %d vote(s) could be signed: %s", signed.Skipped, signed.Errors[0])
+		}
 		return fmt.Errorf("no eligible tickets to vote on this proposal")
 	}
 
@@ -191,7 +194,7 @@ func StartVoteTrickle(ctx context.Context, token, voteOption string, duration ti
 		token:        token,
 		proposalName: proposalNameFromCache(token),
 		voteOption:   voteOption,
-		total:        len(votes),
+		total:        len(votes) + signed.Skipped,
 		startedAt:    time.Now(),
 		finishAt:     finishAt,
 		durationSecs: int64(duration / time.Second),
@@ -202,8 +205,13 @@ func StartVoteTrickle(ctx context.Context, token, voteOption string, duration ti
 	vtRuns[token] = st // replaces any finished-not-dismissed run for this token
 	vtMu.Unlock()
 
-	recordVoteTrickleEvent(token, "info", "scheduled",
-		fmt.Sprintf("Trickling %d vote(s) as %q over %s.", len(votes), voteOption, duration.Round(time.Second)), "")
+	msg := fmt.Sprintf("Trickling %d vote(s) as %q over %s.", len(votes), voteOption, duration.Round(time.Second))
+	if signed.Skipped > 0 {
+		msg = fmt.Sprintf("Trickling %d of %d vote(s) as %q over %s; %d could not be signed.",
+			len(votes), st.total, voteOption, duration.Round(time.Second), signed.Skipped)
+	}
+	recordVoteTrickleEvent(token, "info", "scheduled", msg, "")
+	st.markSignFailures(signed.Errors)
 
 	go runVoteTrickle(runCtx, st, votes, sched)
 	return nil
@@ -301,6 +309,18 @@ func markVoteCast(st *vtRunState, vote piBallotVote) {
 	done := st.cast.Add(1) + st.failed.Load()
 	recordVoteTrickleEvent(st.token, "info", "cast",
 		fmt.Sprintf("Cast vote for ticket %s (%d/%d).", shortHex(vote.Ticket), done, st.total), vote.Ticket)
+}
+
+// markSignFailures counts the tickets whose vote could not be signed as failed
+// votes of the run.
+func (st *vtRunState) markSignFailures(errs []string) {
+	for _, e := range errs {
+		st.failed.Add(1)
+		vtMu.Lock()
+		st.lastErr = e
+		vtMu.Unlock()
+		recordVoteTrickleEvent(st.token, "error", "failed", e, "")
+	}
 }
 
 func markVoteFailed(st *vtRunState, vote piBallotVote, reason string) {
