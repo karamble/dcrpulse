@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, Hash, ListOrdered } from 'lucide-react';
 import api, { decodeSeed } from '../../services/api';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 // Wordlist is fetched once from /api/wallet/seed-words, which sources from
 // dcrwallet's pgpwordlist package (upstream source of truth).
@@ -246,6 +247,7 @@ export const SeedEntry = ({ onValidSeedHex, onInvalid }: Props) => {
                 >
                   <span className="text-xs text-muted-foreground w-6 text-right shrink-0">{i + 1}.</span>
                   <input
+                    {...secretFieldProps}
                     ref={(el) => {
                       wordRefs.current[i] = el;
                     }}
@@ -256,9 +258,6 @@ export const SeedEntry = ({ onValidSeedHex, onInvalid }: Props) => {
                     onFocus={() => setActiveSuggestionFor(w.trim().length > 0 ? i : null)}
                     onBlur={() => window.setTimeout(() => setActiveSuggestionFor((cur) => (cur === i ? null : cur)), 150)}
                     onKeyDown={(e) => handleKeyDown(e, i)}
-                    autoComplete="off"
-                    autoCorrect="off"
-                    spellCheck={false}
                     className="flex-1 bg-transparent text-sm focus:outline-none"
                   />
                   {known && <Check className="h-3.5 w-3.5 text-success shrink-0" />}
@@ -289,6 +288,7 @@ export const SeedEntry = ({ onValidSeedHex, onInvalid }: Props) => {
         <div>
           <label className="block text-sm text-muted-foreground mb-1">Seed hex</label>
           <textarea
+            {...secretFieldProps}
             value={hex}
             onChange={(e) => setHex(e.target.value)}
             placeholder="64 hex characters (32 bytes)"

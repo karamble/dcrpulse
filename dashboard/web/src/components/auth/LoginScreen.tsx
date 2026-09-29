@@ -6,6 +6,7 @@ import { useState, type FormEvent } from 'react';
 import { Lock, Loader2 } from 'lucide-react';
 import { login } from '../../services/auth';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
   const [password, setPassword] = useState('');
@@ -54,9 +55,9 @@ export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
           </div>
         </div>
         <input
+          {...secretFieldProps}
           type="password"
           autoFocus
-          autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="App password"

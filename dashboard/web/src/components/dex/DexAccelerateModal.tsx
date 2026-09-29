@@ -14,6 +14,7 @@ import {
 import { dexCoinExplorer } from './dexExplorers';
 import { convQty, fmtAmt } from './dexFormat';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 // DexAccelerateModal lifts an order's stuck swap chain by broadcasting a child
 // transaction that pays for its parents. Mirrors bisonw's accelerate form: the
@@ -296,6 +297,7 @@ export const DexAccelerateModal = ({
                   This spends from your {fromSym} wallet and cannot be undone.
                 </p>
                 <input
+                  {...secretFieldProps}
                   type="password"
                   value={appPass}
                   onChange={(e) => setAppPass(e.target.value)}

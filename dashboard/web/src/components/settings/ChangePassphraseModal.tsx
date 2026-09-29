@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle2, KeyRound, Loader2, X } from 'lucide-react';
 import { apiError } from '../../utils/apiError';
 import { getDexStatus } from '../../services/dcrdexApi';
 import { getLightningStatus, unlockLightning } from '../../services/lightningApi';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface ChangePassphraseModalProps {
   isOpen: boolean;
@@ -213,8 +214,8 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
                     Wallet passphrase
                   </label>
                   <input
+                    {...secretFieldProps}
                     type="password"
-                    autoComplete="off"
                     minLength={8}
                     autoFocus
                     value={lnManualPass}
@@ -282,8 +283,8 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
           <div>
             <label className="block text-sm text-muted-foreground mb-1">Current passphrase</label>
             <input
+              {...secretFieldProps}
               type="password"
-              autoComplete="current-password"
               value={oldPass}
               onChange={(e) => setOldPass(e.target.value)}
               disabled={submitting}
@@ -294,8 +295,8 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
           <div>
             <label className="block text-sm text-muted-foreground mb-1">New passphrase</label>
             <input
+              {...secretFieldProps}
               type="password"
-              autoComplete="new-password"
               minLength={8}
               value={newPass}
               onChange={(e) => setNewPass(e.target.value)}
@@ -308,8 +309,8 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
           <div>
             <label className="block text-sm text-muted-foreground mb-1">Confirm new passphrase</label>
             <input
+              {...secretFieldProps}
               type="password"
-              autoComplete="new-password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               disabled={submitting}
@@ -322,8 +323,8 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
             <div>
               <label className="block text-sm text-muted-foreground mb-1">DCRDEX app password</label>
               <input
+                {...secretFieldProps}
                 type="password"
-                autoComplete="off"
                 value={dexAppPass}
                 onChange={(e) => setDexAppPass(e.target.value)}
                 disabled={submitting}

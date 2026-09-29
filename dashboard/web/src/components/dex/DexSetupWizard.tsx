@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { AlertCircle, KeyRound, ShieldCheck } from 'lucide-react';
 import { initDex, unlockDex } from '../../services/dcrdexApi';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface DexSetupWizardProps {
   mode: 'needs-init' | 'needs-unlock';
@@ -72,6 +73,7 @@ export const DexSetupWizard = ({ mode, onReady }: DexSetupWizardProps) => {
               App password
             </label>
             <input
+              {...secretFieldProps}
               id="dex-pass"
               type="password"
               autoFocus
@@ -87,6 +89,7 @@ export const DexSetupWizard = ({ mode, onReady }: DexSetupWizardProps) => {
                 Confirm password
               </label>
               <input
+                {...secretFieldProps}
                 id="dex-confirm"
                 type="password"
                 value={confirm}
@@ -107,6 +110,7 @@ export const DexSetupWizard = ({ mode, onReady }: DexSetupWizardProps) => {
               </label>
               {restore ? (
                 <textarea
+                  {...secretFieldProps}
                   value={seed}
                   onChange={(e) => setSeed(e.target.value)}
                   placeholder="Enter your 15-word DCRDEX recovery seed"

@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { AlertCircle, Wallet } from 'lucide-react';
 import { createDexWallet } from '../../services/dcrdexApi';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface DexWalletSetupProps {
   onReady: () => void;
@@ -54,6 +55,7 @@ export const DexWalletSetup = ({ onReady }: DexWalletSetupProps) => {
               Wallet passphrase
             </label>
             <input
+              {...secretFieldProps}
               id="dex-wallet-pass"
               type="password"
               autoFocus

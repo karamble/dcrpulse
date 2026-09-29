@@ -9,6 +9,7 @@ import { KeyEnds } from './AddressGroups';
 import { AccountExportPicker, SelectedAccountEntry } from './AccountExportPicker';
 import { SeedEntry } from './wallet/SeedEntry';
 import { apiError } from '../utils/apiError';
+import { secretFieldProps } from '../utils/secretField';
 
 interface WalletSetupProps {
   // onComplete replaces the default redirect to /wallet (used when embedded in
@@ -677,6 +678,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                   <p className="text-xs text-muted-foreground">Encrypts wallet database for viewing. Leave empty for no encryption.</p>
                   <div className="relative">
                     <input
+                      {...secretFieldProps}
                       type={showPublicPass ? 'text' : 'password'}
                       value={publicPassphrase}
                       onChange={(e) => setPublicPassphrase(e.target.value)}
@@ -704,6 +706,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                     </p>
                   )}
                   <input
+                    {...secretFieldProps}
                     type={showPublicPass ? 'text' : 'password'}
                     minLength={8}
                     value={confirmPublicPass}
@@ -731,6 +734,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                   <p className="text-xs text-muted-foreground">Required: Encrypts private keys for sending/signing transactions. Minimum 8 characters.</p>
                   <div className="relative">
                     <input
+                      {...secretFieldProps}
                       type={showPrivatePass ? 'text' : 'password'}
                       minLength={8}
                       value={privatePassphrase}
@@ -759,6 +763,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                     </p>
                   )}
                   <input
+                    {...secretFieldProps}
                     type={showPrivatePass ? 'text' : 'password'}
                     minLength={8}
                     value={confirmPrivatePass}
@@ -954,6 +959,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                 <p className="text-xs text-muted-foreground">Encrypts the wallet database for viewing. Leave empty for no encryption.</p>
                 <div className="relative">
                   <input
+                    {...secretFieldProps}
                     type={showPublicPass ? 'text' : 'password'}
                     value={publicPassphrase}
                     onChange={(e) => setPublicPassphrase(e.target.value)}
@@ -974,6 +980,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                 )}
                 {publicPassphrase && (
                   <input
+                    {...secretFieldProps}
                     type={showPublicPass ? 'text' : 'password'}
                     value={confirmPublicPass}
                     onChange={(e) => setConfirmPublicPass(e.target.value)}

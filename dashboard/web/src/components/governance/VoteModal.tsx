@@ -12,6 +12,7 @@ import {
   startVoteTrickle,
 } from '../../services/api';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface VoteModalProps {
   isOpen: boolean;
@@ -264,9 +265,9 @@ export const VoteModal = ({ isOpen, token, onClose, onVoted }: VoteModalProps) =
                   Wallet passphrase
                 </label>
                 <input
+                  {...secretFieldProps}
                   id="vote-passphrase"
                   type="password"
-                  autoComplete="current-password"
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
                   disabled={casting}

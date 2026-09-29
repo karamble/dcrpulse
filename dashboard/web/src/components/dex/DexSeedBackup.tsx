@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { AlertCircle, AlertTriangle, Check, Copy } from 'lucide-react';
 import { exportDexSeed, markDexSeedBackedUp } from '../../services/dcrdexApi';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 // DexSeedBackup is the guided app-seed backup flow: reveal the 15-word seed
 // (re-entering the app password), have the user confirm they have written it
@@ -107,6 +108,7 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
             Re-enter your DCRDEX app password to reveal the recovery seed.
           </p>
           <input
+            {...secretFieldProps}
             type="password"
             value={appPass}
             onChange={(e) => setAppPass(e.target.value)}

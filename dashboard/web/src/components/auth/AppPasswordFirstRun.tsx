@@ -7,6 +7,7 @@ import { ShieldCheck, Loader2 } from 'lucide-react';
 import { setupAppPassword, skipAppPasswordSetup } from '../../services/auth';
 import { UnprotectedWarning } from './UnprotectedWarning';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 // AppPasswordFirstRun is the one-time prompt shown on a fresh dashboard. The
 // user can set an app password now or, after acknowledging the warning, skip
@@ -87,16 +88,16 @@ export function AppPasswordFirstRun({ onDone }: { onDone: () => void }) {
           </p>
         </div>
         <input
+          {...secretFieldProps}
           type="password"
-          autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="App password"
           className="w-full px-4 py-3 rounded-lg bg-background border border-border/60 focus:border-primary outline-none"
         />
         <input
+          {...secretFieldProps}
           type="password"
-          autoComplete="new-password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           placeholder="Confirm password"

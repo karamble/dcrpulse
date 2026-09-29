@@ -7,6 +7,7 @@ import {
   unlockLightning,
 } from '../../../services/lightningApi';
 import { apiError } from '../../../utils/apiError';
+import { secretFieldProps } from '../../../utils/secretField';
 
 type Step = 'disclaimer' | 'passphrase' | 'running' | 'done';
 
@@ -160,9 +161,9 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
             Wallet passphrase
           </label>
           <input
+            {...secretFieldProps}
             id="ln-passphrase"
             type="password"
-            autoComplete="current-password"
             minLength={8}
             autoFocus
             value={passphrase}

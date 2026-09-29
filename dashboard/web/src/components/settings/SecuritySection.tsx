@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../auth/AuthGate';
 import { UnprotectedWarning } from '../auth/UnprotectedWarning';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 const inputClass =
   'w-full px-4 py-3 rounded-lg bg-background border border-border/60 focus:border-primary outline-none';
@@ -132,16 +133,16 @@ export const SecuritySection = () => {
         >
           <h4 className="font-semibold">Enable app password</h4>
           <input
+            {...secretFieldProps}
             type="password"
-            autoComplete="new-password"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
             placeholder="New password"
             className={inputClass}
           />
           <input
+            {...secretFieldProps}
             type="password"
-            autoComplete="new-password"
             value={pw2}
             onChange={(e) => setPw2(e.target.value)}
             placeholder="Confirm password"
@@ -167,16 +168,16 @@ export const SecuritySection = () => {
           >
             <h4 className="font-semibold">Change password</h4>
             <input
+              {...secretFieldProps}
               type="password"
-              autoComplete="current-password"
               value={cur}
               onChange={(e) => setCur(e.target.value)}
               placeholder="Current password"
               className={inputClass}
             />
             <input
+              {...secretFieldProps}
               type="password"
-              autoComplete="new-password"
               value={next}
               onChange={(e) => setNext(e.target.value)}
               placeholder="New password"
@@ -198,8 +199,8 @@ export const SecuritySection = () => {
             <h4 className="font-semibold text-red-500">Disable app password</h4>
             <UnprotectedWarning acknowledged={disAck} onAcknowledge={setDisAck} />
             <input
+              {...secretFieldProps}
               type="password"
-              autoComplete="current-password"
               value={disPw}
               onChange={(e) => setDisPw(e.target.value)}
               placeholder="Current password"

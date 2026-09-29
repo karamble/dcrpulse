@@ -24,6 +24,7 @@ import {
 import { ConfigSection, domainLabels, domainLabel } from './ConfigSection';
 import { isReservedAccount } from '../accounts/AccountRow';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface Props {
   agentId: string;
@@ -464,10 +465,10 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
               <label className="text-xs text-muted-foreground">
                 Wallet passphrase
                 <input
+                  {...secretFieldProps}
                   type="password"
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
-                  autoComplete="off"
                   className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
                 />
               </label>

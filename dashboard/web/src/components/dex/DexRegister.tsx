@@ -26,6 +26,7 @@ import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
 import { useDexBondPost } from './useDexBondPost';
 import { startVisiblePoll, useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface DexRegisterProps {
   host: string;
@@ -405,6 +406,7 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
                     <div>
                       <label className="block text-xs text-muted-foreground mb-1">Wallet password</label>
                       <input
+                        {...secretFieldProps}
                         type="password"
                         value={wpass}
                         onChange={(e) => setWpass(e.target.value)}

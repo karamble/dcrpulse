@@ -20,6 +20,7 @@ import { useWalletReady } from '../hooks/useWalletReady';
 import { useVisiblePoll } from '../hooks/useVisiblePoll';
 import { shallowEqual } from '../utils/shallowEqual';
 import { apiError } from '../utils/apiError';
+import { secretFieldProps } from '../utils/secretField';
 
 export const WalletDashboard = () => {
   const [walletExists, setWalletExists] = useState<boolean | null>(null);
@@ -443,6 +444,7 @@ export const WalletDashboard = () => {
             <div className="space-y-2">
               <label className="text-sm font-medium">Public Passphrase</label>
               <input
+                {...secretFieldProps}
                 type="password"
                 value={publicPassphrase}
                 onChange={(e) => {

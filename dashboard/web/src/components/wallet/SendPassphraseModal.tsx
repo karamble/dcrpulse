@@ -3,6 +3,7 @@ import { AlertCircle, Lock, X } from 'lucide-react';
 import { signPublishTransaction } from '../../services/api';
 import { formatAtoms } from '../../utils/amounts';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface SendPassphraseModalProps {
   isOpen: boolean;
@@ -109,9 +110,9 @@ export const SendPassphraseModal = ({
               Wallet passphrase
             </label>
             <input
+              {...secretFieldProps}
               id="send-passphrase"
               type="password"
-              autoComplete="current-password"
               autoFocus
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}

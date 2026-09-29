@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Lock, X } from 'lucide-react';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface PassphraseModalProps {
   isOpen: boolean;
@@ -86,9 +87,9 @@ export const PassphraseModal = ({
               Wallet passphrase
             </label>
             <input
+              {...secretFieldProps}
               id="passphrase-modal-input"
               type="password"
-              autoComplete="current-password"
               autoFocus
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}

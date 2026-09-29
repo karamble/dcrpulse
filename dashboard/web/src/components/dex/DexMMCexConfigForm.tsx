@@ -7,6 +7,7 @@ import { AlertCircle } from 'lucide-react';
 import { updateMMCexConfig } from '../../services/dcrdexApi';
 import { CEX_DISPLAY, CexIcon, SUPPORTED_CEXES } from './CexIcon';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 // DexMMCexConfigForm stores a centralized-exchange API key/secret for the arb
 // bots. v1.0.6 supports Binance and BinanceUS. The dashboard never stores them;
@@ -57,12 +58,14 @@ export const DexMMCexConfigForm = ({ onSaved }: { onSaved: () => void }) => {
       </div>
 
       <input
+        {...secretFieldProps}
         value={apiKey}
         onChange={(e) => setApiKey(e.target.value)}
         placeholder="API key"
         className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm font-mono focus:outline-none focus:border-primary"
       />
       <input
+        {...secretFieldProps}
         value={apiSecret}
         onChange={(e) => setApiSecret(e.target.value)}
         type="password"

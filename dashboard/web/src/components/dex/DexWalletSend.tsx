@@ -7,6 +7,7 @@ import { AlertCircle, AlertTriangle } from 'lucide-react';
 import { sendDexWallet, estimateDexSendFee, type DexWalletState, type DexAssetInfo, type DexSendFee } from '../../services/dcrdexApi';
 import { fmtAmt } from './dexFormat';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface Props {
   wallet: DexWalletState;
@@ -149,6 +150,7 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
             </span>
           </div>
           <input
+            {...secretFieldProps}
             type="password"
             value={appPass}
             onChange={(e) => setAppPass(e.target.value)}

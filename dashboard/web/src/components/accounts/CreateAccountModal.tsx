@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertCircle, Lock, Plus, X } from 'lucide-react';
 import { createAccount } from '../../services/api';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface Props {
   isOpen: boolean;
@@ -106,9 +107,9 @@ export const CreateAccountModal = ({ isOpen, onClose, onSuccess }: Props) => {
               </span>
             </label>
             <input
+              {...secretFieldProps}
               id="new-account-passphrase"
               type="password"
-              autoComplete="current-password"
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
               disabled={submitting}

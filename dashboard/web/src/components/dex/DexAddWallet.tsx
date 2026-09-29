@@ -8,6 +8,7 @@ import { createDexAssetWallet, type DexAsset, type DexWalletDefinition } from '.
 import { CoinIcon } from './CoinIcon';
 import { DexWalletConfigForm } from './DexWalletConfigForm';
 import { apiError } from '../../utils/apiError';
+import { secretFieldProps } from '../../utils/secretField';
 
 interface Creatable {
   id: number;
@@ -175,6 +176,7 @@ export const DexAddWallet = ({ catalog, existingIDs, onCreated, onCancel }: Prop
         <div>
           <label className="block text-xs text-muted-foreground mb-1">Wallet password</label>
           <input
+            {...secretFieldProps}
             type="password"
             value={walletPass}
             onChange={(e) => setWalletPass(e.target.value)}

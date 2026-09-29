@@ -13,6 +13,7 @@ import {
 } from '../services/api';
 import { WalletSetup } from '../components/WalletSetup';
 import { apiError } from '../utils/apiError';
+import { secretFieldProps } from '../utils/secretField';
 
 interface WalletSelectionProps {
   // embedded is true when shown from an open wallet (the "Switch wallet"
@@ -208,6 +209,7 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
               Wallet "{passphraseFor}" is encrypted. Enter its public passphrase to open it.
             </p>
             <input
+              {...secretFieldProps}
               type="password"
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
