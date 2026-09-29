@@ -17,7 +17,7 @@ describe('decodeSegments', () => {
   });
 
   it('drops invisible direction and zero-width characters', () => {
-    expect(decodeSegments(['a‮b', '%E2%80%AEx', 'z%E2%80%8Bw'])).toEqual(['ab', 'x', 'zw']);
+    expect(decodeSegments(['a\u202eb', '%E2%80%AEx', 'z%E2%80%8Bw'])).toEqual(['ab', 'x', 'zw']);
   });
 });
 

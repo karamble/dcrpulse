@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // setPassword points the package at a scratch config and sets a password, so
@@ -20,6 +22,15 @@ func setPassword(t *testing.T, password string) {
 	if err := Setup(password); err != nil {
 		t.Fatalf("Setup() = %v, want nil", err)
 	}
+	// A cheap hash keeps each compare near 1ms, so the backoff windows the
+	// tests assert cannot expire while bcrypt runs under -race.
+	h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	mu.Lock()
+	hash = h
+	mu.Unlock()
 }
 
 func TestBackoffDelayCurve(t *testing.T) {

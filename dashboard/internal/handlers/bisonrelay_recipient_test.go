@@ -18,7 +18,8 @@ import (
 // could land a message or a tip on the wrong contact.
 func TestSendsNameTheirRecipientByUIDOnly(t *testing.T) {
 	uid := strings.Repeat("ab", 32)
-	bad := []string{"alice", uid[:12], uid[:63], uid + "​", ""}
+	// BR-1: a zero-width space makes a nick read as another contact's uid.
+	bad := []string{"alice", uid[:12], uid[:63], uid + "\u200b", ""}
 
 	jsonRoutes := []struct {
 		name    string
