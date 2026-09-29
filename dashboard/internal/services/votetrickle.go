@@ -295,14 +295,44 @@ func trickleOneVote(ctx context.Context, st *vtRunState, vote piBallotVote, at t
 				fmt.Sprintf("Ticket %s submit error (attempt %d/%d): %v", shortHex(vote.Ticket), attempt+1, voteTrickleSubmitAttempts, err), vote.Ticket)
 			continue // transient; retry
 		}
-		if len(resp.Receipts) > 0 && resp.Receipts[0].ErrorCode != 0 {
-			markVoteFailed(st, vote, fmt.Sprintf("rejected: %s", resp.Receipts[0].ErrorMsg))
-			return
+		switch outcome, reason := trickleReceiptOutcome(resp, vote, attempt); outcome {
+		case receiptRetry:
+			recordVoteTrickleEvent(st.token, "warn", "failed",
+				fmt.Sprintf("Ticket %s %s (attempt %d/%d)", shortHex(vote.Ticket), reason, attempt+1, voteTrickleSubmitAttempts), vote.Ticket)
+			continue
+		case receiptFailed:
+			markVoteFailed(st, vote, reason)
+		default:
+			markVoteCast(st, vote)
 		}
-		markVoteCast(st, vote)
 		return
 	}
 	markVoteFailed(st, vote, "submit failed after retries")
+}
+
+type receiptOutcome int
+
+const (
+	receiptCast receiptOutcome = iota
+	receiptFailed
+	receiptRetry
+)
+
+// trickleReceiptOutcome reads a one-vote ballot reply. Only a receipt for this
+// ticket decides the vote, and "already voted" on a retry means an earlier
+// attempt of this vote went through.
+func trickleReceiptOutcome(resp piCastBallotResponse, vote piBallotVote, attempt int) (receiptOutcome, string) {
+	if len(resp.Receipts) != 1 || resp.Receipts[0].Ticket != vote.Ticket {
+		return receiptRetry, "reply carried no receipt for this ticket"
+	}
+	r := resp.Receipts[0]
+	switch {
+	case r.ErrorCode == 0:
+		return receiptCast, ""
+	case r.ErrorCode == piVoteErrorTicketAlreadyVoted && attempt > 0:
+		return receiptCast, ""
+	}
+	return receiptFailed, fmt.Sprintf("rejected: %s", r.ErrorMsg)
 }
 
 func markVoteCast(st *vtRunState, vote piBallotVote) {

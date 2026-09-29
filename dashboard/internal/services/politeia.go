@@ -855,6 +855,10 @@ type piCastBallotResponse struct {
 	Receipts []piCastBallotReceipt `json:"receipts"`
 }
 
+// piVoteErrorTicketAlreadyVoted is Politeia's ticketvote/v1
+// VoteErrorTicketAlreadyVoted receipt code.
+const piVoteErrorTicketAlreadyVoted = 9
+
 // buildSignedVotes resolves the wallet's eligible tickets for a proposal and
 // signs one vote per ticket with the given choice. It unlocks the owning
 // accounts, signs, and re-locks them BEFORE returning: the deferred
