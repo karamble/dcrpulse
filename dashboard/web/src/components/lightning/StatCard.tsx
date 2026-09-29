@@ -1,6 +1,3 @@
-const atomsPerDcr = 1e8;
-export const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
-
 interface StatCardProps {
   icon: React.ReactNode;
   label: string;

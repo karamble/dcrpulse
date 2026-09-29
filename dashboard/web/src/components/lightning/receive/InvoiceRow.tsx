@@ -2,9 +2,8 @@ import { ArrowDownLeft, CheckCircle2, Clock, Loader2, XCircle } from 'lucide-rea
 import { toYMDTime } from '../../../utils/date';
 import type { LightningInvoice, LightningInvoiceStatus } from '../../../services/lightningApi';
 import { StatusPill, StatusTone } from '../StatusPill';
+import { formatAtomsDcr } from '../../../utils/amounts';
 
-const atomsPerDcr = 1e8;
-const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
 const truncHash = (s: string) => (s.length <= 18 ? s : `${s.slice(0, 10)}…${s.slice(-6)}`);
 
 const fmtDate = (sec: number) => {
@@ -46,7 +45,7 @@ export const InvoiceRow = ({ invoice, onClick }: Props) => {
         </div>
         <div className="min-w-0">
           <div className="text-sm font-medium truncate">
-            {invoice.valueAtoms > 0 ? `Requested ${fmtDcr(invoice.valueAtoms)}` : 'Open amount'}
+            {invoice.valueAtoms > 0 ? `Requested ${formatAtomsDcr(invoice.valueAtoms)}` : 'Open amount'}
           </div>
           <div className="text-xs text-muted-foreground font-mono truncate">
             {truncHash(invoice.rHashHex)}

@@ -6,6 +6,7 @@ import { useState, type FormEvent } from 'react';
 import { ShieldCheck, Loader2 } from 'lucide-react';
 import { setupAppPassword, skipAppPasswordSetup } from '../../services/auth';
 import { UnprotectedWarning } from './UnprotectedWarning';
+import { apiError } from '../../utils/apiError';
 
 // AppPasswordFirstRun is the one-time prompt shown on a fresh dashboard. The
 // user can set an app password now or, after acknowledging the warning, skip
@@ -37,7 +38,7 @@ export function AppPasswordFirstRun({ onDone }: { onDone: () => void }) {
       await setupAppPassword(password);
       onDone();
     } catch (err: any) {
-      setError(err?.message || 'Could not enable the app password.');
+      setError(apiError(err, 'Could not enable the app password.'));
       setBusy(false);
     }
   };

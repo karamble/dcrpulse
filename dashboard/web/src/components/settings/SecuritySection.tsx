@@ -72,11 +72,7 @@ export const SecuritySection = () => {
       setMsg('Password changed.');
       await refresh();
     } catch (e: any) {
-      setErr(
-        e?.response?.status === 400
-          ? 'Current password is incorrect.'
-          : e?.message || 'Failed to change password.',
-      );
+      setErr(apiError(e, 'Failed to change password.'));
     } finally {
       setBusy(false);
     }
@@ -98,11 +94,7 @@ export const SecuritySection = () => {
       setMsg('App password disabled.');
       await refresh();
     } catch (e: any) {
-      setErr(
-        e?.response?.status === 400
-          ? 'Current password is incorrect.'
-          : e?.message || 'Failed to disable.',
-      );
+      setErr(apiError(e, 'Failed to disable.'));
     } finally {
       setBusy(false);
     }

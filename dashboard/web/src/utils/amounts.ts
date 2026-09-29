@@ -8,13 +8,19 @@ const ATOMS_PER_DCR = 1e8;
 export const toDcr = (atoms: number): number => atoms / ATOMS_PER_DCR;
 
 // formatAtoms renders an atom count with a fixed number of decimals. The name
-// states the input unit: components that already hold DCR format it themselves.
+// states the input unit: components that already hold DCR use formatDcr.
 export const formatAtoms = (atoms: number, decimals = 8): string =>
   toDcr(atoms).toFixed(decimals);
 
 // formatAtomsTrimmed renders an atom count without trailing zeros.
 export const formatAtomsTrimmed = (atoms: number): string =>
   formatAtoms(atoms).replace(/\.?0+$/, '');
+
+// formatAtomsDcr renders an atom count with 8 decimals and the unit.
+export const formatAtomsDcr = (atoms: number): string => `${formatAtoms(atoms)} DCR`;
+
+// formatDcr renders a value already in DCR, such as the wallet's balances.
+export const formatDcr = (dcr: number, decimals = 8): string => dcr.toFixed(decimals);
 
 export interface AmountRules {
   // optional accepts an empty field; allowZero accepts a zero amount.

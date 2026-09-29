@@ -4,9 +4,8 @@ import { CheckCircle2, Copy, X } from 'lucide-react';
 import type { LightningInvoice } from '../../../services/lightningApi';
 import { cancelLnInvoice } from '../../../services/lightningApi';
 import { apiError } from '../../../utils/apiError';
+import { formatAtomsDcr } from '../../../utils/amounts';
 
-const atomsPerDcr = 1e8;
-const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
 const trunc = (s: string, head = 12, tail = 8) =>
   s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
 const fmtDate = (sec: number) => (!sec ? '-' : toYMDTime(new Date(sec * 1000)));
@@ -113,10 +112,10 @@ export const InvoiceDetailsModal = ({ invoice, onClose, onCanceled }: Props) => 
           <Field label="Status" value={invoice.status} />
           <Field
             label="Requested"
-            value={invoice.valueAtoms > 0 ? fmtDcr(invoice.valueAtoms) : 'Open amount'}
+            value={invoice.valueAtoms > 0 ? formatAtomsDcr(invoice.valueAtoms) : 'Open amount'}
           />
           {invoice.amtPaidAtoms > 0 && (
-            <Field label="Received" value={fmtDcr(invoice.amtPaidAtoms)} />
+            <Field label="Received" value={formatAtomsDcr(invoice.amtPaidAtoms)} />
           )}
           <Field label="Created" value={fmtDate(invoice.creationDate)} />
           {invoice.status === 'settled' && invoice.settleDate ? (

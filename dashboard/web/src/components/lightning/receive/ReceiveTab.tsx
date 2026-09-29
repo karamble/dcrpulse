@@ -11,9 +11,9 @@ import { InvoiceRow } from './InvoiceRow';
 import { InvoiceDetailsModal } from './InvoiceDetailsModal';
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
 import { apiError } from '../../../utils/apiError';
+import { formatAtomsDcr } from '../../../utils/amounts';
 
 const atomsPerDcr = 1e8;
-const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
 const truncHash = (s: string) => (s.length <= 18 ? s : `${s.slice(0, 10)}…${s.slice(-6)}`);
 
 type Filter = 'all' | 'open' | 'settled' | 'expired' | 'canceled';
@@ -239,7 +239,7 @@ export const ReceiveTab = () => {
                 Current invoice
               </div>
               <div className="text-lg font-semibold">
-                {active.valueAtoms > 0 ? fmtDcr(active.valueAtoms) : 'Open amount'}
+                {active.valueAtoms > 0 ? formatAtomsDcr(active.valueAtoms) : 'Open amount'}
               </div>
               {active.memo && (
                 <div className="text-sm text-muted-foreground">{active.memo}</div>

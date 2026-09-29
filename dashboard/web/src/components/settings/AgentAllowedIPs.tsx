@@ -7,6 +7,7 @@ import { Network, AlertTriangle, Loader2 } from 'lucide-react';
 import { setMCPAgentAllowedIPs } from '../../services/api';
 import { ConfigSection } from './ConfigSection';
 import { toYMDTime } from '../../utils/date';
+import { apiError } from '../../utils/apiError';
 
 interface Props {
   agentId: string;
@@ -38,10 +39,7 @@ export const AgentAllowedIPs = ({ agentId, allowedIps, lastDenied, onChanged }: 
       setEditing(false);
       onChanged();
     } catch (e) {
-      const data = (e as { response?: { data?: unknown } }).response?.data;
-      setError(
-        typeof data === 'string' && data ? data.trim() : 'Failed to update the allowed IP addresses.',
-      );
+      setError(apiError(e, 'Failed to update the allowed IP addresses.'));
     } finally {
       setBusy(false);
     }
@@ -55,10 +53,7 @@ export const AgentAllowedIPs = ({ agentId, allowedIps, lastDenied, onChanged }: 
       await setMCPAgentAllowedIPs(agentId, [...allowedIps, lastDenied.ip]);
       onChanged();
     } catch (e) {
-      const data = (e as { response?: { data?: unknown } }).response?.data;
-      setError(
-        typeof data === 'string' && data ? data.trim() : 'Failed to update the allowed IP addresses.',
-      );
+      setError(apiError(e, 'Failed to update the allowed IP addresses.'));
     } finally {
       setBusy(false);
     }

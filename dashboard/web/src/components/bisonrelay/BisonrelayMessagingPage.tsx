@@ -266,7 +266,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       setContacts(entries);
       setContactsErr(null);
     } catch (err: any) {
-      setContactsErr(err?.message || 'Could not load contacts');
+      setContactsErr(apiError(err, 'Could not load contacts'));
     }
   }, []);
 
@@ -279,7 +279,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       // nav dot can't get stuck on a group with no sidebar row to open.
       pruneGCUnread(entries.map((g) => g.id));
     } catch (err: any) {
-      setGCsErr(err?.message || 'Could not load groups');
+      setGCsErr(apiError(err, 'Could not load groups'));
     }
   }, [pruneGCUnread]);
 
@@ -307,7 +307,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       const pmEntries = resp.entries ?? [];
       setMessages([...pmEntries].sort((a, b) => a.timestamp - b.timestamp));
     } catch (err: any) {
-      if (current()) setMessagesErr(err?.message || 'Could not load messages');
+      if (current()) setMessagesErr(apiError(err, 'Could not load messages'));
     } finally {
       if (current()) setMessagesLoading(false);
     }
@@ -324,7 +324,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       const sorted = [...entries].sort((a, b) => a.timestamp - b.timestamp);
       setMessages(sorted);
     } catch (err: any) {
-      if (current()) setMessagesErr(err?.message || 'Could not load group history');
+      if (current()) setMessagesErr(apiError(err, 'Could not load group history'));
     } finally {
       if (current()) setMessagesLoading(false);
     }
@@ -2763,7 +2763,7 @@ const InviteCreateModal = ({ onClose }: { onClose: () => void }) => {
         if (!cancelled) setInvite(b);
       })
       .catch((e) => {
-        if (!cancelled) setErr(e?.message || 'Could not create invite');
+        if (!cancelled) setErr(apiError(e, 'Could not create invite'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -2887,7 +2887,7 @@ const InviteAcceptModal = ({
       onAccepted();
       onClose();
     } catch (e: any) {
-      setErr(e?.message || 'Could not accept invite');
+      setErr(apiError(e, 'Could not accept invite'));
     } finally {
       setSubmitting(false);
     }

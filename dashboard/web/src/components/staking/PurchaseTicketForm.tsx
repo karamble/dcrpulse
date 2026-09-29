@@ -18,8 +18,7 @@ import { PassphraseModal } from '../wallet/PassphraseModal';
 import { VSPSelect } from './VSPSelect';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
-
-const formatDcr = (v: number): string => v.toFixed(8);
+import { formatDcr } from '../../utils/amounts';
 
 interface PurchaseTicketFormProps {
   // Ticket price / pool snapshot, polled by PurchaseTab so the parent and the
@@ -66,7 +65,7 @@ export const PurchaseTicketForm = ({ staking }: PurchaseTicketFormProps) => {
         });
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to load wallet state');
+      setError(apiError(err, 'Failed to load wallet state'));
     }
   };
   useVisiblePoll(load, 10000);

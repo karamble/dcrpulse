@@ -128,7 +128,7 @@ export const AutobuyerTab = () => {
         }
       } catch (err: any) {
         if (!cancelled) {
-          setFeedback({ kind: 'error', text: err?.message || 'Failed to load autobuyer state' });
+          setFeedback({ kind: 'error', text: apiError(err, 'Failed to load autobuyer state') });
         }
       }
     })();
@@ -220,7 +220,7 @@ export const AutobuyerTab = () => {
       setFeedback({ kind: 'info', text: 'Autobuyer stop requested.' });
       await refreshStatus();
     } catch (err: any) {
-      setFeedback({ kind: 'error', text: err?.message || 'Stop failed' });
+      setFeedback({ kind: 'error', text: apiError(err, 'Stop failed') });
     } finally {
       setBusy(false);
     }

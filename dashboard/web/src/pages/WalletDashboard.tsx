@@ -85,7 +85,7 @@ export const WalletDashboard = () => {
         const serverMsg = typeof body === 'string' ? body.trim() : '';
         setError(serverMsg || 'Wallet RPC not connected. Please ensure dcrwallet is running.');
       } else {
-        setError(err.message || 'Failed to fetch wallet data');
+        setError(apiError(err, 'Failed to fetch wallet data'));
       }
     } finally {
       setLoading(false);

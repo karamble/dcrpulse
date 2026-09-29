@@ -15,9 +15,8 @@ import {
 } from 'recharts';
 import { TicketRecord, listTickets } from '../../services/api';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
-
-const formatDcr = (v: number) => v.toFixed(8);
-const formatDcr4 = (v: number) => v.toFixed(4);
+import { formatDcr } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 interface StatCardProps {
   label: string;
@@ -59,7 +58,7 @@ export const StatisticsTab = () => {
       setTickets(list);
       setError(null);
     } catch (err: any) {
-      setError(err?.message || 'Failed to load tickets');
+      setError(apiError(err, 'Failed to load tickets'));
     } finally {
       setLoading(false);
     }
@@ -160,14 +159,14 @@ export const StatisticsTab = () => {
         />
         <StatCard
           label="Total Reward"
-          value={`${formatDcr4(stats.totalReward)} DCR`}
+          value={`${formatDcr(stats.totalReward, 4)} DCR`}
           sub="Sum across all voted tickets"
           icon={<TrendingUp className="h-4 w-4 text-success" />}
           tone="success"
         />
         <StatCard
           label="Total Stake Committed"
-          value={`${formatDcr4(stats.totalCommitted)} DCR`}
+          value={`${formatDcr(stats.totalCommitted, 4)} DCR`}
           sub="Currently locked in active tickets"
           icon={<Lock className="h-4 w-4 text-primary" />}
         />

@@ -266,7 +266,7 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
         setPages(p);
         setErr(null);
       })
-      .catch((e: any) => setErr(e?.message || 'Could not load pages'))
+      .catch((e: any) => setErr(apiError(e, 'Could not load pages')))
       .finally(() => setLoading(false));
   }, []);
 
@@ -280,7 +280,7 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
       await deleteBisonrelayLocalPage(name);
       refresh();
     } catch (e: any) {
-      setErr(e?.message || 'Delete failed');
+      setErr(apiError(e, 'Delete failed'));
     }
   };
 
@@ -423,7 +423,7 @@ const PageEditorView = ({ ownId, name }: { ownId: string; name?: string }) => {
         setLoaded(true);
       })
       .catch((e: any) => {
-        setErr(e?.message || 'Could not load page');
+        setErr(apiError(e, 'Could not load page'));
         setLoaded(true);
       });
   }, [editing, name]);
@@ -456,7 +456,7 @@ const PageEditorView = ({ ownId, name }: { ownId: string; name?: string }) => {
       }
       navigateTo('pages');
     } catch (e: any) {
-      setErr(e?.message || 'Save failed');
+      setErr(apiError(e, 'Save failed'));
     } finally {
       setSaving(false);
     }

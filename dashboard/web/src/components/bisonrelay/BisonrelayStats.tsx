@@ -1007,7 +1007,7 @@ const BlockedContactsCard = () => {
       setBlocked(await listBisonrelayBlockedContacts());
       setErr(null);
     } catch (e: any) {
-      setErr(e?.message || 'Could not load blocked contacts');
+      setErr(apiError(e, 'Could not load blocked contacts'));
     }
   }, []);
 

@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, ChevronDown, Copy } from 'lucide-react';
 import type { LightningDecodedPayReq } from '../../../services/lightningApi';
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
+import { formatAtomsDcr } from '../../../utils/amounts';
 
 const atomsPerDcr = 1e8;
-const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
 
 const trunc = (s: string, head = 10, tail = 8) =>
   s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
@@ -100,7 +100,7 @@ export const DecodedPayRequest = ({
       <div className="flex items-start justify-between gap-3 py-2 border-b border-border/40">
         <span className="text-xs uppercase tracking-wide text-muted-foreground shrink-0">Amount</span>
         {decoded.numAtoms > 0 ? (
-          <span className="text-base font-semibold text-right">{fmtDcr(decoded.numAtoms)}</span>
+          <span className="text-base font-semibold text-right">{formatAtomsDcr(decoded.numAtoms)}</span>
         ) : (
           <span className="flex items-center gap-2">
             <input

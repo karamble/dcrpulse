@@ -3,9 +3,8 @@ import { toYMDTime } from '../../../utils/date';
 import { CheckCircle2, Copy, X } from 'lucide-react';
 import { decodeLnPayReq } from '../../../services/lightningApi';
 import type { LightningPayment } from '../../../services/lightningApi';
+import { formatAtomsDcr } from '../../../utils/amounts';
 
-const atomsPerDcr = 1e8;
-const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
 const trunc = (s: string, head = 12, tail = 8) =>
   s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
 const fmtDate = (sec: number) => {
@@ -116,8 +115,8 @@ export const PaymentDetailsModal = ({ payment, onClose }: Props) => {
 
         <div>
           <Field label="Status" value={payment.status} />
-          <Field label="Amount" value={fmtDcr(payment.valueAtoms)} />
-          <Field label="Fee" value={fmtDcr(payment.feeAtoms)} />
+          <Field label="Amount" value={formatAtomsDcr(payment.valueAtoms)} />
+          <Field label="Fee" value={formatAtomsDcr(payment.feeAtoms)} />
           <Field label="Date" value={fmtDate(payment.creationDate)} />
           <Field
             label="Hash"
@@ -169,14 +168,14 @@ export const PaymentDetailsModal = ({ payment, onClose }: Props) => {
                     <span>{htlc.status}</span>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Total {fmtDcr(htlc.totalAmt)} · Fees {fmtDcr(htlc.totalFees)}
+                    Total {formatAtomsDcr(htlc.totalAmt)} · Fees {formatAtomsDcr(htlc.totalFees)}
                   </div>
                   {htlc.hops && htlc.hops.length > 0 && (
                     <ol className="text-xs space-y-1 list-decimal list-inside text-foreground/80">
                       {htlc.hops.map((hop, j) => (
                         <li key={j} className="font-mono">
                           {trunc(hop.pubKey, 8, 6)} <span className="text-muted-foreground">
-                            fee {fmtDcr(hop.feeAtoms)}
+                            fee {formatAtomsDcr(hop.feeAtoms)}
                           </span>
                         </li>
                       ))}

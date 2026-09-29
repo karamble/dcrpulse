@@ -61,7 +61,7 @@ export const PrivacySection = () => {
       const r = await setMixerDebug(!mixerDebug);
       setMixerDebugState(r.enabled);
     } catch (err: any) {
-      setFeedback({ kind: 'error', text: err?.message || 'Failed to toggle debug logging' });
+      setFeedback({ kind: 'error', text: apiError(err, 'Failed to toggle debug logging') });
     } finally {
       setDebugBusy(false);
     }

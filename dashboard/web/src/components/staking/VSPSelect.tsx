@@ -41,7 +41,7 @@ export const VSPSelect = ({ network, value, onChange }: Props) => {
         if (!cancelled) setReg(r);
       })
       .catch((err) => {
-        if (!cancelled) setLoadError(err?.message || 'Failed to load VSPs');
+        if (!cancelled) setLoadError(apiError(err, 'Failed to load VSPs'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

@@ -28,6 +28,7 @@ import { PassphraseModal } from '../wallet/PassphraseModal';
 import { VSPSelect } from './VSPSelect';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
+import { formatDcr } from '../../utils/amounts';
 
 const ACTIVE_STATES = new Set<TicketRecord['status']>(['UNMINED', 'IMMATURE', 'LIVE']);
 
@@ -40,7 +41,6 @@ const feeGroups: Array<{ key: TicketRecord['feeStatus'] | 'NONE'; label: string;
 ];
 
 const truncateHash = (h: string) => (h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-8)}` : h);
-const formatDcr = (v: number) => v.toFixed(8);
 const formatAge = (unixSec: number) => {
   if (!unixSec) return '-';
   const seconds = Math.floor(Date.now() / 1000 - unixSec);
@@ -197,7 +197,7 @@ export const TicketStatusTab = () => {
       setTickets(list);
       setError(null);
     } catch (err: any) {
-      setError(err?.message || 'Failed to load tickets');
+      setError(apiError(err, 'Failed to load tickets'));
     } finally {
       setLoading(false);
     }

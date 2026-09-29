@@ -5,6 +5,7 @@
 import { useState, type FormEvent } from 'react';
 import { Lock, Loader2 } from 'lucide-react';
 import { login } from '../../services/auth';
+import { apiError } from '../../utils/apiError';
 
 export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
   const [password, setPassword] = useState('');
@@ -29,7 +30,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
           ? 'Incorrect password.'
           : status === 429
             ? 'Too many login attempts on this dashboard right now. If they are not yours, something on your network is trying passwords. Wait a moment and try again.'
-            : err?.message || 'Login failed.',
+            : apiError(err, 'Login failed.'),
       );
       setBusy(false);
     }

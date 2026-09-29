@@ -8,9 +8,9 @@ import {
   queryLnRoutes,
 } from '../../../services/lightningApi';
 import { apiError } from '../../../utils/apiError';
+import { formatAtomsDcr } from '../../../utils/amounts';
 
 const atomsPerDcr = 1e8;
-const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
 const trunc = (s: string, head = 10, tail = 6) =>
   s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
 const fmtDate = (sec: number) => (!sec ? '-' : toYMDTime(new Date(sec * 1000)));
@@ -86,7 +86,7 @@ const QueryNodePanel = () => {
             </div>
             <div>
               <span className="text-xs uppercase tracking-wide text-muted-foreground mr-2">Total capacity</span>
-              {fmtDcr(info.totalCapacity)}
+              {formatAtomsDcr(info.totalCapacity)}
             </div>
             <div>
               <span className="text-xs uppercase tracking-wide text-muted-foreground mr-2">Last update</span>
@@ -108,7 +108,7 @@ const QueryNodePanel = () => {
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono">{c.chanPoint}</span>
-                  <span className="text-muted-foreground">{fmtDcr(c.capacity)}</span>
+                  <span className="text-muted-foreground">{formatAtomsDcr(c.capacity)}</span>
                 </div>
                 <div className="font-mono text-muted-foreground">
                   {trunc(c.node1Pubkey)} — {trunc(c.node2Pubkey)}
@@ -214,14 +214,14 @@ const QueryRoutesPanel = () => {
                   <div className="text-xs flex items-center justify-between">
                     <span className="text-muted-foreground">Route #{i + 1}</span>
                     <span>
-                      total {fmtDcr(route.totalAmtAtoms)} · fees {fmtDcr(route.totalFeesAtoms)}
+                      total {formatAtomsDcr(route.totalAmtAtoms)} · fees {formatAtomsDcr(route.totalFeesAtoms)}
                     </span>
                   </div>
                   <ol className="text-xs space-y-1 list-decimal list-inside text-foreground/80">
                     {route.hops.map((h, j) => (
                       <li key={j} className="font-mono">
                         {trunc(h.pubKey, 8, 6)}{' '}
-                        <span className="text-muted-foreground">fee {fmtDcr(h.feeAtoms)}</span>
+                        <span className="text-muted-foreground">fee {formatAtomsDcr(h.feeAtoms)}</span>
                       </li>
                     ))}
                   </ol>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Network, Wallet } from 'lucide-react';
 import { LightningBalance, getLightningBalance } from '../../../services/lightningApi';
-import { StatCard, fmtDcr } from '../StatCard';
+import { StatCard } from '../StatCard';
+import { formatAtomsDcr } from '../../../utils/amounts';
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
 
 export const ChannelFundingBalance = () => {
@@ -24,22 +25,22 @@ export const ChannelFundingBalance = () => {
       <StatCard
         icon={<Wallet className="h-3.5 w-3.5" />}
         label="Spendable"
-        value={fmtDcr(balance.onChainConfirmed)}
+        value={formatAtomsDcr(balance.onChainConfirmed)}
       />
       <StatCard
         icon={<Wallet className="h-3.5 w-3.5" />}
         label="Unconfirmed"
-        value={fmtDcr(balance.onChainUnconfirmed)}
+        value={formatAtomsDcr(balance.onChainUnconfirmed)}
       />
       <StatCard
         icon={<Network className="h-3.5 w-3.5" />}
         label="In channels"
-        value={fmtDcr(balance.channelLocal)}
+        value={formatAtomsDcr(balance.channelLocal)}
       />
       <StatCard
         icon={<Network className="h-3.5 w-3.5" />}
         label="Pending"
-        value={fmtDcr(balance.channelPending)}
+        value={formatAtomsDcr(balance.channelPending)}
       />
     </div>
   );

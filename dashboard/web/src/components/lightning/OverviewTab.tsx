@@ -20,7 +20,8 @@ import {
   getLightningInfo,
 } from '../../services/lightningApi';
 import { NetworkStats } from './NetworkStats';
-import { StatCard, fmtDcr } from './StatCard';
+import { StatCard } from './StatCard';
+import { formatAtomsDcr } from '../../utils/amounts';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
 
@@ -132,33 +133,33 @@ export const OverviewTab = () => {
           <StatCard
             icon={<Wallet className="h-3.5 w-3.5" />}
             label="On-chain confirmed"
-            value={fmtDcr(balance.onChainConfirmed)}
+            value={formatAtomsDcr(balance.onChainConfirmed)}
           />
           <StatCard
             icon={<Wallet className="h-3.5 w-3.5" />}
             label="On-chain unconfirmed"
-            value={fmtDcr(balance.onChainUnconfirmed)}
+            value={formatAtomsDcr(balance.onChainUnconfirmed)}
           />
           <StatCard
             icon={<Wallet className="h-3.5 w-3.5" />}
             label="On-chain total"
-            value={fmtDcr(balance.onChainTotal)}
+            value={formatAtomsDcr(balance.onChainTotal)}
           />
           <StatCard
             icon={<Network className="h-3.5 w-3.5" />}
             label="Channel local"
-            value={fmtDcr(balance.channelLocal)}
+            value={formatAtomsDcr(balance.channelLocal)}
             sub={info ? `${info.numActiveChannels} active` : undefined}
           />
           <StatCard
             icon={<Network className="h-3.5 w-3.5" />}
             label="Channel remote"
-            value={fmtDcr(balance.channelRemote)}
+            value={formatAtomsDcr(balance.channelRemote)}
           />
           <StatCard
             icon={<Network className="h-3.5 w-3.5" />}
             label="Pending channels"
-            value={fmtDcr(balance.channelPending)}
+            value={formatAtomsDcr(balance.channelPending)}
             sub={info ? `${info.numPendingChannels} pending` : undefined}
           />
         </div>
@@ -186,7 +187,7 @@ export const OverviewTab = () => {
                 <div className="text-xs text-muted-foreground shrink-0">
                   {toYMDTime(new Date(e.timestamp * 1000))}
                 </div>
-                <div className="text-sm font-mono shrink-0">{fmtDcr(e.amount)}</div>
+                <div className="text-sm font-mono shrink-0">{formatAtomsDcr(e.amount)}</div>
               </li>
             ))}
           </ul>

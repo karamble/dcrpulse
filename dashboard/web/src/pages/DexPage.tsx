@@ -14,6 +14,7 @@ import { useWalletReady } from '../hooks/useWalletReady';
 import { useVisiblePoll } from '../hooks/useVisiblePoll';
 import { WalletSyncGate } from '../components/common/WalletSyncGate';
 import { WatchOnlyGate } from '../components/common/WatchOnlyGate';
+import { apiError } from '../utils/apiError';
 
 export const DexPage = () => {
   const [status, setStatus] = useState<DexStatus | null>(null);
@@ -31,7 +32,7 @@ export const DexPage = () => {
       setStatus(await getDexStatus());
       setErr(null);
     } catch (e: any) {
-      setErr(e?.message || 'Failed to load DCRDEX status');
+      setErr(apiError(e, 'Failed to load DCRDEX status'));
     }
   };
 

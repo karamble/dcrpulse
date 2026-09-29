@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { AccountInfo } from '../../services/api';
 import { ExtendedPubkeyReveal } from './ExtendedPubkeyReveal';
+import { formatDcr } from '../../utils/amounts';
 
 const IMPORTED_ACCOUNT_NUMBER = 2147483647;
 // dcrwallet assigns imported xpub accounts numbers at or above 2^31.
@@ -37,8 +38,6 @@ interface Props {
   account: AccountInfo;
   onRename: (account: AccountInfo) => void;
 }
-
-const formatDcr = (v: number) => v.toFixed(8);
 
 export const AccountRow = ({ account, onRename }: Props) => {
   const [expanded, setExpanded] = useState(false);

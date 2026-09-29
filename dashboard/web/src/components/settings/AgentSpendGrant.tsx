@@ -23,6 +23,7 @@ import {
 } from '../../services/api';
 import { ConfigSection, domainLabels, domainLabel } from './ConfigSection';
 import { isReservedAccount } from '../accounts/AccountRow';
+import { apiError } from '../../utils/apiError';
 
 interface Props {
   agentId: string;
@@ -142,8 +143,8 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
       setPassphrase('');
       setEditing(false);
       onChanged();
-    } catch {
-      setError('Failed to grant spend access. Check the passphrase and try again.');
+    } catch (e) {
+      setError(apiError(e, 'Failed to grant spend access. Check the passphrase and try again.'));
     } finally {
       setBusy(false);
     }

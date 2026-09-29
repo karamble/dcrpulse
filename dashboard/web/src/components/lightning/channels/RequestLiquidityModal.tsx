@@ -16,8 +16,7 @@ import {
   resolveLiquidityConfirm,
   subscribeLiquidityConfirm,
 } from '../../../services/lightningApi';
-import { fmtDcr } from '../StatCard';
-import { parseDcrAmount } from '../../../utils/amounts';
+import { formatAtomsDcr, parseDcrAmount } from '../../../utils/amounts';
 import { apiError } from '../../../utils/apiError';
 
 interface Props {
@@ -183,9 +182,9 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
             </p>
             {balance && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {stat('Outbound', fmtDcr(balance.channelLocal))}
-                {stat('Inbound', fmtDcr(balance.channelRemote))}
-                {stat('Pending', fmtDcr(balance.channelPending))}
+                {stat('Outbound', formatAtomsDcr(balance.channelLocal))}
+                {stat('Inbound', formatAtomsDcr(balance.channelRemote))}
+                {stat('Pending', formatAtomsDcr(balance.channelPending))}
                 {stat('Channels', openChannels === null ? '...' : String(openChannels))}
               </div>
             )}
@@ -292,12 +291,12 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
             <p className="text-sm">
               You pay the provider{' '}
               <span className="font-semibold tabular-nums">
-                {fmtDcr(prompt.quote.estimatedFeeAtoms)}
+                {formatAtomsDcr(prompt.quote.estimatedFeeAtoms)}
               </span>{' '}
               over Lightning, plus the routing fee to reach it. In return the
               provider opens a{' '}
               <span className="font-semibold tabular-nums">
-                {fmtDcr(prompt.quote.chanSizeAtoms)}
+                {formatAtomsDcr(prompt.quote.chanSizeAtoms)}
               </span>{' '}
               channel back to this node. The channel amount is the provider's
               own funds and is not taken from your balance.
@@ -306,12 +305,12 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Leaves your balance</span>
                 <span className="font-semibold tabular-nums">
-                  {fmtDcr(prompt.quote.estimatedFeeAtoms)}
+                  {formatAtomsDcr(prompt.quote.estimatedFeeAtoms)}
                 </span>
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Inbound capacity gained</span>
-                <span className="font-medium tabular-nums">{fmtDcr(prompt.quote.chanSizeAtoms)}</span>
+                <span className="font-medium tabular-nums">{formatAtomsDcr(prompt.quote.chanSizeAtoms)}</span>
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Minimum channel lifetime</span>
@@ -383,7 +382,7 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
                   {result.channelPoint}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Capacity {fmtDcr(result.capacityAtoms)}. The channel becomes
+                  Capacity {formatAtomsDcr(result.capacityAtoms)}. The channel becomes
                   active after confirmations.
                 </p>
               </div>

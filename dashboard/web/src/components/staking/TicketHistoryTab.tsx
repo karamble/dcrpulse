@@ -8,6 +8,8 @@ import { AlertCircle, ArrowDownUp, ExternalLink, Filter, History, Search } from 
 import { TicketRecord, TicketLifecycleStatus, listTickets } from '../../services/api';
 import { ticketStatusBadgeClass } from '../../services/ticketService';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { formatDcr } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 const ALL_STATES: TicketLifecycleStatus[] = [
   'UNMINED',
@@ -20,7 +22,6 @@ const ALL_STATES: TicketLifecycleStatus[] = [
 ];
 
 const truncateHash = (h: string) => (h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-8)}` : h);
-const formatDcr = (v: number) => v.toFixed(8);
 const formatAge = (unixSec: number) => {
   if (!unixSec) return '-';
   const seconds = Math.floor(Date.now() / 1000 - unixSec);
@@ -90,7 +91,7 @@ export const TicketHistoryTab = () => {
       setTickets(list);
       setError(null);
     } catch (err: any) {
-      setError(err?.message || 'Failed to load tickets');
+      setError(apiError(err, 'Failed to load tickets'));
     } finally {
       setLoading(false);
     }

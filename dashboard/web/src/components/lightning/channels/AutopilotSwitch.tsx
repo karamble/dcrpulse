@@ -33,7 +33,7 @@ export const AutopilotSwitch = () => {
   useEffect(() => {
     getLightningAutopilot()
       .then((r) => setActive(r.active))
-      .catch((err) => setError(err?.message || 'Failed to load autopilot status'));
+      .catch((err) => setError(apiError(err, 'Failed to load autopilot status')));
     getTorSettings()
       .then((s) => setTorOn(s.enabled))
       .catch(() => setTorOn(false));

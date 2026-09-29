@@ -34,6 +34,7 @@ import { StageList, type Stage, type StageState } from './StageList';
 import { fromUnix, shortHash } from './util';
 import { formatBytes } from '../../utils/bytes';
 import { toYMDTime } from '../../utils/date';
+import { apiError } from '../../utils/apiError';
 
 interface Props {
   digest: string;
@@ -92,7 +93,7 @@ export const RecordDetail = ({ digest, onClose, onChanged }: Props) => {
       setDescription(r.description || '');
       setTagsInput((r.tags || []).join(', '));
     } catch (e: any) {
-      setError(e?.message || 'failed to load record');
+      setError(apiError(e, 'failed to load record'));
     }
   }, [digest]);
 
@@ -106,7 +107,7 @@ export const RecordDetail = ({ digest, onClose, onChanged }: Props) => {
     try {
       setValidation(await validateTimestamp({ digest }));
     } catch (e: any) {
-      setError(e?.message || 'validation failed');
+      setError(apiError(e, 'validation failed'));
     } finally {
       setValidating(false);
     }
@@ -120,7 +121,7 @@ export const RecordDetail = ({ digest, onClose, onChanged }: Props) => {
       await load();
       onChanged();
     } catch (e: any) {
-      setError(e?.message || 'verification failed');
+      setError(apiError(e, 'verification failed'));
     } finally {
       setBusy(false);
     }
@@ -134,7 +135,7 @@ export const RecordDetail = ({ digest, onClose, onChanged }: Props) => {
       await load();
       onChanged();
     } catch (e: any) {
-      setError(e?.message || 'retry failed');
+      setError(apiError(e, 'retry failed'));
     } finally {
       setBusy(false);
     }
@@ -153,7 +154,7 @@ export const RecordDetail = ({ digest, onClose, onChanged }: Props) => {
       await load();
       onChanged();
     } catch (e: any) {
-      setError(e?.message || 'update failed');
+      setError(apiError(e, 'update failed'));
     } finally {
       setBusy(false);
     }
@@ -166,7 +167,7 @@ export const RecordDetail = ({ digest, onClose, onChanged }: Props) => {
       onChanged();
       onClose();
     } catch (e: any) {
-      setError(e?.message || 'delete failed');
+      setError(apiError(e, 'delete failed'));
       setBusy(false);
     }
   };

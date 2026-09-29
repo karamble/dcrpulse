@@ -18,6 +18,7 @@ import { TicketPoolCard } from '../components/TicketPoolCard';
 import { TorStrip, TorStripState, nodeWaitMessage } from '../components/tor/TorStrip';
 import { getDashboardData, DashboardData } from '../services/api';
 import { useVisiblePoll } from '../hooks/useVisiblePoll';
+import { apiError } from '../utils/apiError';
 
 interface NodeSync {
   status: string;
@@ -81,7 +82,7 @@ export const NodeDashboard = () => {
         const serverMsg = typeof err.response.data === 'string' ? err.response.data.trim() : '';
         setError(serverMsg || 'RPC client not connected. Please configure the connection below.');
       } else {
-        setError(err.message || 'Failed to fetch data');
+        setError(apiError(err, 'Failed to fetch data'));
       }
     } finally {
       setLoading(false);
