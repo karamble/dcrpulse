@@ -1952,6 +1952,9 @@ type DexWalletTx struct {
 	Timestamp   uint64  `json:"timestamp"`
 	Recipient   string  `json:"recipient,omitempty"`
 	TokenID     *uint32 `json:"tokenID,omitempty"`
+	// FeeSymbol names the fee's asset when it is not the wallet's own: a
+	// token wallet pays its fees in the parent chain's coin.
+	FeeSymbol string `json:"feeSymbol,omitempty"`
 }
 
 type rawWalletTx struct {
@@ -1970,14 +1973,18 @@ func convWalletTx(assetID uint32, t rawWalletTx) DexWalletTx {
 	if t.TokenID != nil {
 		amtFactor = dexassets.ConvFactor(*t.TokenID)
 	}
+	feeAsset := dexassets.FeeAsset(assetID)
 	out := DexWalletTx{
 		Type:        t.Type,
 		ID:          t.ID,
 		Amount:      atomsToConv(t.Amount, amtFactor),
-		Fees:        atomsToConv(t.Fees, dexassets.ConvFactor(assetID)),
+		Fees:        atomsToConv(t.Fees, dexassets.ConvFactor(feeAsset)),
 		BlockNumber: t.BlockNumber,
 		Timestamp:   t.Timestamp,
 		TokenID:     t.TokenID,
+	}
+	if feeAsset != assetID {
+		out.FeeSymbol = dexassets.Symbol(feeAsset)
 	}
 	if t.Recipient != nil {
 		out.Recipient = *t.Recipient

@@ -148,7 +148,10 @@ export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
                   {incoming ? '+' : '-'}
                   {fmtAmt(t.amount, 8)}
                 </td>
-                <td className="py-2 text-right font-mono tabular-nums text-muted-foreground pr-6">{fmtAmt(t.fees, 8)}</td>
+                <td className="py-2 text-right font-mono tabular-nums text-muted-foreground pr-6">
+                  {fmtAmt(t.fees, 8)}
+                  {t.feeSymbol && <span className="ml-1 text-[10px] uppercase">{t.feeSymbol}</span>}
+                </td>
                 <td className="py-2 text-xs text-muted-foreground pl-2 whitespace-nowrap">
                   {t.timestamp ? toYMDTime(new Date(t.timestamp * 1000)) : '-'}
                 </td>

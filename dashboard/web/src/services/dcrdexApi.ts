@@ -768,6 +768,8 @@ export interface DexWalletTx {
   timestamp: number;
   recipient?: string;
   tokenID?: number;
+  // The fee's asset when it is not the wallet's own (a token pays in its parent chain's coin).
+  feeSymbol?: string;
 }
 
 export const getDexWalletTxs = async (assetID: number, n = 0, refID = '', past = false): Promise<DexWalletTx[]> => {
