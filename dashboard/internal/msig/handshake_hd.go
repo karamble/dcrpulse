@@ -51,7 +51,7 @@ func newDedicatedAccount(ctx context.Context, label, tempID string, passphrase [
 	name := sanitizeAccountName(label, tempID)
 	number, err := createAccountSeam(ctx, name, passphrase)
 	if err != nil {
-		return nil, fmt.Errorf("create the dedicated account: %v", err)
+		return nil, fmt.Errorf("create the dedicated account: %w", err)
 	}
 	xpub, err := accountXpubSeam(ctx, number)
 	if err != nil {
@@ -230,7 +230,7 @@ func signOwnAttest(ctx context.Context, rec *WalletRecord, own *OwnHDKey, messag
 	// signMessageSeam wipes what it is given, and callers still need theirs.
 	sig, err := signMessageSeam(ctx, own.Account, addr, message, append([]byte(nil), passphrase...))
 	if err != nil {
-		return "", fmt.Errorf("sign the attestation: %v", err)
+		return "", fmt.Errorf("sign the attestation: %w", err)
 	}
 	return sig, nil
 }

@@ -215,7 +215,6 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := services.ChangePrivatePassphrase(ctx, oldPass, newPass); err != nil {
 		msg := err.Error()
-		lower := strings.ToLower(msg)
 		var partial *services.PartialPassphraseChangeError
 		switch {
 		// Must precede the passphrase case: this message contains the word, and
@@ -224,7 +223,7 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 		case errors.As(err, &partial):
 			settLog.Errorf("ChangePrivatePassphrase partial: %v", err)
 			http.Error(w, msg, http.StatusInternalServerError)
-		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+		case isWrongPassphrase(err):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
 			settLog.Errorf("ChangePrivatePassphrase failed: %v", err)

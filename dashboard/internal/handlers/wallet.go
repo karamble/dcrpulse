@@ -607,12 +607,10 @@ func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
 
 	num, err := services.CreateAccount(ctx, name, passphrase)
 	if err != nil {
-		msg := err.Error()
-		lower := strings.ToLower(msg)
 		switch {
-		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+		case isWrongPassphrase(err):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
-		case strings.Contains(lower, "already"):
+		case strings.Contains(strings.ToLower(err.Error()), "already"):
 			http.Error(w, "An account with that name already exists", http.StatusConflict)
 		default:
 			wlltLog.Errorf("CreateAccount failed: %v", err)
@@ -791,10 +789,8 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 
 	mixed, change, err := services.SetupPrivacyAccounts(ctx, passphrase)
 	if err != nil {
-		msg := err.Error()
-		lower := strings.ToLower(msg)
 		switch {
-		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+		case isWrongPassphrase(err):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
 			wlltLog.Errorf("PrivacySetup failed: %v", err)
@@ -862,8 +858,7 @@ func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := services.StartMixer(passphrase, mixed, 0, change); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "passphrase") || strings.Contains(lower, "decrypt") {
+		if isWrongPassphrase(err) {
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 			return
 		}
@@ -1095,7 +1090,7 @@ func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, msg, http.StatusConflict)
 		case strings.Contains(lower, "watching only"), strings.Contains(lower, "watchingonly"):
 			http.Error(w, "This account is watch-only — cannot sign", http.StatusBadRequest)
-		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+		case isWrongPassphrase(err):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
 			wlltLog.Errorf("SignAndPublishTransaction failed: %v", err)

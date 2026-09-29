@@ -6,10 +6,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
+
+	"google.golang.org/grpc/status"
 )
 
 // The handlers wrote their JSON replies by hand, each setting the same header
@@ -60,6 +64,26 @@ func walletGRPCReady(w http.ResponseWriter) bool {
 		return false
 	}
 	return true
+}
+
+// isWrongPassphrase reports whether the wallet or Lightning daemon rejected the
+// passphrase. Only the daemon's own reply counts: text quoted from elsewhere (a
+// Politeia or VSP reply, a wrapper message) never does, and a rotation that
+// went through for some accounts is not a wrong passphrase.
+func isWrongPassphrase(err error) bool {
+	var partial *services.PartialPassphraseChangeError
+	if errors.As(err, &partial) {
+		return false
+	}
+	if errors.Is(err, services.ErrWrongPassphrase) {
+		return true
+	}
+	var gs interface{ GRPCStatus() *status.Status }
+	if !errors.As(err, &gs) {
+		return false
+	}
+	msg := strings.ToLower(gs.GRPCStatus().Message())
+	return strings.Contains(msg, "passphrase") || strings.Contains(msg, "decrypt")
 }
 
 // dcrdReadyForWallet answers 503 when dcrd's polled state says wallet RPC

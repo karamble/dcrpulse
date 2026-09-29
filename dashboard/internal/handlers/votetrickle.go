@@ -62,7 +62,7 @@ func StartVoteTrickleHandler(w http.ResponseWriter, r *http.Request) {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
 		switch {
-		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+		case isWrongPassphrase(err):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		case strings.Contains(lower, "already running"):
 			http.Error(w, msg, http.StatusConflict)

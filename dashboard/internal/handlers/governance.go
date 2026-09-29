@@ -404,13 +404,10 @@ func CastPoliteiaVoteHandler(w http.ResponseWriter, r *http.Request) {
 // ---- shared local helpers --------------------------------------------------
 
 func writePassphraseAwareError(w http.ResponseWriter, label string, err error) {
-	msg := err.Error()
-	lower := strings.ToLower(msg)
-	switch {
-	case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+	if isWrongPassphrase(err) {
 		http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
-	default:
-		govnLog.Errorf("%s failed: %v", label, err)
-		http.Error(w, msg, http.StatusInternalServerError)
+		return
 	}
+	govnLog.Errorf("%s failed: %v", label, err)
+	http.Error(w, err.Error(), http.StatusInternalServerError)
 }

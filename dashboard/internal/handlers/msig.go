@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"dcrpulse/internal/msig"
@@ -356,13 +355,11 @@ func MsigPendingHandler(w http.ResponseWriter, r *http.Request) {
 // msigPassphraseError maps wallet unlock failures to 401 the way the
 // send path does, so the UI can re-prompt instead of showing a raw error.
 func msigPassphraseError(w http.ResponseWriter, err error) {
-	msg := err.Error()
-	if strings.Contains(strings.ToLower(msg), "passphrase") ||
-		strings.Contains(strings.ToLower(msg), "decrypt") {
+	if isWrongPassphrase(err) {
 		http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		return
 	}
-	http.Error(w, msg, http.StatusBadRequest)
+	http.Error(w, err.Error(), http.StatusBadRequest)
 }
 
 // MsigProposeHandler builds and dispatches a shared wallet payment.

@@ -605,6 +605,9 @@ func unlockAccountForSpend(ctx context.Context, accountNumber uint32, passphrase
 	return !wasUnlocked, nil
 }
 
+// ErrWrongPassphrase reports that no account unlocked with the passphrase given.
+var ErrWrongPassphrase = fmt.Errorf("invalid passphrase")
+
 // unlockAllAccountsForSpend unlocks every normal (non-imported, non-watch-only)
 // account and returns the account numbers it actually transitioned from locked
 // to unlocked. VSP fee reconciliation signs with each ticket's commitment-
@@ -650,7 +653,7 @@ func unlockAllAccountsForSpend(ctx context.Context, passphrase []byte) ([]uint32
 		}
 	}
 	if candidates > 0 && succeeded == 0 {
-		return nil, fmt.Errorf("invalid passphrase")
+		return nil, ErrWrongPassphrase
 	}
 	return newlyUnlocked, nil
 }

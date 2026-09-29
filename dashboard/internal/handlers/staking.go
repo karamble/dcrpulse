@@ -136,7 +136,7 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(lower, "already in progress"):
 			http.Error(w, msg, http.StatusConflict)
-		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+		case isWrongPassphrase(err):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		case strings.Contains(lower, "insufficient"):
 			http.Error(w, msg, http.StatusBadRequest)
@@ -258,7 +258,7 @@ func StartAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
 		switch {
-		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+		case isWrongPassphrase(err):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		case strings.Contains(lower, "already running"), strings.Contains(lower, "mixer"):
 			http.Error(w, msg, http.StatusConflict)
@@ -310,15 +310,12 @@ func vspTicketRepair(w http.ResponseWriter, r *http.Request, label string,
 
 	summary, err := repair(ctx, req.VspHost, req.VspPubkey, req.Account, req.ChangeAccount, passphrase)
 	if err != nil {
-		msg := err.Error()
-		lower := strings.ToLower(msg)
-		switch {
-		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+		if isWrongPassphrase(err) {
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
-		default:
-			stkeLog.Errorf("%s failed: %v", label, err)
-			http.Error(w, msg, http.StatusInternalServerError)
+			return
 		}
+		stkeLog.Errorf("%s failed: %v", label, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, summary)

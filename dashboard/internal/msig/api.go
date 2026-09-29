@@ -261,10 +261,10 @@ func recreateAccountTo(ctx context.Context, own *OwnHDKey, passphrase []byte) (u
 		name := fmt.Sprintf("shared-restored-%d", highest+1)
 		if _, err := createAccountSeam(ctx, name, passphrase); err != nil {
 			if strings.Contains(err.Error(), "no transaction history") {
-				return 0, fmt.Errorf("%w: recreate account %d: %v; recover the seed's used accounts first, then retry",
+				return 0, fmt.Errorf("%w: recreate account %d: %w; recover the seed's used accounts first, then retry",
 					ErrRestoreAccountGap, highest+1, err)
 			}
-			return 0, fmt.Errorf("recreate account %d: %v", highest+1, err)
+			return 0, fmt.Errorf("recreate account %d: %w", highest+1, err)
 		}
 	}
 	got, err := accountXpubSeam(ctx, own.Account)

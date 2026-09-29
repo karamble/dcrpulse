@@ -181,7 +181,7 @@ func lightningWriteErr(w http.ResponseWriter, label string, err error) {
 	msg := err.Error()
 	lower := strings.ToLower(msg)
 	switch {
-	case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+	case isWrongPassphrase(err):
 		http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 	case services.LndStartupOrUnreachable(err),
 		strings.Contains(lower, "not available"),
