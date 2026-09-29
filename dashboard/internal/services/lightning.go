@@ -506,7 +506,7 @@ func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error
 				TotalSentAtoms: c.GetTotalAtomsSent(),
 				TotalRecvAtoms: c.GetTotalAtomsReceived(),
 				NumUpdates:     c.GetNumUpdates(),
-				CSVDelay:       c.GetCsvDelay(),
+				CSVDelay:       c.GetLocalConstraints().GetCsvDelay(),
 				Active:         c.GetActive(),
 				Private:        c.GetPrivate(),
 				Initiator:      c.GetInitiator(),
@@ -527,9 +527,6 @@ func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error
 			pushed := fundingPushProxy(row.Initiator, row.LocalBalance, row.RemoteBalance)
 			row.CurrentConfs, row.RequiredConfs = fundingTxConfProgress(ctx, row.ChannelPoint, row.Capacity, pushed)
 			out.Channels = append(out.Channels, row)
-		}
-		for _, p := range pendResp.GetPendingClosingChannels() {
-			out.Channels = append(out.Channels, pendingChannelRow(p.GetChannel(), types.ChannelStatusPendingCloseCoop, p.GetClosingTxid(), 0))
 		}
 		for _, p := range pendResp.GetPendingForceClosingChannels() {
 			out.Channels = append(out.Channels, pendingChannelRow(p.GetChannel(), types.ChannelStatusPendingCloseForce, p.GetClosingTxid(), p.GetLimboBalance()))
@@ -621,10 +618,6 @@ func lightningChannelTxIDs(ctx context.Context) (funding, closing map[string]boo
 	if resp, err := client.PendingChannels(ctx, &lnrpc.PendingChannelsRequest{}); err == nil {
 		for _, p := range resp.GetPendingOpenChannels() {
 			addFunding(p.GetChannel().GetChannelPoint())
-		}
-		for _, p := range resp.GetPendingClosingChannels() {
-			addFunding(p.GetChannel().GetChannelPoint())
-			addClosing(p.GetClosingTxid())
 		}
 		for _, p := range resp.GetPendingForceClosingChannels() {
 			addFunding(p.GetChannel().GetChannelPoint())
@@ -1215,16 +1208,16 @@ func paymentToType(p *lnrpc.Payment) types.LightningPayment {
 			Status: h.GetStatus().String(),
 		}
 		if route := h.GetRoute(); route != nil {
-			htlc.TotalAmt = route.GetTotalAmt()
-			htlc.TotalFees = route.GetTotalFees()
+			htlc.TotalAmt = mAtomsToAtoms(route.GetTotalAmtMAtoms())
+			htlc.TotalFees = mAtomsToAtoms(route.GetTotalFeesMAtoms())
 			for j, hop := range route.GetHops() {
 				if j >= 5 {
 					break
 				}
 				htlc.Hops = append(htlc.Hops, types.LightningHop{
 					PubKey:       hop.GetPubKey(),
-					FeeAtoms:     hop.GetFee(),
-					AmtToForward: hop.GetAmtToForward(),
+					FeeAtoms:     mAtomsToAtoms(hop.GetFeeMAtoms()),
+					AmtToForward: mAtomsToAtoms(hop.GetAmtToForwardMAtoms()),
 				})
 			}
 			// Final-hop destination is implicit in lnrpc.Hop list.
@@ -1625,6 +1618,35 @@ func RemoveLightningWatchtower(ctx context.Context, pubKeyHex string) error {
 	return nil
 }
 
+// mAtomsToAtoms converts dcrlnd's milli-atom fields to atoms, rounding down
+// as dcrlnd does for its own atom fields.
+func mAtomsToAtoms(v int64) int64 {
+	return int64(lnwire.MilliAtom(v).ToAtoms())
+}
+
+// edgeLastUpdate is the later of a channel's two policy updates, the value
+// dcrlnd reports in its deprecated ChannelEdge.last_update.
+func edgeLastUpdate(c *lnrpc.ChannelEdge) uint32 {
+	return max(c.GetNode1Policy().GetLastUpdate(), c.GetNode2Policy().GetLastUpdate())
+}
+
+// routeToType converts a queried route from dcrlnd's milli-atom fields.
+func routeToType(r *lnrpc.Route) types.LightningRoute {
+	route := types.LightningRoute{
+		TotalAmtAtoms:  mAtomsToAtoms(r.GetTotalAmtMAtoms()),
+		TotalFeesAtoms: mAtomsToAtoms(r.GetTotalFeesMAtoms()),
+		Hops:           make([]types.LightningRouteHop, 0, len(r.GetHops())),
+	}
+	for _, h := range r.GetHops() {
+		route.Hops = append(route.Hops, types.LightningRouteHop{
+			PubKey:       h.GetPubKey(),
+			FeeAtoms:     mAtomsToAtoms(h.GetFeeMAtoms()),
+			AmtToForward: mAtomsToAtoms(h.GetAmtToForwardMAtoms()),
+		})
+	}
+	return route
+}
+
 func nodePolicyToType(p *lnrpc.RoutingPolicy) *types.LightningNodePolicy {
 	if p == nil {
 		return nil
@@ -1632,8 +1654,8 @@ func nodePolicyToType(p *lnrpc.RoutingPolicy) *types.LightningNodePolicy {
 	return &types.LightningNodePolicy{
 		Disabled:      p.GetDisabled(),
 		TimeLockDelta: p.GetTimeLockDelta(),
-		MinHtlcAtoms:  p.GetMinHtlc(),
-		MaxHtlcAtoms:  int64(p.GetMaxHtlcMAtoms() / 1000),
+		MinHtlcAtoms:  mAtomsToAtoms(p.GetMinHtlc()),
+		MaxHtlcAtoms:  mAtomsToAtoms(int64(p.GetMaxHtlcMAtoms())),
 		LastUpdate:    p.GetLastUpdate(),
 		FeeBaseMAtoms: p.GetFeeBaseMAtoms(),
 		FeeRateMAtoms: p.GetFeeRateMilliMAtoms(),
@@ -1669,7 +1691,7 @@ func QueryLightningNodeInfo(ctx context.Context, pubkeyHex string) (*types.Light
 			ChannelID:   c.GetChannelId(),
 			ChanPoint:   c.GetChanPoint(),
 			Capacity:    c.GetCapacity(),
-			LastUpdate:  c.GetLastUpdate(),
+			LastUpdate:  edgeLastUpdate(c),
 			Node1Pubkey: c.GetNode1Pub(),
 			Node2Pubkey: c.GetNode2Pub(),
 			Node1Policy: nodePolicyToType(c.GetNode1Policy()),
@@ -1699,19 +1721,7 @@ func QueryLightningRoutes(ctx context.Context, pubkeyHex string, amtAtoms int64)
 		Routes:      make([]types.LightningRoute, 0, len(resp.GetRoutes())),
 	}
 	for _, r := range resp.GetRoutes() {
-		route := types.LightningRoute{
-			TotalAmtAtoms:  r.GetTotalAmt(),
-			TotalFeesAtoms: r.GetTotalFees(),
-			Hops:           make([]types.LightningRouteHop, 0, len(r.GetHops())),
-		}
-		for _, h := range r.GetHops() {
-			route.Hops = append(route.Hops, types.LightningRouteHop{
-				PubKey:       h.GetPubKey(),
-				FeeAtoms:     h.GetFee(),
-				AmtToForward: h.GetAmtToForward(),
-			})
-		}
-		out.Routes = append(out.Routes, route)
+		out.Routes = append(out.Routes, routeToType(r))
 	}
 	return out, nil
 }
