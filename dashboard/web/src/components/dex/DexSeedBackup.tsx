@@ -76,6 +76,12 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
     setErr(null);
     try {
       await markDexSeedBackedUp();
+      // Recorded: drop the seed and the typed words and start over.
+      setSeed(null);
+      setIndices([]);
+      setAnswers({});
+      setVerifying(false);
+      setBusy(false);
       onDone?.();
     } catch (e: any) {
       setErr(apiError(e, 'Failed to record backup'));
@@ -166,8 +172,8 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
               <div key={idx} className="space-y-1">
                 <label className="text-xs font-medium">Word #{idx + 1}</label>
                 <input
+                  {...secretFieldProps}
                   type="text"
-                  autoComplete="off"
                   value={answers[idx] || ''}
                   onChange={(e) => {
                     setAnswers({ ...answers, [idx]: e.target.value });
