@@ -43,22 +43,9 @@ var (
 	vspCacheTime time.Time
 )
 
-// VSPListingEnabled reports whether the user has the global VSP-registry
-// toggle on. Absent or true defaults to enabled (backward compatible).
+// VSPListingEnabled reports whether the VSP-registry external-request toggle is on.
 func VSPListingEnabled() bool {
-	gc, err := config.LoadGlobalCfg()
-	if err != nil {
-		return true
-	}
-	allowed, _ := gc.AllowedExternalRequests()
-	if allowed == nil {
-		return true
-	}
-	v, ok := allowed[config.ExternalRequestVSPListing]
-	if !ok {
-		return true
-	}
-	return v
+	return ExternalRequestAllowed(config.ExternalRequestVSPListing)
 }
 
 // ListVSPs returns the public registry of VSPs. Honors the global

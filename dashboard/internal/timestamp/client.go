@@ -32,23 +32,9 @@ const (
 // ErrDisabled is returned when the user has turned off dcrtime external requests.
 var ErrDisabled = errors.New("dcrtime requests are disabled")
 
-// Enabled reports whether the dcrtime external-request toggle is on. Defaults to
-// true when no global config or no explicit entry is present, matching the other
-// external-request gates (see services.BrseederEnabled).
+// Enabled reports whether the dcrtime external-request toggle is on.
 func Enabled() bool {
-	gc, err := config.LoadGlobalCfg()
-	if err != nil {
-		return true
-	}
-	allowed, _ := gc.AllowedExternalRequests()
-	if allowed == nil {
-		return true
-	}
-	v, ok := allowed[config.ExternalRequestDcrtime]
-	if !ok {
-		return true
-	}
-	return v
+	return services.ExternalRequestAllowed(config.ExternalRequestDcrtime)
 }
 
 // apiBaseURL selects the dcrtime host for the stack's active network.

@@ -21,19 +21,9 @@ var ErrExchangeRatesOff = errors.New("exchange rates are turned off in Settings"
 var dexRateSources = []string{"Messari", "Coinpaprika", "dcrdata"}
 
 // ExchangeRatesEnabled reports whether the exchange-rates external-request
-// toggle is on. Defaults to true when no global config is present yet. A
-// variable so tests can turn it off.
+// toggle is on. A variable so tests can turn it off.
 var ExchangeRatesEnabled = func() bool {
-	gc, err := config.LoadGlobalCfg()
-	if err != nil {
-		return true
-	}
-	allowed, _ := gc.AllowedExternalRequests()
-	v, ok := allowed[config.ExternalRequestExchangeRates]
-	if !ok {
-		return true
-	}
-	return v
+	return ExternalRequestAllowed(config.ExternalRequestExchangeRates)
 }
 
 // The daemons the setting is applied to; variables so tests can stand in.

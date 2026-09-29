@@ -32,10 +32,10 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	walletOut := types.WalletSettings{GapLimit: 20}
 	globalOut := types.GlobalSettings{
 		ExternalRequests: types.ExternalRequestSettings{
-			VSPListing:    true,
-			Politeia:      true,
-			Brseeder:      true,
-			ExchangeRates: true,
+			VSPListing:    services.ExternalRequestAllowed(config.ExternalRequestVSPListing),
+			Politeia:      services.ExternalRequestAllowed(config.ExternalRequestPoliteia),
+			Brseeder:      services.ExternalRequestAllowed(config.ExternalRequestBrseeder),
+			ExchangeRates: services.ExternalRequestAllowed(config.ExternalRequestExchangeRates),
 		},
 		DecredPulseBotURL: services.DefaultDecredPulseBotURL,
 	}
@@ -54,21 +54,6 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if gc, err := config.LoadGlobalCfg(); err == nil {
-		allowed, _ := gc.AllowedExternalRequests()
-		if allowed != nil {
-			if v, ok := allowed[config.ExternalRequestVSPListing]; ok {
-				globalOut.ExternalRequests.VSPListing = v
-			}
-			if v, ok := allowed[config.ExternalRequestPoliteia]; ok {
-				globalOut.ExternalRequests.Politeia = v
-			}
-			if v, ok := allowed[config.ExternalRequestBrseeder]; ok {
-				globalOut.ExternalRequests.Brseeder = v
-			}
-			if v, ok := allowed[config.ExternalRequestExchangeRates]; ok {
-				globalOut.ExternalRequests.ExchangeRates = v
-			}
-		}
 		var botURL string
 		if ok, _ := gc.Get(config.KeyDecredPulseBotURL, &botURL); ok && strings.TrimSpace(botURL) != "" {
 			globalOut.DecredPulseBotURL = strings.TrimRight(strings.TrimSpace(botURL), "/")

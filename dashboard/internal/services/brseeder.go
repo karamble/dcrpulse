@@ -17,22 +17,9 @@ import (
 	"dcrpulse/internal/types"
 )
 
-// BrseederEnabled reports whether the user has the brseeder external-
-// request toggle on. Defaults to true when no global config is present.
+// BrseederEnabled reports whether the brseeder external-request toggle is on.
 func BrseederEnabled() bool {
-	gc, err := config.LoadGlobalCfg()
-	if err != nil {
-		return true
-	}
-	allowed, _ := gc.AllowedExternalRequests()
-	if allowed == nil {
-		return true
-	}
-	v, ok := allowed[config.ExternalRequestBrseeder]
-	if !ok {
-		return true
-	}
-	return v
+	return ExternalRequestAllowed(config.ExternalRequestBrseeder)
 }
 
 // Bison Relay publishes a JSON list of its brserver+LND endpoints at

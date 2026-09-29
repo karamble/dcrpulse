@@ -58,22 +58,9 @@ func renderProposalMarkdown(src string) string {
 	return RenderMarkdownHTML(src)
 }
 
-// PoliteiaEnabled reports whether the Politeia external-request toggle
-// is on. Defaults to true when no global config is present yet.
+// PoliteiaEnabled reports whether the Politeia external-request toggle is on.
 func PoliteiaEnabled() bool {
-	gc, err := config.LoadGlobalCfg()
-	if err != nil {
-		return true
-	}
-	allowed, _ := gc.AllowedExternalRequests()
-	if allowed == nil {
-		return true
-	}
-	v, ok := allowed[config.ExternalRequestPoliteia]
-	if !ok {
-		return true
-	}
-	return v
+	return ExternalRequestAllowed(config.ExternalRequestPoliteia)
 }
 
 // In-memory caches for politeia HTTP responses. The proposals list envelope

@@ -44,22 +44,10 @@ const (
 	powMaxBits = 26
 )
 
-// DecredPulseBotEnabled reports whether the user has the Decred Pulse bot
-// external-request toggle on. Defaults to true when no global config is present.
+// DecredPulseBotEnabled reports whether the Decred Pulse bot external-request
+// toggle is on.
 func DecredPulseBotEnabled() bool {
-	gc, err := config.LoadGlobalCfg()
-	if err != nil {
-		return true
-	}
-	allowed, _ := gc.AllowedExternalRequests()
-	if allowed == nil {
-		return true
-	}
-	v, ok := allowed[config.ExternalRequestDecredPulseBot]
-	if !ok {
-		return true
-	}
-	return v
+	return ExternalRequestAllowed(config.ExternalRequestDecredPulseBot)
 }
 
 // decredPulseBotURL returns the brulse base URL with any trailing slash removed.
