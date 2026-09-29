@@ -76,3 +76,12 @@ jobs:
 
       - name: Test
         run: go test -race ./...
+
+  wrappers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Test the daemon wrappers' Tor setting reader
+        run: sh tests/tor_field_test.sh

@@ -49,7 +49,10 @@ TOR_POINTER="/app-data/control/tor.json"
 
 tor_field() {
     [ -f "${TOR_POINTER}" ] || { echo "$2"; return; }
-    v=$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([A-Za-z0-9]*\).*/\1/p" "${TOR_POINTER}" | head -1)
+    v=$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([A-Za-z0-9]*\).*/\1/p" "${TOR_POINTER}" 2>/dev/null | head -1)
+    # A pointer that exists but gives no clear answer is damaged; read it as
+    # Tor on, as the dashboard does, rather than dropping to clearnet.
+    if [ "$1" = enabled ] && [ "${v}" != true ] && [ "${v}" != false ]; then echo true; return; fi
     [ -n "${v}" ] && echo "${v}" || echo "$2"
 }
 
@@ -135,7 +138,7 @@ stop_wallet() {
 write_state() {
     pid="${CHILD_PID:-0}"
     tor_on=false
-    [ -n "${CHILD_PID}" ] && [ "$(tor_field enabled false)" = "true" ] && tor_on=true
+    [ -n "${CHILD_PID}" ] && [ -n "${TOR_ARGS}" ] && tor_on=true
     cat > "${STATE}.tmp" <<EOF
 {"running":"${RUNNING_NAME}","appdata":"${RUNNING_APPDATA}","pid":${pid:-0},"epoch":${1:-0},"tor":${tor_on},"torRev":"${RUNNING_TOR_REV}"}
 EOF
