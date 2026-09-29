@@ -331,6 +331,12 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     }
   }, [threadReq]);
 
+  // Leaving the Chat tab releases the open thread, so its new messages badge again.
+  useEffect(() => () => {
+    setActiveUid('');
+    setActiveGCID('');
+  }, [setActiveUid, setActiveGCID]);
+
   useEffect(() => {
     if (!selected) {
       threadReq.cancel();

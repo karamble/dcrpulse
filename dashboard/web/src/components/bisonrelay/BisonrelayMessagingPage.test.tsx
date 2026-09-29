@@ -4,7 +4,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { BisonrelayLiveProvider } from './BisonrelayLiveProvider';
+import { BisonrelayLiveProvider, useBisonrelayLive } from './BisonrelayLiveProvider';
 import { BisonrelayMessagingPage } from './BisonrelayMessagingPage';
 import * as api from '../../services/bisonrelayApi';
 
@@ -21,6 +21,10 @@ vi.mock('../../services/bisonrelayApi', async (original) => ({
 }));
 
 class FakeWS {
+  static last: FakeWS | null = null;
+  constructor() {
+    FakeWS.last = this;
+  }
   onopen: unknown;
   onmessage: unknown;
   onclose: unknown;
@@ -74,4 +78,31 @@ it('keeps a late history reply out of the thread opened after it', async () => {
   await act(async () => releaseA(history(A, 'ALICE-SECRET', 'alice')));
   expect(screen.queryByText('ALICE-SECRET')).toBeNull();
   expect(screen.queryByText('BOB-HISTORY')).not.toBeNull();
+});
+
+// FEBR-8: leaving the Chat tab releases the open thread, so bob's next PM badges.
+it('badges the thread that was open once the chat tab is left', async () => {
+  vi.mocked(api.getBisonrelayContacts).mockResolvedValue([contact(B, 'bob')] as any);
+  vi.mocked(api.getBisonrelayMessages).mockResolvedValue(history(B, 'BOB-EARLIER', 'bob'));
+  let total = -1;
+  const Probe = () => {
+    total = useBisonrelayLive().totalUnread;
+    return null;
+  };
+  const tree = (chatTab: boolean) => (
+    <BisonrelayLiveProvider>
+      <Probe />
+      {chatTab && <BisonrelayMessagingPage ownNick="me" />}
+    </BisonrelayLiveProvider>
+  );
+  const { rerender } = render(tree(true));
+  await act(async () => {});
+  fireEvent.click(await screen.findByText('bob'));
+  await screen.findByText('BOB-EARLIER');
+
+  rerender(tree(false));
+  await act(async () => {
+    (FakeWS.last as any).onmessage({ data: JSON.stringify({ type: 'pm', payload: { from: B } }) });
+  });
+  expect(total).toBe(1);
 });
