@@ -5,8 +5,8 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Loader2, Mic, Pause, Play } from 'lucide-react';
 import { formatBytes } from '../../../utils/bytes';
-import { base64ToBytes } from './packetFraming';
 import { parseOggOpus } from './oggDuration';
+import { b64ToBytes } from '../../../utils/base64';
 
 export const formatClock = (seconds: number): string => {
   const s = Math.max(0, Math.floor(seconds));
@@ -40,7 +40,7 @@ export const AudioNoteEmbed = ({
     // Undecodable data= is not a note: empty bytes fail the parse below and
     // render the fallback, where a throw here would unmount the page.
     try {
-      return base64ToBytes(dataB64);
+      return b64ToBytes(dataB64);
     } catch {
       return new Uint8Array(0);
     }

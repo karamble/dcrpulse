@@ -50,7 +50,7 @@ import {
   unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
-import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
+import { AuthorAvatar } from './AuthorAvatar';
 import { ContactGroupModal } from './BisonrelayContactGroupModals';
 import { apiError } from '../../utils/apiError';
 import { TipModal } from './TipModal';
@@ -498,7 +498,7 @@ const Header = ({
         <X className="h-4 w-4" />
       </button>
       <div className="flex flex-col items-center text-center gap-2 mt-1">
-        <BigAvatar contact={contact} nick={nick} />
+        <AuthorAvatar uid={contact.id?.identity ?? ''} nick={nick} avatarB64={contact.id?.avatar} size="lg" />
         <p className="text-sm font-semibold truncate w-full px-4">{nick}</p>
       </div>
       {identity && (
@@ -516,28 +516,6 @@ const Header = ({
         </button>
       )}
     </div>
-  );
-};
-
-const BigAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: string }) => {
-  const dataUrl = avatarDataUrl(contact.id?.avatar);
-  const initial = nick.trim().charAt(0).toUpperCase() || '?';
-  const bgClass = colorForUid(contact.id?.identity ?? nick);
-  if (dataUrl) {
-    return (
-      <img
-        src={dataUrl}
-        alt=""
-        className="h-16 w-16 rounded-full object-cover bg-muted/30"
-      />
-    );
-  }
-  return (
-    <span
-      className={`h-16 w-16 rounded-full flex items-center justify-center text-2xl font-semibold text-white ${bgClass}`}
-    >
-      {initial}
-    </span>
   );
 };
 

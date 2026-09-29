@@ -22,19 +22,8 @@ import { ProposalComposePanel } from './ProposalComposePanel';
 import { ProposalList } from './ProposalList';
 import { formatAtoms } from '../../../utils/amounts';
 import { apiError } from '../../../utils/apiError';
+import { downloadBlob } from '../../../utils/files';
 
-
-const downloadJson = (data: unknown, filename: string) => {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
 
 // SharedWalletDetailPage shows one multisig wallet: its address, funds,
 // cosigner states and backup card.
@@ -79,7 +68,7 @@ export const SharedWalletDetailPage = () => {
     setBusy(true);
     try {
       const card = await getMsigBackup(id);
-      downloadJson(card, `shared-wallet-${detail?.record.label || id}.json`);
+      downloadBlob(JSON.stringify(card, null, 2), `shared-wallet-${detail?.record.label || id}.json`, 'application/json');
     } catch (e: any) {
       setErr(apiError(e, 'Could not export the backup'));
     } finally {

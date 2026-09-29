@@ -2,51 +2,20 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Bell } from 'lucide-react';
-import { AlertEntry, getAlerts, markAlertRead } from '../../services/api';
-import { refreshAlertsSummary } from '../../hooks/useAlerts';
-import { useVisiblePoll } from '../../hooks/useVisiblePoll';
-import { useBisonrelayLive } from '../bisonrelay/BisonrelayLiveProvider';
+import type { AlertEntry } from '../../services/api';
+import { useAlertEntries } from '../../hooks/useAlertEntries';
 import { AlertRow, alertCategoryRoute } from './AlertRow';
+
+const recentFive = (all: AlertEntry[]) => all.slice(0, 5);
 
 // RecentAlertsCard is the quiet-state anchor on the Node page: the pill
 // disappears once everything is read, so this card is where alert history
 // stays discoverable.
 export const RecentAlertsCard = () => {
-  const [entries, setEntries] = useState<AlertEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { entries, loading, readOne } = useAlertEntries({ pick: recentFive, pollMs: 60000 });
   const navigate = useNavigate();
-  const { addListener } = useBisonrelayLive();
-
-  const load = () =>
-    getAlerts()
-      .then((all) => setEntries(all.slice(0, 5)))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useVisiblePoll(load, 60000);
-  useEffect(() => {
-    return addListener((evt) => {
-      if (evt.type === 'alerts') void load();
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addListener]);
-
-  const readOne = async (id: string) => {
-    setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, read: true } : e)));
-    try {
-      await markAlertRead(id);
-    } catch {
-      void load();
-    }
-    refreshAlertsSummary();
-  };
 
   return (
     <div className="p-6 rounded-xl bg-gradient-card border border-border/50 hover:border-primary/20 transition duration-300">

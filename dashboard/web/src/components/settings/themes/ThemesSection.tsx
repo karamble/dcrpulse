@@ -8,6 +8,7 @@ import { Theme } from '../../../services/themes/types';
 import { hslChannelsToHex } from '../../../services/themes/themeMath';
 import { useTheme } from '../../../services/themes/ThemeProvider';
 import { ThemeEditor } from './ThemeEditor';
+import { downloadBlob } from '../../../utils/files';
 
 const SWATCH_KEYS: (keyof Theme['colors'])[] = [
   'background',
@@ -73,13 +74,7 @@ export const ThemesSection = () => {
   };
 
   const handleExport = (t: Theme) => {
-    const blob = new Blob([JSON.stringify(t, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `dcrpulse-theme-${t.id || t.name.toLowerCase().replace(/\s+/g, '-')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(JSON.stringify(t, null, 2), `dcrpulse-theme-${t.id || t.name.toLowerCase().replace(/\s+/g, '-')}.json`, 'application/json');
   };
 
   const doImport = async (json: string) => {

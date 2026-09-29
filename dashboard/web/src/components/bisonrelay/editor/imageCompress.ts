@@ -2,6 +2,8 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
+import { blobToB64 } from '../../../utils/base64';
+
 // Canvas-based image recompression for inline BR embeds. Re-encoding to
 // JPEG drops every metadata block (EXIF, GPS, XMP) and the downscale ladder
 // brings phone photos under BR's small inline caps. bruig compresses at a
@@ -15,23 +17,6 @@ const COMPRESS_LADDER: ReadonlyArray<{ maxEdge: number; quality: number }> = [
 ];
 
 const JPEG_MIME = 'image/jpeg';
-
-// blobToDataB64 turns a Blob/File into base64. Chunked because a single
-// String.fromCharCode.apply over megabytes of bytes overflows the
-// call-stack argument limit.
-export async function blobToDataB64(blob: Blob): Promise<string> {
-  const buf = await blob.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  let binStr = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binStr += String.fromCharCode.apply(
-      null,
-      bytes.subarray(i, i + chunk) as unknown as number[],
-    );
-  }
-  return btoa(binStr);
-}
 
 type Drawable = ImageBitmap | HTMLImageElement;
 
@@ -119,7 +104,7 @@ export async function compressImageToJpeg(
   }
   if (!smallest) throw new Error('compression produced no output');
 
-  const dataB64 = await blobToDataB64(smallest.blob);
+  const dataB64 = await blobToB64(smallest.blob);
   return {
     blob: smallest.blob,
     dataB64,

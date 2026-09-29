@@ -2,9 +2,8 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-// Helpers shared by ContactAvatar in the contacts list and BigAvatar in the
-// per-user sub-nav header. Kept in their own module so both surfaces stay in
-// sync if the palette or sniff list ever changes.
+// Avatar helpers behind AuthorAvatar, the one avatar used by the contact list,
+// the user sub-nav, posts and comments.
 
 const palette = [
   'bg-rose-600', 'bg-amber-600', 'bg-emerald-600', 'bg-teal-600',

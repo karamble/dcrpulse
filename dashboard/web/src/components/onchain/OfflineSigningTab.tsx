@@ -35,43 +35,13 @@ import { AddressGroups } from '../AddressGroups';
 import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { formatAtoms, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
 import { apiError } from '../../utils/apiError';
+import { b64ToBytes, blobToB64 } from '../../utils/base64';
+import { downloadBlob } from '../../utils/files';
 
 // Above 1 DCR a fee is almost certainly a mistake; we soft-warn (non-blocking).
 const HIGH_FEE_ATOMS = 100_000_000;
 
 
-
-const base64ToBytes = (b64: string) => {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < out.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
-
-// fileToBase64 reads a file (binary-safe) and returns its base64 contents, so a
-// raw .dcrtx export survives the trip to the backend intact.
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const s = String(reader.result);
-      const comma = s.indexOf(',');
-      resolve(comma >= 0 ? s.slice(comma + 1) : s);
-    };
-    reader.onerror = () => reject(new Error('could not read file'));
-    reader.readAsDataURL(file);
-  });
-
-const downloadBlob = (data: BlobPart, filename: string, type: string) => {
-  const url = URL.createObjectURL(new Blob([data], { type }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-};
 
 const scriptClassLabel = (sc: string): string => (sc === 'NULL_DATA' ? 'OP_RETURN' : sc);
 
@@ -173,7 +143,7 @@ const ExportUnsignedPanel = () => {
 
   const onDownload = () => {
     if (!construct) return;
-    downloadBlob(base64ToBytes(construct.signRequestB64), 'unsigned.dcrtx', 'application/octet-stream');
+    downloadBlob(b64ToBytes(construct.signRequestB64), 'unsigned.dcrtx', 'application/octet-stream');
   };
 
   return (
@@ -419,7 +389,7 @@ const ImportSignedPanel = () => {
     setResult(null);
     try {
       const input = file
-        ? { signedTxB64: await fileToBase64(file) }
+        ? { signedTxB64: await blobToB64(file) }
         : pasteText.trim()
           ? { signedTx: pasteText }
           : null;
@@ -693,7 +663,7 @@ const DeviceBalancePanel = () => {
 
   const onDownload = () => {
     if (!data) return;
-    downloadBlob(base64ToBytes(data.balanceB64), data.fileName, 'application/octet-stream');
+    downloadBlob(b64ToBytes(data.balanceB64), data.fileName, 'application/octet-stream');
   };
 
   return (

@@ -17,21 +17,10 @@ import {
   msigFrameTypeLabel,
 } from '../../../services/msigApi';
 import { apiError } from '../../../utils/apiError';
+import { downloadBlob } from '../../../utils/files';
 
 // A frame small enough for one scannable QR; larger ones use the file.
 const qrLimit = 1800;
-
-const downloadText = (text: string, filename: string) => {
-  const blob = new Blob([text], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
 
 // CoordinationCard is the whole manual transport in one place: outbound
 // frames wait here as per-cosigner hand-over cards, and inbound frames
@@ -159,7 +148,7 @@ export const CoordinationCard = ({
                     <CopyButton text={f.body} label="Copy message" />
                     <button
                       type="button"
-                      onClick={() => downloadText(f.body, `${wallet.label}-${f.type}.msig.txt`)}
+                      onClick={() => downloadBlob(f.body, `${wallet.label}-${f.type}.msig.txt`, 'text/plain')}
                       className="px-3 py-1.5 rounded-lg border border-border hover:bg-muted/30 text-sm inline-flex items-center gap-2"
                     >
                       <ArrowDownToLine className="h-4 w-4" />

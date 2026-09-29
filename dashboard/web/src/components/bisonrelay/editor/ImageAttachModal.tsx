@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, Image as ImageIcon, Loader2, X } from 'lucide-react';
 import { isImageMime } from '../embedParser';
 import { formatBytes } from '../../../utils/bytes';
-import { CompressResult, blobToDataB64, compressImageToJpeg } from './imageCompress';
+import { CompressResult, compressImageToJpeg } from './imageCompress';
+import { blobToB64 } from '../../../utils/base64';
 
 export interface ImageAttachResult {
   // The original File for the as-is choice, or the re-encoded JPEG blob.
@@ -127,7 +128,7 @@ export const ImageAttachModal = ({
       } else {
         onAttach({
           blob: file,
-          dataB64: await blobToDataB64(file),
+          dataB64: await blobToB64(file),
           mime: file.type || 'application/octet-stream',
           name: file.name,
           displayName: file.name,

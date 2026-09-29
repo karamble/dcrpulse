@@ -5,6 +5,7 @@
 import axios from 'axios';
 
 import { subscribeJSON, SubscribeOpts } from './socket';
+import { downloadBlob } from '../utils/files';
 
 const API_BASE_URL = '/api';
 
@@ -1664,14 +1665,7 @@ export const setMCPLogging = async (enabled: boolean): Promise<void> => {
 // exportMCPAudit downloads the full persisted spend-audit trail as a JSON file.
 export const exportMCPAudit = async (): Promise<void> => {
   const response = await api.get('/settings/mcp/audit/export', { responseType: 'blob' });
-  const url = URL.createObjectURL(response.data as Blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'dcrpulse-mcp-audit.json';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  downloadBlob(response.data as Blob, 'dcrpulse-mcp-audit.json');
 };
 
 export default api;

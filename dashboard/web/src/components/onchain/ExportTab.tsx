@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertCircle, CheckCircle2, Download, Loader2 } from 'lucide-react';
 import { exportWalletCsv } from '../../services/api';
+import { downloadBlob } from '../../utils/files';
 
 const exportTypes = [
   { value: 'transactions', label: 'Transactions' },
@@ -30,15 +31,7 @@ export const ExportTab = () => {
     try {
       const resp = await exportWalletCsv(type);
       const name = filenameFrom(resp.headers['content-disposition'], type);
-      const blob = new Blob([resp.data], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(resp.data, name, 'text/csv');
       setDone(name);
     } catch (err: any) {
       // A blob response body needs to be decoded to read the server's message.

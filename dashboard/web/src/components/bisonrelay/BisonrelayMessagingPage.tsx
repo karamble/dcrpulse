@@ -78,7 +78,6 @@ import { ChatFormatMenu } from './ChatFormatMenu';
 import { AudioNoteButton } from './audionote/AudioNoteButton';
 import { TipModal } from './TipModal';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
-import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { AuthorAvatar } from './AuthorAvatar';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
 import { ChatAttachmentPreview } from './ChatAttachmentPreview';
@@ -91,6 +90,8 @@ import { GCInviteModal } from './gc/GCInviteModal';
 import { GroupSubNav } from './gc/GroupSubNav';
 import { IncomingGCInvitesBanner } from './gc/IncomingGCInvitesBanner';
 import { contactByUid, displayNick } from './bisonrelayNick';
+import { b64ToBytes, blobToB64 } from '../../utils/base64';
+import { downloadBlob } from '../../utils/files';
 
 const MAX_INLINE_BYTES = 800 * 1024;
 const MAX_TRANSFER_BYTES = 1024 * 1024 * 1024;
@@ -604,7 +605,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           aria-label={`User actions for ${nick}`}
           className="inline-flex shrink-0 rounded-full hover:ring-2 hover:ring-primary/50 transition-shadow cursor-pointer"
         >
-          <ContactAvatar contact={c} nick={nick} />
+          <AuthorAvatar uid={c.id?.identity ?? ''} nick={nick} avatarB64={c.id?.avatar} size="sm" />
         </span>
         <span className="truncate flex-1">{nick}</span>
         {heard && (
@@ -1220,14 +1221,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       return;
     }
     try {
-      const buf = await f.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      let binStr = '';
-      const chunk = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunk) {
-        binStr += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk) as unknown as number[]);
-      }
-      const dataB64 = btoa(binStr);
+      const dataB64 = await blobToB64(f);
       setAttachment({ file: f, mode: 'inline', dataB64 });
       setAttachErr(null);
     } catch (err: any) {
@@ -1899,7 +1893,7 @@ function b64Size(b64: string): number {
 function b64ToFile(b64: string, mime: string): File | null {
   if (!B64_RE.test(b64)) return null;
   try {
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const bytes = b64ToBytes(b64);
     return new File([bytes], 'quote', { type: mime });
   } catch {
     return null;
@@ -2782,18 +2776,8 @@ const InviteCreateModal = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
-  const downloadBlob = () => {
-    if (!invite) return;
-    const bin = atob(invite.invite_bytes);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const blob = new Blob([bytes], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'invite.bin';
-    a.click();
-    URL.revokeObjectURL(url);
+  const saveInvite = () => {
+    if (invite) downloadBlob(b64ToBytes(invite.invite_bytes), 'invite.bin');
   };
 
   return (
@@ -2833,7 +2817,7 @@ const InviteCreateModal = ({ onClose }: { onClose: () => void }) => {
             <p className="text-xs font-semibold text-muted-foreground">Binary blob (advanced)</p>
             <div className="flex gap-2">
               <button
-                onClick={downloadBlob}
+                onClick={saveInvite}
                 className="px-3 py-1.5 rounded-md bg-muted/20 text-foreground text-xs font-semibold"
               >
                 Download invite.bin
@@ -2866,11 +2850,7 @@ const InviteAcceptModal = ({
   const onFile = async (file: File) => {
     setErr(null);
     try {
-      const buf = await file.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      let bin = '';
-      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-      setValue(btoa(bin));
+      setValue(await blobToB64(file));
     } catch (e: any) {
       setErr(e?.message || 'Could not read file');
     }
@@ -3009,26 +2989,6 @@ function identityFromPayload(payload: any): string {
     return '';
   }
 }
-
-const ContactAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: string }) => {
-  const dataUrl = avatarDataUrl(contact.id?.avatar);
-  const initial = nick.trim().charAt(0).toUpperCase() || '?';
-  const bgClass = colorForUid(contact.id?.identity ?? nick);
-  if (dataUrl) {
-    return (
-      <img
-        src={dataUrl}
-        alt=""
-        className="shrink-0 h-7 w-7 rounded-full object-cover bg-muted/30"
-      />
-    );
-  }
-  return (
-    <span className={`shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white ${bgClass}`}>
-      {initial}
-    </span>
-  );
-};
 
 const SENT_FILE_RE = /^Sent file "(.+)"(?:\s*\(([^)]*)\))?\s*$/;
 

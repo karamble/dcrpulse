@@ -7,7 +7,7 @@ import { Loader2, Mic, Pause, Play, Send, Square, X } from 'lucide-react';
 import { inSecureContext, supportsWebCodecsAudio } from '../realtime/AudioPipeline';
 import { formatBytes } from '../../../utils/bytes';
 import { formatClock } from './AudioNoteEmbed';
-import { bytesToBase64, framePackets } from './packetFraming';
+import { framePackets } from './packetFraming';
 import {
   MAX_NOTE_SECONDS,
   OpusNoteRecorder,
@@ -15,6 +15,7 @@ import {
   SAMPLE_RATE,
   decodeNote,
 } from './opusRecorder';
+import { bytesToB64 } from '../../../utils/base64';
 
 type Phase = 'idle' | 'starting' | 'recording' | 'preview' | 'sending';
 
@@ -144,7 +145,7 @@ export const AudioNoteButton = ({
     setPhase('sending');
     let ok = false;
     try {
-      ok = await onSend(bytesToBase64(framePackets(note.packets)));
+      ok = await onSend(bytesToB64(framePackets(note.packets)));
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     }

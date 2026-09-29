@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { base64ToBytes, bytesToBase64, framePackets } from './packetFraming';
+import { framePackets } from './packetFraming';
+import { b64ToBytes, bytesToB64 } from '../../../utils/base64';
 
 describe('framePackets', () => {
   it('prefixes every packet with its big-endian length', () => {
@@ -20,6 +21,6 @@ describe('base64', () => {
   it('round-trips binary that crosses the chunk boundary', () => {
     const bytes = new Uint8Array(70_000);
     for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 31) & 0xff;
-    expect(base64ToBytes(bytesToBase64(bytes))).toEqual(bytes);
+    expect(b64ToBytes(bytesToB64(bytes))).toEqual(bytes);
   });
 });

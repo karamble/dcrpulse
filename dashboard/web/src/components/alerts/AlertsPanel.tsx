@@ -2,12 +2,11 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
-import { AlertEntry, getAlerts, markAlertRead, markAllAlertsRead } from '../../services/api';
-import { refreshAlertsSummary } from '../../hooks/useAlerts';
-import { useBisonrelayLive } from '../bisonrelay/BisonrelayLiveProvider';
+import type { AlertEntry } from '../../services/api';
+import { useAlertEntries } from '../../hooks/useAlertEntries';
 import { AlertRow, alertCategoryRoute } from './AlertRow';
 
 // Active conditions first, then unread events, then a short recent tail.
@@ -22,29 +21,8 @@ const pickPanelEntries = (all: AlertEntry[]): AlertEntry[] => {
 // full-screen sheet on mobile (drawer conventions from the Header). Opening
 // does NOT mark anything read; reads are explicit per row or mark-all.
 export const AlertsPanel = ({ onClose }: { onClose: () => void }) => {
-  const [entries, setEntries] = useState<AlertEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { entries, loading, readOne, readAll } = useAlertEntries({ pick: pickPanelEntries });
   const navigate = useNavigate();
-  const { addListener } = useBisonrelayLive();
-
-  const load = useCallback(
-    () =>
-      getAlerts()
-        .then((all) => setEntries(pickPanelEntries(all)))
-        .catch(() => {})
-        .finally(() => setLoading(false)),
-    [],
-  );
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    return addListener((evt) => {
-      if (evt.type === 'alerts') void load();
-    });
-  }, [addListener, load]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -53,26 +31,6 @@ export const AlertsPanel = ({ onClose }: { onClose: () => void }) => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-
-  const readOne = async (id: string) => {
-    setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, read: true } : e)));
-    try {
-      await markAlertRead(id);
-    } catch {
-      void load();
-    }
-    refreshAlertsSummary();
-  };
-
-  const readAll = async () => {
-    setEntries((prev) => prev.map((e) => ({ ...e, read: true })));
-    try {
-      await markAllAlertsRead();
-    } catch {
-      void load();
-    }
-    refreshAlertsSummary();
-  };
 
   const openEntry = (entry: AlertEntry) => {
     onClose();

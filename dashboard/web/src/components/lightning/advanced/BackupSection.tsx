@@ -2,26 +2,8 @@ import { useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, Download, Loader2, Upload } from 'lucide-react';
 import { getLnChannelBackup, verifyLnChannelBackup } from '../../../services/lightningApi';
 import { apiError } from '../../../utils/apiError';
-
-// Decodes a base64 string back into a binary Blob suitable for download.
-const base64ToBlob = (b64: string): Blob => {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return new Blob([out], { type: 'application/octet-stream' });
-};
-
-// ArrayBuffer -> base64. Avoids the call-stack overflow risk of
-// String.fromCharCode(...bigArray) for files of any meaningful size.
-const arrayBufferToBase64 = (buf: ArrayBuffer): string => {
-  const bytes = new Uint8Array(buf);
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-};
+import { b64ToBytes, blobToB64 } from '../../../utils/base64';
+import { downloadBlob } from '../../../utils/files';
 
 export const BackupSection = () => {
   const [exporting, setExporting] = useState(false);
@@ -38,15 +20,7 @@ export const BackupSection = () => {
     setExportResult(null);
     try {
       const r = await getLnChannelBackup();
-      const blob = base64ToBlob(r.backupBase64);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `channel-backup-${Math.floor(Date.now() / 1000)}.scb`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(b64ToBytes(r.backupBase64), `channel-backup-${Math.floor(Date.now() / 1000)}.scb`);
       setExportResult({ numChannels: r.numChannels });
     } catch (err: any) {
       setExportError(apiError(err, 'Export failed'));
@@ -64,8 +38,7 @@ export const BackupSection = () => {
     setVerifying(true);
     setVerifyResult(null);
     try {
-      const buf = await f.arrayBuffer();
-      const b64 = arrayBufferToBase64(buf);
+      const b64 = await blobToB64(f);
       const r = await verifyLnChannelBackup(b64);
       setVerifyResult(r);
     } catch (err: any) {

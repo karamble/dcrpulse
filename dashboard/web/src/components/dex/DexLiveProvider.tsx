@@ -6,6 +6,7 @@ import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, 
 import { getDexExchanges, getMMStatus } from '../../services/dcrdexApi';
 import type { DexNote, MMStatus, MMBotStatus } from '../../services/dcrdexApi';
 import type { MarketSpot } from './useDexFeed';
+import { subscribeJSON } from '../../services/socket';
 
 type NoteListener = (note: DexNote) => void;
 
@@ -154,122 +155,85 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
   const spotsRafRef = useRef(0);
 
   useEffect(() => {
-    let ws: WebSocket | null = null;
-    let cancelled = false;
-    let retry = 1000;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let mmTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const connect = () => {
-      if (cancelled) return;
-      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${proto}://${window.location.host}/api/dcrdex/notify`);
-      ws.onopen = () => {
-        retry = 1000;
-      };
-      ws.onmessage = (e) => {
-        let msg: any;
-        try {
-          msg = JSON.parse(e.data);
-        } catch {
-          return;
-        }
-        if (msg?.route !== 'notify' || !msg.payload) return;
-        const note = msg.payload as LiveNote;
-        // spots is high-frequency and has no refresh listeners, so accumulate
-        // and swallow it, committing at most one state update per animation
-        // frame (rAF also pauses flushes while the tab is hidden).
-        // conn/dex_auth/bridge update live state but still fall through to
-        // listeners (e.g. the notifications bell refreshes on conn).
-        if (note.type === 'spots' && note.spots) {
-          const incoming = Object.values(note.spots).filter((s): s is MarketSpot => !!s);
-          if (incoming.length) {
-            incoming.forEach((s) => {
-              pendingSpotsRef.current[spotKey(s)] = s;
+    const unsubscribe = subscribeJSON<{ route?: string; payload?: LiveNote }>('/api/dcrdex/notify', (msg) => {
+      if (msg?.route !== 'notify' || !msg.payload) return;
+      const note = msg.payload;
+      // spots is high-frequency and has no refresh listeners, so accumulate
+      // and swallow it, committing at most one state update per animation
+      // frame (rAF also pauses flushes while the tab is hidden).
+      // conn/dex_auth/bridge update live state but still fall through to
+      // listeners (e.g. the notifications bell refreshes on conn).
+      if (note.type === 'spots' && note.spots) {
+        const incoming = Object.values(note.spots).filter((s): s is MarketSpot => !!s);
+        if (incoming.length) {
+          incoming.forEach((s) => {
+            pendingSpotsRef.current[spotKey(s)] = s;
+          });
+          if (!spotsRafRef.current) {
+            spotsRafRef.current = requestAnimationFrame(() => {
+              spotsRafRef.current = 0;
+              const batch = pendingSpotsRef.current;
+              pendingSpotsRef.current = {};
+              setSpots((prev) => ({ ...prev, ...batch }));
             });
-            if (!spotsRafRef.current) {
-              spotsRafRef.current = requestAnimationFrame(() => {
-                spotsRafRef.current = 0;
-                const batch = pendingSpotsRef.current;
-                pendingSpotsRef.current = {};
-                setSpots((prev) => ({ ...prev, ...batch }));
-              });
-            }
-          }
-          return;
-        }
-        if (note.type === 'conn' && note.host) {
-          const host = note.host;
-          setConns((prev) => ({
-            ...prev,
-            [host]: { status: note.connectionStatus ?? 0, authed: prev[host]?.authed ?? false },
-          }));
-        } else if (note.type === 'dex_auth' && note.host) {
-          const host = note.host;
-          setConns((prev) => ({
-            ...prev,
-            [host]: { status: prev[host]?.status ?? 0, authed: !!note.authenticated },
-          }));
-        } else if (note.type === 'bridge' && note.txID) {
-          const txID = note.txID;
-          setBridges((prev) => ({
-            ...prev,
-            [txID]: {
-              sourceAssetID: note.sourceAssetID ?? 0,
-              destAssetID: note.destAssetID ?? 0,
-              txID,
-              completionTxIDs: note.completionTxIDs ?? [],
-              amount: note.amount ?? 0,
-              complete: !!note.complete,
-              stamp: note.stamp ?? Date.now(),
-            },
-          }));
-        } else if (MM_NOTE_TYPES.has(note.type)) {
-          // Coalesce a burst of MM notes into one status refetch, then fall
-          // through so panels can also react to the note itself (the order
-          // panels refresh, the run-logs feed updates).
-          if (!mmTimer) {
-            mmTimer = setTimeout(() => {
-              mmTimer = null;
-              refreshMMRef.current();
-            }, 500);
           }
         }
-        listenersRef.current.forEach((fn) => {
-          try {
-            fn(note);
-          } catch {
-            /* ignore */
-          }
-        });
-      };
-      ws.onclose = () => {
-        if (cancelled) return;
-        retryTimer = setTimeout(connect, retry);
-        retry = Math.min(retry * 2, 30000);
-      };
-      ws.onerror = () => {
+        return;
+      }
+      if (note.type === 'conn' && note.host) {
+        const host = note.host;
+        setConns((prev) => ({
+          ...prev,
+          [host]: { status: note.connectionStatus ?? 0, authed: prev[host]?.authed ?? false },
+        }));
+      } else if (note.type === 'dex_auth' && note.host) {
+        const host = note.host;
+        setConns((prev) => ({
+          ...prev,
+          [host]: { status: prev[host]?.status ?? 0, authed: !!note.authenticated },
+        }));
+      } else if (note.type === 'bridge' && note.txID) {
+        const txID = note.txID;
+        setBridges((prev) => ({
+          ...prev,
+          [txID]: {
+            sourceAssetID: note.sourceAssetID ?? 0,
+            destAssetID: note.destAssetID ?? 0,
+            txID,
+            completionTxIDs: note.completionTxIDs ?? [],
+            amount: note.amount ?? 0,
+            complete: !!note.complete,
+            stamp: note.stamp ?? Date.now(),
+          },
+        }));
+      } else if (MM_NOTE_TYPES.has(note.type)) {
+        // Coalesce a burst of MM notes into one status refetch, then fall
+        // through so panels can also react to the note itself (the order
+        // panels refresh, the run-logs feed updates).
+        if (!mmTimer) {
+          mmTimer = setTimeout(() => {
+            mmTimer = null;
+            refreshMMRef.current();
+          }, 500);
+        }
+      }
+      listenersRef.current.forEach((fn) => {
         try {
-          ws?.close();
+          fn(note);
         } catch {
           /* ignore */
         }
-      };
-    };
-    connect();
+      });
+    });
 
     return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
+      unsubscribe();
       if (mmTimer) clearTimeout(mmTimer);
       if (spotsRafRef.current) {
         cancelAnimationFrame(spotsRafRef.current);
         spotsRafRef.current = 0;
-      }
-      try {
-        ws?.close();
-      } catch {
-        /* ignore */
       }
     };
   }, []);

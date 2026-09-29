@@ -44,12 +44,12 @@ import {
 import { SharedFilePickerModal } from './SharedFilePickerModal';
 import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './ImageAttachModal';
 import { PageLinkPickerModal } from './PageLinkPickerModal';
-import { blobToDataB64 } from './imageCompress';
 import { formatAtomsTrimmed } from '../../../utils/amounts';
 import { formatBytes } from '../../../utils/bytes';
 import { apiError } from '../../../utils/apiError';
 import { toEmbedSegment } from '../embedParser';
 import { EmbedRenderer } from '../embedRender';
+import { blobToB64 } from '../../../utils/base64';
 
 // MAX_INLINE_BYTES is the per-attachment ceiling for inline embeds. Files
 // above this should use the "Link to shared content" flow instead (which
@@ -268,7 +268,7 @@ export const BisonrelayEditor = ({
       return;
     }
     try {
-      const dataB64 = await blobToDataB64(f);
+      const dataB64 = await blobToB64(f);
       addInlineEmbed({
         displayName: f.name,
         name: f.name,

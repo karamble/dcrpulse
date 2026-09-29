@@ -19,6 +19,7 @@ import {
   getAllTSpends,
   TSpendRecord
 } from '../../services/treasuryStorage';
+import { downloadBlob } from '../../utils/files';
 
 interface TreasuryPaymentsCardProps {
   // Bumped when a scan or snapshot sync writes new TSpends to localStorage.
@@ -44,14 +45,7 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
   }, [refreshKey]);
 
   const handleExport = () => {
-    const data = exportTreasuryData();
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `treasury-data-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(exportTreasuryData(), `treasury-data-${new Date().toISOString().split('T')[0]}.json`, 'application/json');
   };
 
   const handleImport = () => {

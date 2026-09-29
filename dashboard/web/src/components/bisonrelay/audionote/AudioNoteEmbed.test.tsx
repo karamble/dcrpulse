@@ -2,9 +2,9 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EmbedRenderer } from '../embedRender';
 import { parseEmbeds } from '../embedParser';
-import { bytesToBase64 } from './packetFraming';
 import { formatClock } from './AudioNoteEmbed';
 import { oggOpusFile } from './oggFixtures';
+import { bytesToB64 } from '../../../utils/base64';
 
 const NOTE = 'embeds/0123456789abcdef/20260925_074458.oga';
 const inlineTag = (data: string) =>
@@ -29,7 +29,7 @@ afterEach(cleanup);
 
 describe('AudioNoteEmbed', () => {
   it('renders a bruig voice note as a player with its duration and a save link', () => {
-    render(<EmbedRenderer embed={segment(inlineTag(bytesToBase64(oggOpusFile([2_880_000]))))} />);
+    render(<EmbedRenderer embed={segment(inlineTag(bytesToB64(oggOpusFile([2_880_000]))))} />);
     expect(screen.getByRole('button', { name: 'Play voice note' })).toBeTruthy();
     expect(screen.getByText(/0:00 \/ 1:00/)).toBeTruthy();
     const save = screen.getByRole('link', { name: 'Save voice note' }) as HTMLAnchorElement;
@@ -52,7 +52,7 @@ describe('AudioNoteEmbed', () => {
   it('does not play bytes that only claim to be a voice note', async () => {
     // A tag says audio/ogg, the bytes are something else: the plain chip, not a player.
     const notOgg = new Uint8Array([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0, 1, 2, 3]);
-    render(<EmbedRenderer embed={segment(inlineTag(bytesToBase64(notOgg)))} />);
+    render(<EmbedRenderer embed={segment(inlineTag(bytesToB64(notOgg)))} />);
     expect(screen.queryByRole('button', { name: /voice note/i })).toBeNull();
     expect(screen.getByText('2026-09-24-20_33_52-audionote.opus')).toBeTruthy();
     expect(URL.createObjectURL).not.toHaveBeenCalled();

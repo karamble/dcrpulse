@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AudioNoteButton } from './AudioNoteButton';
-import { base64ToBytes } from './packetFraming';
+import { b64ToBytes } from '../../../utils/base64';
 
 const recorded = { packets: [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])], seconds: 0.04, bytes: 5 };
 const started = vi.fn();
@@ -46,7 +46,7 @@ describe('AudioNoteButton', () => {
     await act(async () => { click(/Send/); });
     expect(onSend).toHaveBeenCalledOnce();
     // The server receives exactly the recorded packets, length-prefixed.
-    const blob = base64ToBytes(onSend.mock.calls[0][0]);
+    const blob = b64ToBytes(onSend.mock.calls[0][0]);
     expect(Array.from(blob)).toEqual([0, 3, 1, 2, 3, 0, 2, 4, 5]);
     expect(screen.queryByRole('button', { name: /Send/ })).toBeNull();
   });

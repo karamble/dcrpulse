@@ -2,13 +2,10 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck } from 'lucide-react';
-import { AlertEntry, getAlerts, markAlertRead, markAllAlertsRead } from '../services/api';
-import { refreshAlertsSummary } from '../hooks/useAlerts';
-import { useVisiblePoll } from '../hooks/useVisiblePoll';
-import { useBisonrelayLive } from '../components/bisonrelay/BisonrelayLiveProvider';
+import { useAlertEntries } from '../hooks/useAlertEntries';
 import { AlertRow, alertCategoryRoute } from '../components/alerts/AlertRow';
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -38,50 +35,10 @@ const chipClass = (active: boolean) =>
 // client-side category and severity filters (the ring is capped at a few
 // hundred entries, so there is no server-side paging).
 export const AlertsPage = () => {
-  const [entries, setEntries] = useState<AlertEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { entries, loading, readOne, readAll } = useAlertEntries({ pollMs: 60000 });
   const [category, setCategory] = useState('');
   const [severity, setSeverity] = useState('');
   const navigate = useNavigate();
-  const { addListener } = useBisonrelayLive();
-
-  const load = () =>
-    getAlerts()
-      .then(setEntries)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useVisiblePoll(load, 60000);
-  useEffect(() => {
-    return addListener((evt) => {
-      if (evt.type === 'alerts') void load();
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addListener]);
-
-  const readOne = async (id: string) => {
-    setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, read: true } : e)));
-    try {
-      await markAlertRead(id);
-    } catch {
-      void load();
-    }
-    refreshAlertsSummary();
-  };
-
-  const readAll = async () => {
-    setEntries((prev) => prev.map((e) => ({ ...e, read: true })));
-    try {
-      await markAllAlertsRead();
-    } catch {
-      void load();
-    }
-    refreshAlertsSummary();
-  };
 
   const filtered = entries.filter(
     (e) => (!category || e.category === category) && (!severity || e.severity === severity),

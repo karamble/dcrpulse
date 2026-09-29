@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle2, FolderOpen, Loader2 } from 'lucide-react';
 import { AccountExportEntry, parseAccountExport } from '../services/api';
 import { KeyEnds } from './AddressGroups';
 import { apiError } from '../utils/apiError';
+import { blobToB64 } from '../utils/base64';
 
 // AccountExportPicker loads a device account-export file (accounts.dcr from a
 // Foundation Passport's SD card) and lets the user pick which accounts to
@@ -20,19 +21,6 @@ import { apiError } from '../utils/apiError';
 export interface SelectedAccountEntry extends AccountExportEntry {
   editedName: string;
 }
-
-// Binary-safe file read (same pattern as the offline-signing uploads).
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const s = String(reader.result);
-      const comma = s.indexOf(',');
-      resolve(comma >= 0 ? s.slice(comma + 1) : s);
-    };
-    reader.onerror = () => reject(new Error('could not read file'));
-    reader.readAsDataURL(file);
-  });
 
 interface AccountExportPickerProps {
   onSelectionChange: (selected: SelectedAccountEntry[]) => void;
@@ -73,7 +61,7 @@ export const AccountExportPicker = ({ onSelectionChange, disabled, newWallet }: 
     setLoading(true);
     setError('');
     try {
-      const parsed = await parseAccountExport(await fileToBase64(file), !!newWallet);
+      const parsed = await parseAccountExport(await blobToB64(file), !!newWallet);
       if (parsed.length === 0) {
         throw new Error('The file contains no accounts');
       }

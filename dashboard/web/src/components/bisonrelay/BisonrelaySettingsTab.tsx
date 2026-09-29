@@ -78,6 +78,7 @@ import { BrMcpSection } from '../settings/BrMcpSection';
 import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
 import { contactByUid, displayNick } from './bisonrelayNick';
+import { blobToB64 } from '../../utils/base64';
 
 // ---- Section routing --------------------------------------------------------
 
@@ -118,18 +119,6 @@ const readHashSection = (): SettingsSection => {
 // raw image at 200 KiB and broadcasts the update to all contacts.
 const AVATAR_MAX_BYTES = 200 * 1024;
 
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const s = String(reader.result);
-      const comma = s.indexOf(',');
-      resolve(comma >= 0 ? s.slice(comma + 1) : s);
-    };
-    reader.onerror = () => reject(new Error('could not read file'));
-    reader.readAsDataURL(file);
-  });
-
 const AvatarControl = ({ nick }: { nick: string }) => {
   const [avatar, setAvatar] = useState('');
   const [busy, setBusy] = useState(false);
@@ -159,7 +148,7 @@ const AvatarControl = ({ nick }: { nick: string }) => {
     setErr(null);
     setBusy(true);
     try {
-      const b64 = await fileToBase64(file);
+      const b64 = await blobToB64(file);
       await setBisonrelayAvatar(b64);
       setAvatar(b64);
     } catch (e2: any) {
