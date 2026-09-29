@@ -260,10 +260,9 @@ type LightningDecodedPayReq struct {
 // by the Send tab to /wallet/ln/send. Amt is required only for
 // zero-amount invoices.
 type LightningSendPaymentRequest struct {
-	PayReq        string `json:"payReq"`
-	Amt           int64  `json:"amt,omitempty"`
-	FeeLimitAtoms int64  `json:"feeLimitAtoms,omitempty"`
-	TimeoutSec    int32  `json:"timeoutSec,omitempty"`
+	PayReq     string `json:"payReq"`
+	Amt        int64  `json:"amt,omitempty"`
+	TimeoutSec int32  `json:"timeoutSec,omitempty"`
 }
 
 // LightningHop is one node along a payment route in a confirmed

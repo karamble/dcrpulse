@@ -832,8 +832,9 @@ var bisonrelayTools = []toolDef{
 			// pinned from here (neither brclientd's endpoint nor the Bison Relay
 			// client takes a fee limit), so dcrlnd applies its own default curve
 			// and the reservation covers that same curve instead.
-			reserved := atoms + services.RoutingFeeCeilingAtoms(atoms)
-			h, err := grants.authorizeLightning(ctx, a.id, reserved, time.Now())
+			feeCeiling := services.RoutingFeeCeilingAtoms(atoms)
+			reserved := atoms + feeCeiling
+			h, err := grants.authorizeLightning(ctx, a.id, atoms, feeCeiling, time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "br_tip_user", 0, in.AmountDCR, in.UID, "blocked", "spend-limit violation: grant revoked and token blocked")
@@ -1539,13 +1540,14 @@ var bisonrelayTools = []toolDef{
 			capDCR := dcrutil.Amount(capAtoms).ToCoin()
 			// The routing fee rides on top of the price ceiling, so reserve it
 			// too; a free download reserves nothing, since the curve is 0 at 0.
-			reserved := capAtoms + services.RoutingFeeCeilingAtoms(capAtoms)
+			feeCeiling := services.RoutingFeeCeilingAtoms(capAtoms)
+			reserved := capAtoms + feeCeiling
 			// A free download leaves the hold zero, so the refund is a no-op.
 			var h hold
 			if capAtoms > 0 {
 				action := fmt.Sprintf("pay up to %s to download a Bison Relay file from %s", dcrAmountStr(capAtoms), in.UID)
 				var err error
-				if h, err = grants.authorizeSpendScoped(ctx, a.id, scopeLightning, reserved, action, time.Now()); err != nil {
+				if h, err = grants.authorizeSpendScoped(ctx, a.id, scopeLightning, capAtoms, feeCeiling, action, time.Now()); err != nil {
 					if tripwire(a.id, err) {
 						recordSpend(a, "br_content_get", 0, capDCR, in.UID, "blocked", "spend-limit violation: grant revoked and token blocked")
 					} else {

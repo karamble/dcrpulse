@@ -170,17 +170,20 @@ Fund-moving tools include `wallet_send`, `staking_purchase`,
 `ln_open_channel`, `ln_liquidity_request`, `dex_post_bond`, `dex_place_order`,
 `br_tip_user`, and `br_content_get` with a nonzero `maxCostAtoms`.
 
-Where a tool's real cost is only knowable afterwards, the worst case is reserved up
-front and the unused part is returned once it settles: `ln_pay` does this with the
-routing fee, and the VSP fee tools with the per-ticket fee. A paid `br_content_get`
-is the exception, because the download runs in the background with no completion
-signal, so the whole authorized ceiling stays counted.
+Lightning payments are sent with dcrlnd's default routing fee limit, which an agent
+cannot change. The per-transaction cap applies to the amount the agent chose; the
+fee ceiling is reserved against the daily cap on top, and `ln_pay` returns the
+unused part once the payment settles. A paid `br_content_get` keeps the whole
+authorized ceiling counted, because the download runs in the background with no
+completion signal. VSP fees are an operating cost and are not counted against the
+caps.
 
 ## Safety controls
 
 - **Tripwire.** A spend attempt that exceeds a cap revokes that agent's grant and
   blocks its token. The blast radius is the one offending agent; others are
-  unaffected. Wrong-account or non-allowlisted denials do not trip it.
+  unaffected. Wrong-account or non-allowlisted denials do not trip it, nor does a
+  daily cap that is short only of a payment's routing fee.
 - **Freeze all agents.** A confirm-guarded button (Settings -> AI Agents) revokes
   every grant and blocks every token at once. Restore agents individually afterwards.
 - **Audit trail.** Every spend attempt (allowed, denied, error, blocked) is recorded

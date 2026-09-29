@@ -38,6 +38,7 @@ var (
 	errPerTxExceeded     = errors.New("amount exceeds the per-transaction cap of the spend grant")
 	errAddrNotAllowed    = errors.New("recipient address is not on the spend grant's allowlist")
 	errDailyExceeded     = errors.New("amount would exceed the spend grant's daily cap")
+	errFeeHeadroom       = errors.New("the spend grant's daily cap has no room left for this payment's routing fee")
 )
 
 // scopeDenied is the denial returned when a grant exists but does not include
@@ -257,9 +258,10 @@ func (s *grantStore) currentLocked(agentID string, now time.Time) (*spendGrant, 
 	return g, nil
 }
 
-// reserveLocked enforces the per-transaction and daily caps and reserves the
-// amount against the rolling window. The caller must hold s.mu.
-func (s *grantStore) reserveLocked(g *spendGrant, amountAtoms int64, now time.Time) error {
+// reserveLocked holds amountAtoms to the per-transaction cap and reserves it
+// plus feeAtoms, dcrlnd's routing fee ceiling, against the daily cap. A daily
+// shortfall only the fee causes is a plain denial. The caller must hold s.mu.
+func (s *grantStore) reserveLocked(g *spendGrant, amountAtoms, feeAtoms int64, now time.Time) error {
 	if amountAtoms <= 0 {
 		return errBadAmount
 	}
@@ -277,7 +279,10 @@ func (s *grantStore) reserveLocked(g *spendGrant, amountAtoms int64, now time.Ti
 	if g.spentAtoms+amountAtoms > g.dailyAtoms {
 		return errDailyExceeded
 	}
-	g.spentAtoms += amountAtoms
+	if g.spentAtoms+amountAtoms+feeAtoms > g.dailyAtoms {
+		return errFeeHeadroom
+	}
+	g.spentAtoms += amountAtoms + feeAtoms
 	return nil
 }
 
@@ -330,7 +335,7 @@ func (s *grantStore) reserveForSend(agentID string, account uint32, amountAtoms 
 	if toAddr != "" && len(g.allowlist) > 0 && !g.allowlist[toAddr] {
 		return nil, 0, errAddrNotAllowed
 	}
-	if err := s.reserveLocked(g, amountAtoms, now); err != nil {
+	if err := s.reserveLocked(g, amountAtoms, 0, now); err != nil {
 		return nil, 0, err
 	}
 	return append([]byte(nil), g.passphrase...), g.gen, nil
@@ -429,19 +434,20 @@ func (s *grantStore) authorizeActionGated(ctx context.Context, agentID, scope, a
 	return gateApproval(ctx, agentID, action)
 }
 
-// authorizeLightning checks the lightning scope, reserves amountAtoms against
-// the (shared) daily cap, and (when BR oversight is on) blocks for the
-// operator's approval. No passphrase is returned: dcrlnd is unlocked separately.
-// It returns the hold to refund with if the payment then fails.
-func (s *grantStore) authorizeLightning(ctx context.Context, agentID string, amountAtoms int64, now time.Time) (hold, error) {
-	gen, err := s.reserveLightning(agentID, amountAtoms, now)
+// authorizeLightning checks the lightning scope, reserves amountAtoms plus its
+// routing fee ceiling feeAtoms against the caps, and (when BR oversight is on)
+// blocks for the operator's approval. No passphrase is returned: dcrlnd is
+// unlocked separately. It returns the hold to refund with if the payment then
+// fails.
+func (s *grantStore) authorizeLightning(ctx context.Context, agentID string, amountAtoms, feeAtoms int64, now time.Time) (hold, error) {
+	gen, err := s.reserveLightning(agentID, amountAtoms, feeAtoms, now)
 	if err != nil {
 		return hold{}, err
 	}
-	return s.approveHold(ctx, agentID, gen, amountAtoms, fmt.Sprintf("make a Lightning payment of %s", dcrAmountStr(amountAtoms)))
+	return s.approveHold(ctx, agentID, gen, amountAtoms+feeAtoms, fmt.Sprintf("make a Lightning payment of %s", dcrAmountStr(amountAtoms)))
 }
 
-func (s *grantStore) reserveLightning(agentID string, amountAtoms int64, now time.Time) (uint64, error) {
+func (s *grantStore) reserveLightning(agentID string, amountAtoms, feeAtoms int64, now time.Time) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
@@ -451,7 +457,7 @@ func (s *grantStore) reserveLightning(agentID string, amountAtoms int64, now tim
 	if !g.writeScopes[scopeLightning] {
 		return 0, scopeDenied(scopeLightning)
 	}
-	if err := s.reserveLocked(g, amountAtoms, now); err != nil {
+	if err := s.reserveLocked(g, amountAtoms, feeAtoms, now); err != nil {
 		return 0, err
 	}
 	return g.gen, nil
@@ -480,7 +486,7 @@ func (s *grantStore) authorizeVSPRun(agentID string, account, changeAccount uint
 }
 
 // authorizeSpendScoped checks the given fund scope and, when amountAtoms>0
-// (DCR-denominated), reserves it against the shared daily cap. Non-DCR moves
+// (DCR-denominated), reserves it plus feeAtoms against the caps. Non-DCR moves
 // (other DEX assets) pass 0 and are scope-gated only - the DCR cap cannot bound
 // a non-DCR amount. No wallet passphrase (the DEX and dcrlnd are unlocked
 // separately). The action describes the spend in the operator's approval
@@ -488,15 +494,15 @@ func (s *grantStore) authorizeVSPRun(agentID string, account, changeAccount uint
 // reservation serves DEX moves and paid Bison Relay downloads. It returns the
 // hold to refund with if a reserved spend then fails; a scope-only call reserves
 // nothing, and refunding its hold is a no-op.
-func (s *grantStore) authorizeSpendScoped(ctx context.Context, agentID, scope string, amountAtoms int64, action string, now time.Time) (hold, error) {
-	gen, err := s.reserveSpendScoped(agentID, scope, amountAtoms, now)
+func (s *grantStore) authorizeSpendScoped(ctx context.Context, agentID, scope string, amountAtoms, feeAtoms int64, action string, now time.Time) (hold, error) {
+	gen, err := s.reserveSpendScoped(agentID, scope, amountAtoms, feeAtoms, now)
 	if err != nil {
 		return hold{}, err
 	}
-	return s.approveHold(ctx, agentID, gen, amountAtoms, action)
+	return s.approveHold(ctx, agentID, gen, amountAtoms+feeAtoms, action)
 }
 
-func (s *grantStore) reserveSpendScoped(agentID, scope string, amountAtoms int64, now time.Time) (uint64, error) {
+func (s *grantStore) reserveSpendScoped(agentID, scope string, amountAtoms, feeAtoms int64, now time.Time) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
@@ -516,7 +522,7 @@ func (s *grantStore) reserveSpendScoped(agentID, scope string, amountAtoms int64
 		return 0, errBadAmount
 	}
 	if amountAtoms > 0 {
-		if err := s.reserveLocked(g, amountAtoms, now); err != nil {
+		if err := s.reserveLocked(g, amountAtoms, feeAtoms, now); err != nil {
 			return 0, err
 		}
 	}

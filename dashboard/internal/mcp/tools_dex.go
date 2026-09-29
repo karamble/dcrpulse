@@ -853,7 +853,7 @@ var dexTools = []toolDef{
 				return nil, err
 			}
 			amountDCR := dcrutil.Amount(outlay).ToCoin()
-			h, err := grants.authorizeSpendScoped(ctx, a.id, scopeDex, outlay, dexSpendAction(outlay), time.Now())
+			h, err := grants.authorizeSpendScoped(ctx, a.id, scopeDex, outlay, 0, dexSpendAction(outlay), time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "blocked", "spend-limit violation: grant revoked and token blocked")
@@ -1155,7 +1155,7 @@ var dexTools = []toolDef{
 			}
 			capAtoms := int64(in.Bond)
 			amountDCR := dcrutil.Amount(capAtoms).ToCoin()
-			h, err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, dexSpendAction(capAtoms), time.Now())
+			h, err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, 0, dexSpendAction(capAtoms), time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "blocked", "spend-limit violation: grant revoked and token blocked")

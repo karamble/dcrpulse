@@ -39,14 +39,14 @@ func TestRoutingFeeCeilingMirrorsDcrlnd(t *testing.T) {
 	}
 }
 
-// callTip drives br_tip_user for an agent granted exactly perTx, and reports
+// callTip drives br_tip_user for an agent granted perTx and daily, and reports
 // what came back.
-func callTip(t *testing.T, agentID string, perTx int64, amountDCR float64) (*mcp.CallToolResult, error) {
+func callTip(t *testing.T, agentID string, perTx, daily int64, amountDCR float64) (*mcp.CallToolResult, error) {
 	t.Helper()
 	grants.set(agentID, GrantSpec{
 		WriteScopes: []string{scopeLightning, scopeBR},
 		PerTxAtoms:  perTx,
-		DailyAtoms:  perTx,
+		DailyAtoms:  daily,
 	}, time.Now())
 	t.Cleanup(func() { grants.revoke(agentID) })
 
@@ -57,36 +57,48 @@ func callTip(t *testing.T, agentID string, perTx int64, amountDCR float64) (*mcp
 	})
 }
 
-// The routing fee leaves the channel on top of the tip, so the cap has to be
-// measured against both. Asserted from either side of the boundary: a cap one
-// atom short must refuse, and a cap of exactly amount+ceiling must get past the
-// cap check. Only the size of the reservation can tell those two apart.
-func TestTipReservesTheRoutingFee(t *testing.T) {
+// The per-transaction cap bounds the amount the agent chose, and dcrlnd's fee
+// ceiling on top counts against the daily cap only. A daily cap short of just
+// the fee is refused without treating the agent as compromised.
+func TestTipCapsTheAmountAndBudgetsTheFee(t *testing.T) {
 	const amountDCR = 0.5
 	const atoms = int64(50_000_000)
 	ceiling := services.RoutingFeeCeilingAtoms(atoms)
 	if ceiling <= 0 {
 		t.Fatalf("ceiling for %d atoms is %d; this test would assert nothing", atoms, ceiling)
 	}
+	useTempAuditFile(t)
 
-	t.Run("one atom short is refused", func(t *testing.T) {
-		res, err := callTip(t, "tip-cap-short", atoms+ceiling-1, amountDCR)
-		if err == nil && !res.IsError {
-			t.Fatal("the tip was allowed on a cap that cannot cover its routing fee")
+	t.Run("a cap of exactly the amount passes", func(t *testing.T) {
+		const id = "tip-cap-exact"
+		res, _ := callTip(t, id, atoms, atoms+ceiling, amountDCR)
+		if got := resultText(res); strings.Contains(got, "per-transaction cap") || strings.Contains(got, "routing fee") {
+			t.Fatalf("a cap of exactly the amount was refused: %q", got)
 		}
-		if got := resultText(res); !strings.Contains(got, "per-transaction cap") {
-			t.Fatalf("refused for the wrong reason, so the reservation size is untested: %q", got)
+		if info, ok := SpendGrantInfo(id); !ok || info.SpentAtoms != atoms+ceiling {
+			t.Fatalf("grant %v, spent %d: want it kept with amount+ceiling %d reserved", ok, info.SpentAtoms, atoms+ceiling)
 		}
 	})
 
-	t.Run("exactly enough gets past the cap", func(t *testing.T) {
-		res, err := callTip(t, "tip-cap-exact", atoms+ceiling, amountDCR)
-		// It still fails: there is no brclientd here. It must not fail on the cap.
-		if err == nil && !res.IsError {
-			return
+	t.Run("one atom over the cap trips", func(t *testing.T) {
+		const id = "tip-cap-over"
+		res, _ := callTip(t, id, atoms-1, 10*atoms, amountDCR)
+		if got := resultText(res); !strings.Contains(got, "per-transaction cap") {
+			t.Fatalf("refused for the wrong reason: %q", got)
 		}
-		if got := resultText(res); strings.Contains(got, "per-transaction cap") {
-			t.Fatalf("a cap of exactly amount+ceiling was refused, so the reservation is too large: %q", got)
+		if _, ok := SpendGrantInfo(id); ok {
+			t.Fatal("an amount over the cap left the grant installed")
+		}
+	})
+
+	t.Run("a daily cap short of the fee alone denies without tripping", func(t *testing.T) {
+		const id = "tip-fee-short"
+		res, _ := callTip(t, id, atoms, atoms+ceiling-1, amountDCR)
+		if got := resultText(res); !strings.Contains(got, "routing fee") {
+			t.Fatalf("refused for the wrong reason: %q", got)
+		}
+		if info, ok := SpendGrantInfo(id); !ok || info.SpentAtoms != 0 {
+			t.Fatalf("grant %v, spent %d: a fee-only shortfall must leave the grant untouched", ok, info.SpentAtoms)
 		}
 	})
 }
@@ -102,7 +114,7 @@ func TestTipKeepsTheReservationOnceHandedOver(t *testing.T) {
 	want := atoms + services.RoutingFeeCeilingAtoms(atoms)
 	useTempAuditFile(t)
 
-	res, err := callTip(t, agentID, 100_000_000, amountDCR)
+	res, err := callTip(t, agentID, 100_000_000, 100_000_000, amountDCR)
 	if err == nil && !res.IsError {
 		t.Fatal("the tip reached brclientd in a test; this asserts nothing")
 	}
@@ -152,13 +164,13 @@ func TestTipOffersNoAttemptsKnob(t *testing.T) {
 	t.Fatal("br_tip_user missing from the listing")
 }
 
-// callFeeTool drives a Lightning-paying tool for an agent granted exactly perTx.
-func callFeeTool(t *testing.T, agentID string, perTx int64, domain, tool string, args map[string]any) *mcp.CallToolResult {
+// callFeeTool drives a Lightning-paying tool for an agent granted perTx and daily.
+func callFeeTool(t *testing.T, agentID string, perTx, daily int64, domain, tool string, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
 	grants.set(agentID, GrantSpec{
 		WriteScopes: []string{scopeLightning, scopeBR},
 		PerTxAtoms:  perTx,
-		DailyAtoms:  perTx,
+		DailyAtoms:  daily,
 	}, time.Now())
 	t.Cleanup(func() { grants.revoke(agentID) })
 
@@ -168,9 +180,9 @@ func callFeeTool(t *testing.T, agentID string, perTx int64, domain, tool string,
 }
 
 // The tip is not the only tool that pays over Lightning: the liquidity fee and a
-// paid download carry a routing fee on top too, and each must be measured against
-// the cap the same way. Asserted from both sides of the boundary, so the size of
-// the reservation is what is being tested and not merely that a call failed.
+// paid download carry a routing fee on top too, and each budgets it the same way.
+// Asserted from both sides of the daily boundary, so the size of the reservation
+// is what is being tested and not merely that a call failed.
 func TestEveryLightningPayerReservesTheRoutingFee(t *testing.T) {
 	const feeAtoms = int64(20_000_000) // 0.2 DCR
 	ceiling := services.RoutingFeeCeilingAtoms(feeAtoms)
@@ -191,17 +203,48 @@ func TestEveryLightningPayerReservesTheRoutingFee(t *testing.T) {
 			args: map[string]any{"uid": "ff00", "fid": "abcd", "maxCostAtoms": feeAtoms},
 		},
 	} {
-		t.Run(tc.name+" one atom short is refused", func(t *testing.T) {
-			res := callFeeTool(t, tc.tool+"-short", feeAtoms+ceiling-1, tc.domain, tc.tool, tc.args)
-			if got := resultText(res); !strings.Contains(got, "per-transaction cap") {
-				t.Fatalf("a cap that cannot cover the routing fee did not refuse: %q", got)
+		t.Run(tc.name+" a daily cap short of the fee is refused", func(t *testing.T) {
+			id := tc.tool + "-short"
+			res := callFeeTool(t, id, feeAtoms, feeAtoms+ceiling-1, tc.domain, tc.tool, tc.args)
+			if got := resultText(res); !strings.Contains(got, "routing fee") {
+				t.Fatalf("a daily cap that cannot cover the routing fee did not refuse: %q", got)
+			}
+			if _, ok := SpendGrantInfo(id); !ok {
+				t.Fatal("a fee-only shortfall revoked the grant")
 			}
 		})
-		t.Run(tc.name+" exactly enough gets past the cap", func(t *testing.T) {
-			res := callFeeTool(t, tc.tool+"-exact", feeAtoms+ceiling, tc.domain, tc.tool, tc.args)
-			if got := resultText(res); strings.Contains(got, "per-transaction cap") {
-				t.Fatalf("a cap of exactly fee+ceiling was refused, so the reservation is too large: %q", got)
+		t.Run(tc.name+" exactly enough gets past the caps", func(t *testing.T) {
+			res := callFeeTool(t, tc.tool+"-exact", feeAtoms, feeAtoms+ceiling, tc.domain, tc.tool, tc.args)
+			if got := resultText(res); strings.Contains(got, "per-transaction cap") || strings.Contains(got, "routing fee") {
+				t.Fatalf("a grant of exactly fee+ceiling was refused, so the reservation is too large: %q", got)
 			}
 		})
 	}
+}
+
+// Routing fees follow dcrlnd's default curve for every payment, so ln_pay offers
+// no fee limit an agent could raise.
+func TestLnPayOffersNoFeeLimit(t *testing.T) {
+	cs := connectTo(t, testAgent("ln-pay-schema", "payer", map[string]bool{"lightning": true}))
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	for _, tl := range res.Tools {
+		if tl.Name != "ln_pay" {
+			continue
+		}
+		schema, merr := json.Marshal(tl.InputSchema)
+		if merr != nil {
+			t.Fatalf("marshal schema: %v", merr)
+		}
+		if !strings.Contains(strings.ToLower(string(schema)), "payreq") {
+			t.Fatalf("the schema does not look like ln_pay's, so this asserts nothing: %s", schema)
+		}
+		if strings.Contains(strings.ToLower(string(schema)), "feelimit") {
+			t.Errorf("ln_pay still advertises a fee limit: %s", schema)
+		}
+		return
+	}
+	t.Fatal("ln_pay missing from the listing")
 }

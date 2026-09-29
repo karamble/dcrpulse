@@ -61,7 +61,7 @@ describe('SendTab', () => {
     const [req] = vi.mocked(api.streamLnPayment).mock.calls[0];
     expect(req.payReq).toBe('lnB');
     // The backend applies dcrlnd's own default fee limit.
-    expect(req.feeLimitAtoms).toBeUndefined();
+    expect(req).not.toHaveProperty('feeLimitAtoms');
   });
 
   // FEMONEY-1: an amount typed key by key must keep every character.

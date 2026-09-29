@@ -308,7 +308,6 @@ export interface LightningPayment {
 export interface LightningSendPaymentReq {
   payReq: string;
   amt?: number;
-  feeLimitAtoms?: number;
 }
 
 // decodeLnPayReq calls the unary backend that wraps lnrpc.DecodePayReq.

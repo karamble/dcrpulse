@@ -1238,16 +1238,16 @@ func lastHop(hops []*lnrpc.Hop) *lnrpc.Hop {
 }
 
 // defaultRoutingFeeLimitAtoms is dcrlnd's own default routing fee limit
-// (lnwallet.DefaultRoutingFeeLimitForAmount). routerrpc.SendPaymentV2
-// provides no default of its own, so a caller that omits a fee limit gets
-// this curve instead of the 0-fee-only behaviour of an unset field.
+// (lnwallet.DefaultRoutingFeeLimitForAmount), the limit every payment is
+// sent with. routerrpc.SendPaymentV2 provides no default of its own, and an
+// unset limit allows only fee-free routes.
 func defaultRoutingFeeLimitAtoms(amountAtoms int64) int64 {
 	limit := lnwallet.DefaultRoutingFeeLimitForAmount(lnwire.NewMAtomsFromAtoms(dcrutil.Amount(amountAtoms)))
 	return int64(limit.ToAtoms())
 }
 
 // RoutingFeeCeilingAtoms reports the routing fee a payment of amountAtoms may
-// incur when the caller sets no explicit limit. Spend accounting needs it: the
+// incur. Spend accounting needs it: the
 // fee leaves the channel on top of the invoice amount, so a budget that counts
 // only the invoice under-reserves by up to this much.
 func RoutingFeeCeilingAtoms(amountAtoms int64) int64 {
@@ -1269,22 +1269,15 @@ func StreamLightningPayment(ctx context.Context, req *types.LightningSendPayment
 	if timeout <= 0 {
 		timeout = 60
 	}
-	feeLimit := req.FeeLimitAtoms
-	if feeLimit <= 0 {
-		// routerrpc applies no default fee ceiling, and a 0 limit makes
-		// dcrlnd reject every fee-bearing route (FAILURE_REASON_NO_ROUTE).
-		// When the caller omits the limit, fall back to dcrlnd's own
-		// default curve, resolving the amount from the request and, for a
-		// normal invoice that carries the value, from the decoded pay req.
-		amt := req.Amt
-		payClient := lnc.Lightning
-		if amt <= 0 && payClient != nil {
-			if dec, err := payClient.DecodePayReq(ctx, &lnrpc.PayReqString{PayReq: req.PayReq}); err == nil {
-				amt = dec.NumAtoms
-			}
+	// The fee limit is dcrlnd's default curve on the amount, taken from the
+	// request or, for an invoice that carries the value, the decoded pay req.
+	amt := req.Amt
+	if payClient := lnc.Lightning; amt <= 0 && payClient != nil {
+		if dec, err := payClient.DecodePayReq(ctx, &lnrpc.PayReqString{PayReq: req.PayReq}); err == nil {
+			amt = dec.NumAtoms
 		}
-		feeLimit = defaultRoutingFeeLimitAtoms(amt)
 	}
+	feeLimit := defaultRoutingFeeLimitAtoms(amt)
 	rpcReq := &routerrpc.SendPaymentRequest{
 		PaymentRequest:    req.PayReq,
 		Amt:               req.Amt,

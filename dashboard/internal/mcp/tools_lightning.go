@@ -17,9 +17,8 @@ import (
 )
 
 type lnPayInput struct {
-	PayReq      string  `json:"payReq" jsonschema:"bolt11 invoice to pay"`
-	AmountDCR   float64 `json:"amountDcr,omitempty" jsonschema:"amount in DCR, required only for zero-amount invoices"`
-	FeeLimitDCR float64 `json:"feeLimitDcr,omitempty" jsonschema:"optional maximum routing fee in DCR"`
+	PayReq    string  `json:"payReq" jsonschema:"bolt11 invoice to pay"`
+	AmountDCR float64 `json:"amountDcr,omitempty" jsonschema:"amount in DCR, required only for zero-amount invoices"`
 }
 
 type lnInvoiceInput struct {
@@ -124,16 +123,13 @@ var lightningTools = []toolDef{
 				}
 				amtAtoms = int64(amt)
 			}
-			// The routing fee leaves the channel on top of the invoice, so
-			// reserve the ceiling too and pin the daemon to it; the unused part
-			// is returned once the payment settles.
+			// The routing fee leaves the channel on top of the invoice, bounded
+			// by dcrlnd's default curve, so reserve that ceiling too; the unused
+			// part is returned once the payment settles.
 			feeCeiling := services.RoutingFeeCeilingAtoms(amtAtoms)
-			if f, err := dcrutil.NewAmount(in.FeeLimitDCR); err == nil && int64(f) > 0 {
-				feeCeiling = int64(f)
-			}
 			reserved := amtAtoms + feeCeiling
 			amtDCR := dcrutil.Amount(amtAtoms).ToCoin()
-			h, err := grants.authorizeLightning(ctx, a.id, reserved, time.Now())
+			h, err := grants.authorizeLightning(ctx, a.id, amtAtoms, feeCeiling, time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "blocked", "spend-limit violation: grant revoked and token blocked")
@@ -142,7 +138,7 @@ var lightningTools = []toolDef{
 				}
 				return nil, err
 			}
-			req := &types.LightningSendPaymentRequest{PayReq: in.PayReq, FeeLimitAtoms: feeCeiling}
+			req := &types.LightningSendPaymentRequest{PayReq: in.PayReq}
 			if dec.NumAtoms <= 0 {
 				req.Amt = amtAtoms
 			}
@@ -220,7 +216,7 @@ var lightningTools = []toolDef{
 				}
 				pushAtoms = int64(p)
 			}
-			h, err := grants.authorizeLightning(ctx, a.id, localAtoms, time.Now())
+			h, err := grants.authorizeLightning(ctx, a.id, localAtoms, 0, time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "blocked", "spend-limit violation: grant revoked and token blocked")
@@ -397,7 +393,8 @@ var lightningTools = []toolDef{
 			feeDCR := dcrutil.Amount(feeAtoms).ToCoin()
 			// The provider fee is paid over Lightning, so its routing fee rides
 			// on top and belongs in the reservation as well.
-			reserved := feeAtoms + services.RoutingFeeCeilingAtoms(feeAtoms)
+			routingFee := services.RoutingFeeCeilingAtoms(feeAtoms)
+			reserved := feeAtoms + routingFee
 			// Name the provider that will actually be paid in the trail, since
 			// the caller no longer supplies it. Best-effort: an unavailable
 			// lookup must not stop the call from being recorded.
@@ -405,7 +402,7 @@ var lightningTools = []toolDef{
 			if d, derr := services.GetLiquidityDefaults(ctx); derr == nil && d != nil {
 				provider = d.Server
 			}
-			h, err := grants.authorizeLightning(ctx, a.id, reserved, time.Now())
+			h, err := grants.authorizeLightning(ctx, a.id, feeAtoms, routingFee, time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "blocked", "spend-limit violation: grant revoked and token blocked")

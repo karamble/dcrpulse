@@ -19,7 +19,7 @@ func TestGrantScopedRejectsNegative(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{PerTxAtoms: dcrAtoms, DailyAtoms: dcrAtoms, WriteScopes: []string{scopeDexSpend}}, now)
-	if _, err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, -1, "", now); err != errBadAmount {
+	if _, err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, -1, 0, "", now); err != errBadAmount {
 		t.Fatalf("negative scoped amount: want errBadAmount, got %v", err)
 	}
 	// The reservation must not have run.
@@ -291,14 +291,14 @@ func TestGrantLightningRequiresScopeAndCap(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
-	if _, err := s.authorizeLightning(context.Background(), "a", dcrAtoms, now); err == nil {
+	if _, err := s.authorizeLightning(context.Background(), "a", dcrAtoms, 0, now); err == nil {
 		t.Fatal("LN without scope: want denial, got nil")
 	}
 	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p"), WriteScopes: []string{scopeLightning}}, now)
-	if _, err := s.authorizeLightning(context.Background(), "a", 4*dcrAtoms, now); err != nil {
+	if _, err := s.authorizeLightning(context.Background(), "a", 4*dcrAtoms, 0, now); err != nil {
 		t.Fatalf("LN within cap: want ok, got %v", err)
 	}
-	if _, err := s.authorizeLightning(context.Background(), "a", 2*dcrAtoms, now); err != errDailyExceeded {
+	if _, err := s.authorizeLightning(context.Background(), "a", 2*dcrAtoms, 0, now); err != errDailyExceeded {
 		t.Fatalf("LN over shared daily cap: want errDailyExceeded, got %v", err)
 	}
 	if err := s.authorizeAction("a", scopeLightning, now); err != nil {
@@ -323,19 +323,19 @@ func TestGrantSpendScopedCapAndScope(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, WriteScopes: []string{scopeDexSpend}}, now)
-	if _, err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 6*dcrAtoms, "", now); err != errPerTxExceeded {
+	if _, err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 6*dcrAtoms, 0, "", now); err != errPerTxExceeded {
 		t.Fatalf("over per-tx: want errPerTxExceeded, got %v", err)
 	}
-	if _, err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 4*dcrAtoms, "", now); err != nil {
+	if _, err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 4*dcrAtoms, 0, "", now); err != nil {
 		t.Fatalf("DCR move within cap: want ok, got %v", err)
 	}
 	// A non-DCR move (amount 0) is scope-gated only, not cap-reserved.
-	if _, err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 0, "", now); err != nil {
+	if _, err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 0, 0, "", now); err != nil {
 		t.Fatalf("non-DCR scoped move: want ok, got %v", err)
 	}
 	// Without the scope, denied even for a non-DCR move.
 	s.set("a", GrantSpec{PerTxAtoms: dcrAtoms, DailyAtoms: dcrAtoms, WriteScopes: []string{scopeDex}}, now)
-	if _, err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 0, "", now); err == nil {
+	if _, err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 0, 0, "", now); err == nil {
 		t.Fatal("dex.spend without scope: want denial, got nil")
 	}
 }
@@ -436,11 +436,11 @@ func TestRefusedApprovalRefundsTheReservation(t *testing.T) {
 			return err
 		},
 		"lightning": func(s *grantStore, now time.Time) error {
-			_, err := s.authorizeLightning(ctx, "a", 50, now)
+			_, err := s.authorizeLightning(ctx, "a", 50, 0, now)
 			return err
 		},
 		"scoped": func(s *grantStore, now time.Time) error {
-			_, err := s.authorizeSpendScoped(ctx, "a", scopeDexSpend, 50, "post a bond", now)
+			_, err := s.authorizeSpendScoped(ctx, "a", scopeDexSpend, 50, 0, "post a bond", now)
 			return err
 		},
 	} {
