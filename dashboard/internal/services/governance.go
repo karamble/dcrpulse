@@ -372,10 +372,11 @@ func ListTSpendPolicies(ctx context.Context) ([]types.TSpendPolicy, error) {
 	}
 	out := make([]types.TSpendPolicy, 0, len(resp.GetPolicies()))
 	for _, p := range resp.GetPolicies() {
-		out = append(out, types.TSpendPolicy{
-			Hash:   hex.EncodeToString(reversed(p.GetHash())),
-			Policy: p.GetPolicy(),
-		})
+		hash := hashString(p.GetHash())
+		if hash == "" {
+			continue
+		}
+		out = append(out, types.TSpendPolicy{Hash: hash, Policy: p.GetPolicy()})
 	}
 	return out, nil
 }
@@ -384,12 +385,10 @@ func SetTSpendPolicyForHash(ctx context.Context, hashHex, policy string, passphr
 	if rpc.WalletGrpcClient == nil {
 		return nil, fmt.Errorf("wallet gRPC unavailable")
 	}
-	hashBytes, err := hex.DecodeString(strings.TrimSpace(hashHex))
+	hashBytes, err := wireHash(strings.TrimSpace(hashHex))
 	if err != nil {
-		return nil, fmt.Errorf("invalid hash hex: %w", err)
+		return nil, err
 	}
-	// dcrwallet expects little-endian byte order for hashes over the wire.
-	hashBytes = reversed(hashBytes)
 	if err := validatePolicy(policy); err != nil {
 		return nil, err
 	}
@@ -598,15 +597,4 @@ func validatePolicy(p string) error {
 		return nil
 	}
 	return fmt.Errorf("policy must be yes|no|abstain (got %q)", p)
-}
-
-// reversed returns a copy of b with the byte order reversed. Hashes
-// shuttle through dcrwallet's gRPC in little-endian while the rest of
-// the codebase (and the UI) uses big-endian display hex.
-func reversed(b []byte) []byte {
-	out := make([]byte, len(b))
-	for i, v := range b {
-		out[len(b)-1-i] = v
-	}
-	return out
 }

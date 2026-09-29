@@ -6,7 +6,6 @@ package services
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -392,7 +391,7 @@ func TestWalletVoteChoiceMultiOptionBit(t *testing.T) {
 	raw := make([]byte, 32)
 	raw[0] = 7
 	owned := []*pb.CommittedTicketsResponse_TicketAddress{{Ticket: raw}}
-	ticketHex := hex.EncodeToString(reversed(raw))
+	ticketHex := hashString(raw)
 
 	votes := []piCastVote{{Ticket: ticketHex, VoteBit: "10"}}
 	options := []types.ProposalVoteOption{

@@ -694,7 +694,7 @@ func OpenLightningChannel(ctx context.Context, req *types.OpenChannelRequest) (*
 	}
 	txid := ""
 	if hashBytes := oresp.GetFundingTxidBytes(); len(hashBytes) > 0 {
-		txid = reversedHex(hashBytes)
+		txid = hashString(hashBytes)
 	} else {
 		txid = oresp.GetFundingTxidStr()
 	}
@@ -731,7 +731,7 @@ func CloseLightningChannel(ctx context.Context, channelPoint string, force bool)
 			return nil, fmt.Errorf("CloseChannel stream: %w", err)
 		}
 		if pend := upd.GetClosePending(); pend != nil {
-			return &types.CloseChannelResponse{ClosingTxid: reversedHex(pend.GetTxid())}, nil
+			return &types.CloseChannelResponse{ClosingTxid: hashString(pend.GetTxid())}, nil
 		}
 		// chanClose can fire too; we already have the txid from closePending.
 		if upd.GetChanClose() != nil {
@@ -879,14 +879,6 @@ func parseChannelPoint(s string) (*lnrpc.ChannelPoint, error) {
 	}, nil
 }
 
-func reversedHex(b []byte) string {
-	rev := make([]byte, len(b))
-	for i, v := range b {
-		rev[len(b)-1-i] = v
-	}
-	return hex.EncodeToString(rev)
-}
-
 // fundingTxConfProgress returns (currentConfs, requiredConfs) for a
 // pending-open channel. requiredConfs is derived from the channel
 // capacity (see requiredConfsForCapacity) because dcrlnd never sets a
@@ -903,12 +895,7 @@ func fundingTxConfProgress(ctx context.Context, channelPoint string, capacity, p
 	current := int32(0)
 	if rpc.WalletGrpcClient != nil {
 		if txidHex, _, err := splitChannelPoint(channelPoint); err == nil {
-			if hashBytes, err := hex.DecodeString(txidHex); err == nil && len(hashBytes) == 32 {
-				// dcrwallet expects little-endian hash bytes on the wire.
-				revHash := make([]byte, len(hashBytes))
-				for i, v := range hashBytes {
-					revHash[len(hashBytes)-1-i] = v
-				}
+			if revHash, err := wireHash(txidHex); err == nil {
 				callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				defer cancel()
 				if resp, err := rpc.WalletGrpcClient.GetTransaction(callCtx, &dcrwpb.GetTransactionRequest{

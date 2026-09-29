@@ -55,7 +55,7 @@ func SubscribeLightningChannelEvents(ctx context.Context) (<-chan types.ChannelE
 				typed.ChannelPoint = formatChannelPoint(c)
 			}
 			if c := ev.GetPendingOpenChannel(); c != nil {
-				typed.ChannelPoint = fmt.Sprintf("%s:%d", reversedHex(c.GetTxid()), c.GetOutputIndex())
+				typed.ChannelPoint = fmt.Sprintf("%s:%d", hashString(c.GetTxid()), c.GetOutputIndex())
 			}
 			select {
 			case out <- typed:
@@ -73,7 +73,7 @@ func formatChannelPoint(cp *lnrpc.ChannelPoint) string {
 	}
 	txid := cp.GetFundingTxidStr()
 	if txid == "" {
-		txid = reversedHex(cp.GetFundingTxidBytes())
+		txid = hashString(cp.GetFundingTxidBytes())
 	}
 	return fmt.Sprintf("%s:%d", txid, cp.GetOutputIndex())
 }

@@ -737,11 +737,9 @@ func committedFromEligible(ctx context.Context, eligible []string) ([]*pb.Commit
 	}
 	ticketBytes := make([][]byte, 0, len(eligible))
 	for _, t := range eligible {
-		b, err := hex.DecodeString(t)
-		if err != nil {
-			continue
+		if b, err := wireHash(t); err == nil {
+			ticketBytes = append(ticketBytes, b)
 		}
-		ticketBytes = append(ticketBytes, reversed(b))
 	}
 	owned, err := rpc.WalletGrpcClient.CommittedTickets(ctx, &pb.CommittedTicketsRequest{Tickets: ticketBytes})
 	if err != nil {
@@ -758,7 +756,9 @@ func walletVoteChoice(owned []*pb.CommittedTicketsResponse_TicketAddress, votes 
 	}
 	ownedHex := make(map[string]struct{}, len(owned))
 	for _, ta := range owned {
-		ownedHex[hex.EncodeToString(reversed(ta.GetTicket()))] = struct{}{}
+		if h := hashString(ta.GetTicket()); h != "" {
+			ownedHex[h] = struct{}{}
+		}
 	}
 	// Count every owned ticket that appears in the recorded votes; the choice
 	// is taken from the first match (a wallet votes a uniform choice across its
@@ -910,7 +910,10 @@ func buildSignedVotes(ctx context.Context, token, voteOption string, passphrase 
 	signMsgs := make([]*pb.SignMessagesRequest_Message, 0, len(addrs))
 	ticketHexByIndex := make([]string, 0, len(addrs))
 	for _, ta := range addrs {
-		ticketHex := hex.EncodeToString(reversed(ta.GetTicket()))
+		ticketHex := hashString(ta.GetTicket())
+		if ticketHex == "" {
+			continue
+		}
 		ticketHexByIndex = append(ticketHexByIndex, ticketHex)
 		signMsgs = append(signMsgs, &pb.SignMessagesRequest_Message{
 			Address: ta.GetAddress(),
