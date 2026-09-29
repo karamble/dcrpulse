@@ -63,7 +63,7 @@ func TestRevokeSurvivesARestart(t *testing.T) {
 }
 
 func TestRevokeIsANoOpWhileTheGateIsOff(t *testing.T) {
-	path := tempCfg(t, "")
+	path := tempCfg(t, "{}")
 	pointAt(t, path)
 	if err := Init(); err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestRevokeIsANoOpWhileTheGateIsOff(t *testing.T) {
 	if err := Revoke(); err != nil {
 		t.Fatalf("Revoke() = %v with the gate off, want nil", err)
 	}
-	if b, err := os.ReadFile(path); err != nil || len(b) != 0 {
+	if b, err := os.ReadFile(path); err != nil || string(b) != "{}" {
 		t.Fatalf("logout wrote %q into the config while the gate is off", b)
 	}
 }

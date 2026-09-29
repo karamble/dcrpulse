@@ -21,8 +21,9 @@ import (
 // without this, two writers that overlap silently drop one set of keys.
 var cfgWriteMu sync.Mutex
 
-// readRawJSON decodes a config document. An absent or empty file yields an
-// empty document, matching the lazily-created files both config types use.
+// readRawJSON decodes a config document. An absent file yields an empty
+// document, matching the lazily-created files both config types use. A file
+// with no content is never written by them, so it is reported as unreadable.
 func readRawJSON(path string) (map[string]json.RawMessage, error) {
 	raw := map[string]json.RawMessage{}
 	data, err := os.ReadFile(path)
@@ -33,7 +34,7 @@ func readRawJSON(path string) (map[string]json.RawMessage, error) {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 	if len(data) == 0 {
-		return raw, nil
+		return nil, fmt.Errorf("config %s is empty", path)
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)

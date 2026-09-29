@@ -24,8 +24,8 @@ type WalletCfg struct {
 	entries map[string]map[string]json.RawMessage
 }
 
-// LoadWalletCfg reads the per-wallet config.json. An absent or empty
-// file yields an empty config; the file is created lazily on first Save.
+// LoadWalletCfg reads the per-wallet config.json. An absent file yields an
+// empty config; the file is created lazily on first Save.
 func LoadWalletCfg(network, walletName string) (*WalletCfg, error) {
 	return loadWalletCfgAt(WalletCfgPath(network, walletName))
 }

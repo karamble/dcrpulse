@@ -65,6 +65,7 @@ func TestOversightUnreadableConfigIsNotOff(t *testing.T) {
 	for name, body := range map[string]string{
 		"broken json":     `{"mcp_notify_enabled": true`,
 		"wrong typed key": `{"mcp_notify_enabled":"yes"}`,
+		"empty file":      ``,
 	} {
 		t.Run(name, func(t *testing.T) {
 			pointCfgAt(t, writeCfg(t, body))
@@ -111,6 +112,24 @@ func TestOversightFallsBackToTheCachedSettings(t *testing.T) {
 	}
 	if got := Oversight(); !got.Degraded || !got.Enabled {
 		t.Errorf("Oversight() = %+v, want Enabled and Degraded both true", got)
+	}
+}
+
+// A torn write can leave the config empty. That is a broken file, not an
+// operator switching oversight off, so the cached settings keep asking.
+func TestOversightEmptiedConfigKeepsTheCache(t *testing.T) {
+	p := writeCfg(t, `{"mcp_notify_enabled":true,"mcp_notify_contact":"`+overseerUID+`"}`)
+	pointCfgAt(t, p)
+	if enabled, _, _ := oversightConfig(); !enabled {
+		t.Fatal("first read not enabled")
+	}
+	if err := os.Truncate(p, 0); err != nil {
+		t.Fatalf("Truncate() = %v", err)
+	}
+	enabled, contact, known := oversightConfig()
+	if !enabled || contact != overseerUID || !known || !oversightDegradedNow() {
+		t.Fatalf("after truncation = %v, %q, known %v, degraded %v; want the cached settings, degraded",
+			enabled, contact, known, oversightDegradedNow())
 	}
 }
 

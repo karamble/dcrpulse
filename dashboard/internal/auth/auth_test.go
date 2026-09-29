@@ -127,12 +127,11 @@ func TestInitAbsentConfigStaysOpen(t *testing.T) {
 	requireOpen(t)
 }
 
-func TestInitEmptyFileStaysOpen(t *testing.T) {
+// Nothing writes an empty config, so one is a torn or truncated file: it locks
+// like any other unreadable config instead of reading as "no password".
+func TestInitEmptyFileLocks(t *testing.T) {
 	pointAt(t, tempCfg(t, ""))
-	if err := Init(); err != nil {
-		t.Fatalf("Init() with an empty config file: %v", err)
-	}
-	requireOpen(t)
+	requireLocked(t, Init())
 }
 
 func TestInitInvalidJSONLocks(t *testing.T) {
