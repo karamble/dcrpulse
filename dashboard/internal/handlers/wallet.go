@@ -169,13 +169,10 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate xpub format (Decred mainnet xpubs start with "dpub")
-	if !strings.HasPrefix(req.Xpub, "dpub") && !strings.HasPrefix(req.Xpub, "tpub") {
-		response := types.ImportXpubResponse{
-			Success: false,
-			Message: "Invalid xpub format. Decred mainnet xpubs must start with 'dpub'",
-		}
-		writeJSON(w, response)
+	// Decode the key for the connected network: another network's key, a
+	// corrupt one or a private one is refused.
+	if err := services.CheckAccountXpub(r.Context(), strings.TrimSpace(req.Xpub)); err != nil {
+		writeJSON(w, types.ImportXpubResponse{Success: false, Message: err.Error()})
 		return
 	}
 

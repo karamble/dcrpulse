@@ -192,9 +192,6 @@ func CreateWatchOnlyWallet(ctx context.Context, publicPass, xpub string) error {
 	if rpc.WalletLoaderClient == nil {
 		return fmt.Errorf("wallet loader client not initialized")
 	}
-	if !strings.HasPrefix(xpub, "dpub") && !strings.HasPrefix(xpub, "tpub") {
-		return fmt.Errorf("invalid extended public key: must start with dpub (mainnet) or tpub (testnet)")
-	}
 
 	req := &pb.CreateWatchingOnlyWalletRequest{
 		ExtendedPubKey:   xpub,

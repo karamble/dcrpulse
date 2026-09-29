@@ -217,9 +217,6 @@ func validateWatchOnlyRequest(req *types.CreateWalletRequest) string {
 	if xpub == "" {
 		return "Extended public key is required"
 	}
-	if !strings.HasPrefix(xpub, "dpub") && !strings.HasPrefix(xpub, "tpub") {
-		return "Invalid extended public key: must start with dpub (mainnet) or tpub (testnet)"
-	}
 	if len(xpub) > 1024 {
 		return "Extended public key too long"
 	}

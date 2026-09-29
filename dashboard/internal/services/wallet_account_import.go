@@ -110,12 +110,9 @@ func parseAccountExport(data []byte, params *chaincfg.Params) ([]types.AccountEx
 		}
 		seen[uint32(acct)] = true
 
-		key, err := hdkeychain.NewKeyFromString(dpub, params)
+		key, err := parseAccountXpub(dpub, params)
 		if err != nil {
-			return nil, fmt.Errorf("entry %d (account %d): invalid extended public key for this network: %v", i, acct, err)
-		}
-		if key.IsPrivate() {
-			return nil, fmt.Errorf("entry %d (account %d): file contains a PRIVATE key, refusing", i, acct)
+			return nil, fmt.Errorf("entry %d (account %d): %v", i, acct, err)
 		}
 		if len(name) > 50 {
 			name = strings.ToValidUTF8(name[:50], "")
@@ -130,6 +127,31 @@ func parseAccountExport(data []byte, params *chaincfg.Params) ([]types.AccountEx
 	return entries, nil
 }
 
+// parseAccountXpub decodes an account extended public key for params and
+// refuses a private key.
+func parseAccountXpub(s string, params *chaincfg.Params) (*hdkeychain.ExtendedKey, error) {
+	key, err := hdkeychain.NewKeyFromString(s, params)
+	if err != nil {
+		return nil, fmt.Errorf("invalid extended public key for this network: %v", err)
+	}
+	if key.IsPrivate() {
+		return nil, fmt.Errorf("this is a PRIVATE key, refusing")
+	}
+	return key, nil
+}
+
+// CheckAccountXpub checks s against the connected network, so a key for
+// another network, a corrupt key or a private key is refused before anything
+// is created from it.
+func CheckAccountXpub(ctx context.Context, s string) error {
+	params, err := chainParams(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = parseAccountXpub(s, params)
+	return err
+}
+
 // XpubAlreadyImported reports whether an existing account is backed by the
 // same extended public key. Keys are compared by their serialized pubkey, not
 // the base58 string, so differing metadata cannot mask a duplicate.
@@ -138,9 +160,9 @@ func XpubAlreadyImported(ctx context.Context, dpub string) (string, bool, error)
 	if err != nil {
 		return "", false, err
 	}
-	candidate, err := hdkeychain.NewKeyFromString(dpub, params)
+	candidate, err := parseAccountXpub(dpub, params)
 	if err != nil {
-		return "", false, fmt.Errorf("invalid extended public key: %v", err)
+		return "", false, err
 	}
 	cand := candidate.SerializedPubKey()
 	if rpc.WalletGrpcClient == nil {

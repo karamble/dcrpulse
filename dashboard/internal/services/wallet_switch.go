@@ -177,6 +177,9 @@ func CreateNamedWatchOnlyWallet(ctx context.Context, name, publicPass, xpub stri
 	if err != nil {
 		return err
 	}
+	if err := CheckAccountXpub(ctx, xpub); err != nil {
+		return err
+	}
 
 	PauseSync()
 	defer ResumeSync()
