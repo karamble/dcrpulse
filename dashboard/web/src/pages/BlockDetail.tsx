@@ -4,9 +4,10 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, ChevronLeft, ChevronRight, ArrowRightLeft, Ticket, CheckCircle, XCircle, FileJson, Landmark, Shuffle } from 'lucide-react';
+import { Box, ChevronLeft, ChevronRight, ArrowRightLeft, FileJson } from 'lucide-react';
 import { getBlockByHeight, BlockDetail as BlockDetailType } from '../services/explorerApi';
 import { CopyButton } from '../components/explorer/CopyButton';
+import { TxGroupSections, groupTxsByType } from '../components/explorer/txType';
 import { TimeAgo } from '../components/explorer/TimeAgo';
 
 export const BlockDetail = () => {
@@ -53,60 +54,6 @@ export const BlockDetail = () => {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  const getTxTypeIcon = (type: string) => {
-    switch (type) {
-      case 'ticket':
-        return <Ticket className="h-4 w-4 text-warning" />;
-      case 'vote':
-        return <CheckCircle className="h-4 w-4 text-success" />;
-      case 'revocation':
-        return <XCircle className="h-4 w-4 text-red-500" />;
-      case 'tspend':
-        return <Landmark className="h-4 w-4 text-amber-500" />;
-      case 'treasurybase':
-        return <Landmark className="h-4 w-4 text-amber-600" />;
-      case 'coinjoin':
-        return <Shuffle className="h-4 w-4 text-purple-500" />;
-      default:
-        return <ArrowRightLeft className="h-4 w-4 text-blue-500" />;
-    }
-  };
-
-  const getTxTypeColor = (type: string) => {
-    switch (type) {
-      case 'ticket':
-        return 'text-warning';
-      case 'vote':
-        return 'text-success';
-      case 'revocation':
-        return 'text-red-500';
-      case 'coinbase':
-        return 'text-purple-500';
-      case 'tspend':
-        return 'text-amber-500';
-      case 'treasurybase':
-        return 'text-amber-600';
-      case 'coinjoin':
-        return 'text-purple-500';
-      default:
-        return 'text-blue-500';
-    }
-  };
-
-  const groupTransactionsByType = () => {
-    if (!block) return { regular: [], tickets: [], votes: [], revocations: [], coinbase: [], treasury: [], coinjoin: [] };
-
-    return {
-      regular: block.transactions.filter(tx => tx.type === 'regular'),
-      tickets: block.transactions.filter(tx => tx.type === 'ticket'),
-      votes: block.transactions.filter(tx => tx.type === 'vote'),
-      revocations: block.transactions.filter(tx => tx.type === 'revocation'),
-      coinbase: block.transactions.filter(tx => tx.type === 'coinbase'),
-      treasury: block.transactions.filter(tx => tx.type === 'tspend' || tx.type === 'treasurybase'),
-      coinjoin: block.transactions.filter(tx => tx.type === 'coinjoin'),
-    };
-  };
-
   if (loading) {
     return (
       <div className="text-center py-20">
@@ -132,7 +79,7 @@ export const BlockDetail = () => {
     );
   }
 
-  const txGroups = groupTransactionsByType();
+  const txGroups = groupTxsByType(block?.transactions ?? []);
 
   return (
     <div className="space-y-6">
@@ -296,229 +243,7 @@ export const BlockDetail = () => {
               <h2 className="text-xl font-semibold">Transactions ({block.transactions.length})</h2>
             </div>
 
-            <div className="space-y-6">
-              {/* Treasury Transactions */}
-              {txGroups.treasury.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-amber-500 mb-3 flex items-center gap-2">
-                    <Landmark className="h-4 w-4" />
-                    Treasury ({txGroups.treasury.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.treasury.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/20 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <span className="font-mono text-sm truncate">{tx.txid}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {tx.type === 'tspend' ? 'Treasury Spend' : 'Treasury Addition'}
-                              </span>
-                            </div>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type) + ' font-semibold'}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Coinbase Transactions */}
-              {txGroups.coinbase.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-purple-500 mb-3 flex items-center gap-2">
-                    <ArrowRightLeft className="h-4 w-4" />
-                    Coinbase ({txGroups.coinbase.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.coinbase.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Vote Transactions */}
-              {txGroups.votes.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-success mb-3 flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4" />
-                    Votes ({txGroups.votes.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.votes.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Ticket Transactions */}
-              {txGroups.tickets.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-warning mb-3 flex items-center gap-2">
-                    <Ticket className="h-4 w-4" />
-                    Tickets ({txGroups.tickets.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.tickets.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Regular Transactions */}
-              {txGroups.regular.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-blue-500 mb-3 flex items-center gap-2">
-                    <ArrowRightLeft className="h-4 w-4" />
-                    Regular ({txGroups.regular.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.regular.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* CoinJoin Transactions */}
-              {txGroups.coinjoin.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-purple-500 mb-3 flex items-center gap-2">
-                    <Shuffle className="h-4 w-4" />
-                    CoinJoin ({txGroups.coinjoin.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.coinjoin.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Revocation Transactions */}
-              {txGroups.revocations.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-red-500 mb-3 flex items-center gap-2">
-                    <XCircle className="h-4 w-4" />
-                    Revocations ({txGroups.revocations.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.revocations.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            <TxGroupSections groups={txGroups} order={['treasury', 'coinbase', 'votes', 'tickets', 'regular', 'coinjoin', 'revocations']} />
           </div>
         )}
       </div>

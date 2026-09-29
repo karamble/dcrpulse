@@ -3,12 +3,12 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useMemo, useState } from 'react';
-import { toYMD } from '../utils/date';
 import { Link } from 'react-router-dom';
 import { getWalletTransactions, WalletTransaction } from '../services/api';
 import { calculateTicketMaturity } from '../services/ticketService';
 import { MaturityBar } from './MaturityBar';
-import { ArrowDownCircle, ArrowLeftRight, ArrowUpCircle, Ticket, Check, X, Coins, Clock, ChevronDown, ChevronUp, Shuffle, BadgeDollarSign, Zap } from 'lucide-react';
+import { TxCategoryIcon, formatTxAmount, txAmountColor, txCategoryLabel, txWhen } from './walletTxFormat';
+import { Clock, ChevronDown, ChevronUp, Shuffle } from 'lucide-react';
 
 export const TransactionHistory = () => {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
@@ -73,80 +73,6 @@ export const TransactionHistory = () => {
       return (count / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
     }
     return count.toString();
-  };
-
-  const getCategoryIcon = (tx: WalletTransaction) => {
-    const { category, txType } = tx;
-    const isMixed = tx.isMixed || false;
-    if (txType === 'ticket') return <Ticket className="h-5 w-5 text-warning" />;
-    if (txType === 'vote') return <Check className="h-5 w-5 text-success" />;
-    if (txType === 'revocation') return <X className="h-5 w-5 text-destructive" />;
-    if (tx.isChannelFunding || tx.isChannelClose) return <Zap className="h-5 w-5 text-warning" />;
-    if (category === 'vspfee') return <BadgeDollarSign className="h-5 w-5 text-orange-500" />;
-    if (category === 'coinjoin') return <Shuffle className="h-5 w-5 text-purple-500" />;
-    if (category === 'send' && isMixed) return <Shuffle className="h-5 w-5 text-purple-500" />;
-    if (category === 'send') return <ArrowUpCircle className="h-5 w-5 text-red-500" />;
-    if (category === 'receive' && isMixed) return <Shuffle className="h-5 w-5 text-purple-500" />;
-    if (category === 'receive') return <ArrowDownCircle className="h-5 w-5 text-success" />;
-    if (category === 'self') return <ArrowLeftRight className="h-5 w-5 text-muted-foreground" />;
-    if (category === 'generate') return <Coins className="h-5 w-5 text-primary" />;
-    if (category === 'immature') return <Clock className="h-5 w-5 text-muted-foreground" />;
-    return <Coins className="h-5 w-5 text-muted-foreground" />;
-  };
-
-  const getCategoryLabel = (tx: WalletTransaction) => {
-    const { category, txType } = tx;
-    const isMixed = tx.isMixed || false;
-    if (txType === 'ticket') return 'Ticket Purchase';
-    if (txType === 'vote') return 'Vote';
-    if (txType === 'revocation') return 'Revocation';
-    if (tx.isChannelFunding) return 'Channel Open';
-    if (tx.isChannelClose) return 'Channel Close';
-    if (category === 'vspfee') return 'VSP Fee';
-    if (category === 'coinjoin') return 'CoinJoin';
-    if (category === 'send' && isMixed) return 'Sent (CoinJoin)';
-    if (category === 'send') return 'Sent';
-    if (category === 'receive' && isMixed) return 'Received (CoinJoin)';
-    if (category === 'receive') return 'Received';
-    if (category === 'self') return 'Self Transfer';
-    if (category === 'generate') return 'Mined';
-    if (category === 'immature') return 'Immature';
-    return 'Transaction';
-  };
-
-  const getCategoryColor = (category: string, txType: string) => {
-    if (txType === 'ticket') return 'text-warning';
-    if (txType === 'vote') return 'text-success';
-    if (txType === 'revocation') return 'text-destructive';
-    if (category === 'vspfee') return 'text-orange-500';
-    if (category === 'coinjoin') return 'text-purple-500';
-    if (category === 'send') return 'text-red-500';
-    if (category === 'receive') return 'text-success';
-    if (category === 'generate') return 'text-primary';
-    if (category === 'immature') return 'text-muted-foreground';
-    return 'text-muted-foreground';
-  };
-
-  const formatAmount = (amount: number) => {
-    const abs = Math.abs(amount);
-    const sign = amount < 0 ? '-' : '+';
-    return `${sign}${abs.toFixed(8)} DCR`;
-  };
-
-  const formatDate = (tx: WalletTransaction) => {
-    // Use blockTime for confirmed transactions (when it was included in a block)
-    // Fall back to time for pending transactions
-    const timestamp = tx.blockTime ? tx.blockTime * 1000 : new Date(tx.time).getTime();
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    if (diffInSeconds < 60) return 'Just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
-
-    return toYMD(date);
   };
 
   const truncateTxid = (txid: string) => {
@@ -466,12 +392,12 @@ export const TransactionHistory = () => {
           >
             <div className="flex items-center gap-4 flex-1 min-w-0">
               <div className="flex-shrink-0">
-                {getCategoryIcon(tx)}
+                <TxCategoryIcon tx={tx} className="h-5 w-5" />
               </div>
 
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="font-medium">{getCategoryLabel(tx)}</span>
+                  <span className="font-medium">{txCategoryLabel(tx)}</span>
                   {tx.account && (
                     <span className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">
                       {tx.account}
@@ -491,7 +417,7 @@ export const TransactionHistory = () => {
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
                   <code className="font-mono text-xs">{truncateTxid(tx.txid)}</code>
                   <span>•</span>
-                  <span>{formatDate(tx)}</span>
+                  <span>{txWhen(tx)}</span>
                   {tx.address && (
                     <>
                       <span>•</span>
@@ -516,8 +442,8 @@ export const TransactionHistory = () => {
             </div>
 
             <div className="text-right ml-4 flex-shrink-0">
-              <div className={`text-lg font-semibold ${getCategoryColor(tx.category, tx.txType)}`}>
-                {formatAmount(tx.amount)}
+              <div className={`text-lg font-semibold ${txAmountColor(tx)}`}>
+                {formatTxAmount(tx.amount)}
               </div>
               {tx.fee && tx.fee > 0 && (
                 <div className="text-xs text-muted-foreground">

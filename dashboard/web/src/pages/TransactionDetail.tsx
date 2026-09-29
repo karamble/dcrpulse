@@ -4,9 +4,10 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowRightLeft, ChevronLeft, FileJson, Ticket, CheckCircle, XCircle, Coins, Landmark } from 'lucide-react';
+import { ArrowRightLeft, ChevronLeft, FileJson, CheckCircle, Landmark } from 'lucide-react';
 import { getTransaction, TransactionDetail as TransactionDetailType } from '../services/explorerApi';
 import { CopyButton } from '../components/explorer/CopyButton';
+import { TxTypeIcon, txTypeMeta } from '../components/explorer/txType';
 import { TimeAgo } from '../components/explorer/TimeAgo';
 import { InputOutputList } from '../components/explorer/InputOutputList';
 import { TSpendApprovalCard } from '../components/governance/TSpendApprovalCard';
@@ -42,63 +43,6 @@ export const TransactionDetail = () => {
       cancelled = true;
     };
   }, [txhash]);
-
-  const getTxTypeIcon = (type: string) => {
-    switch (type) {
-      case 'ticket':
-        return <Ticket className="h-6 w-6 text-warning" />;
-      case 'vote':
-        return <CheckCircle className="h-6 w-6 text-success" />;
-      case 'revocation':
-        return <XCircle className="h-6 w-6 text-red-500" />;
-      case 'coinbase':
-        return <Coins className="h-6 w-6 text-purple-500" />;
-      case 'tspend':
-        return <Landmark className="h-6 w-6 text-amber-500" />;
-      case 'treasurybase':
-        return <Landmark className="h-6 w-6 text-amber-600" />;
-      default:
-        return <ArrowRightLeft className="h-6 w-6 text-blue-500" />;
-    }
-  };
-
-  const getTxTypeColor = (type: string) => {
-    switch (type) {
-      case 'ticket':
-        return 'bg-warning/10 text-warning border-warning/20';
-      case 'vote':
-        return 'bg-success/10 text-success border-success/20';
-      case 'revocation':
-        return 'bg-red-500/10 text-red-500 border-red-500/20';
-      case 'coinbase':
-        return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
-      case 'tspend':
-        return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
-      case 'treasurybase':
-        return 'bg-amber-600/10 text-amber-600 border-amber-600/20';
-      default:
-        return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
-    }
-  };
-
-  const getTxTypeName = (type: string) => {
-    switch (type) {
-      case 'ticket':
-        return 'Ticket Purchase (SSTx)';
-      case 'vote':
-        return 'Vote (SSGen)';
-      case 'revocation':
-        return 'Revocation (SSRtx)';
-      case 'coinbase':
-        return 'Coinbase';
-      case 'tspend':
-        return 'Treasury Spend (TSpend)';
-      case 'treasurybase':
-        return 'Treasury Addition (TBase)';
-      default:
-        return 'Regular Transaction';
-    }
-  };
 
   const formatSize = (bytes: number) => {
     return `${bytes.toLocaleString()} bytes`;
@@ -150,11 +94,11 @@ export const TransactionDetail = () => {
             </button>
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
-                {getTxTypeIcon(tx.type)}
+                <TxTypeIcon type={tx.type} className="h-6 w-6" />
                 <h1 className="text-3xl font-bold">Transaction</h1>
               </div>
-              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium ${getTxTypeColor(tx.type)}`}>
-                {getTxTypeName(tx.type)}
+              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium ${txTypeMeta(tx.type).badge}`}>
+                {txTypeMeta(tx.type).name}
               </div>
               <p className="text-sm text-muted-foreground mt-2">
                 <TimeAgo timestamp={tx.timestamp} showFull />

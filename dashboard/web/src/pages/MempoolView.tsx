@@ -4,9 +4,9 @@
 
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, ChevronLeft, ArrowRightLeft, Ticket, CheckCircle, XCircle, Landmark, Shuffle } from 'lucide-react';
-import { getMempoolTransactions, MempoolTransactions, TransactionSummary } from '../services/explorerApi';
-import { CopyButton } from '../components/explorer/CopyButton';
+import { Activity, ChevronLeft, ArrowRightLeft } from 'lucide-react';
+import { getMempoolTransactions, MempoolTransactions } from '../services/explorerApi';
+import { TxGroupSections, groupTxsByType } from '../components/explorer/txType';
 import { useVisiblePoll } from '../hooks/useVisiblePoll';
 
 export const MempoolView = () => {
@@ -36,68 +36,10 @@ export const MempoolView = () => {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  const getTxTypeIcon = (type: string) => {
-    switch (type) {
-      case 'ticket':
-        return <Ticket className="h-4 w-4 text-warning" />;
-      case 'vote':
-        return <CheckCircle className="h-4 w-4 text-success" />;
-      case 'revocation':
-        return <XCircle className="h-4 w-4 text-red-500" />;
-      case 'tspend':
-        return <Landmark className="h-4 w-4 text-amber-500" />;
-      case 'treasurybase':
-        return <Landmark className="h-4 w-4 text-amber-600" />;
-      case 'coinjoin':
-        return <Shuffle className="h-4 w-4 text-purple-500" />;
-      default:
-        return <ArrowRightLeft className="h-4 w-4 text-blue-500" />;
-    }
-  };
-
-  const getTxTypeColor = (type: string) => {
-    switch (type) {
-      case 'ticket':
-        return 'text-warning';
-      case 'vote':
-        return 'text-success';
-      case 'revocation':
-        return 'text-red-500';
-      case 'tspend':
-        return 'text-amber-500';
-      case 'treasurybase':
-        return 'text-amber-600';
-      case 'coinjoin':
-        return 'text-purple-500';
-      default:
-        return 'text-blue-500';
-    }
-  };
-
-  const groupTransactionsByType = (): {
-    treasury: TransactionSummary[];
-    tickets: TransactionSummary[];
-    votes: TransactionSummary[];
-    revocations: TransactionSummary[];
-    coinjoin: TransactionSummary[];
-    regular: TransactionSummary[];
-  } => {
-    if (!mempool) return { treasury: [], tickets: [], votes: [], revocations: [], coinjoin: [], regular: [] };
-
-    return {
-      treasury: mempool.transactions.filter(tx => tx.type === 'tspend' || tx.type === 'treasurybase'),
-      tickets: mempool.transactions.filter(tx => tx.type === 'ticket'),
-      votes: mempool.transactions.filter(tx => tx.type === 'vote'),
-      revocations: mempool.transactions.filter(tx => tx.type === 'revocation'),
-      coinjoin: mempool.transactions.filter(tx => tx.type === 'coinjoin'),
-      regular: mempool.transactions.filter(tx => tx.type === 'regular'),
-    };
-  };
-
   // Six full filter passes over the mempool; recompute only when it changes,
   // not on every render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const txGroups = useMemo(groupTransactionsByType, [mempool]);
+  const txGroups = useMemo(() => groupTxsByType(mempool?.transactions ?? []), [mempool]);
 
   if (loading) {
     return (
@@ -194,198 +136,7 @@ export const MempoolView = () => {
               <h2 className="text-xl font-semibold">Transactions ({mempool.count})</h2>
             </div>
 
-            <div className="space-y-6">
-              {/* Treasury Transactions */}
-              {txGroups.treasury.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-amber-500 mb-3 flex items-center gap-2">
-                    <Landmark className="h-4 w-4" />
-                    Treasury ({txGroups.treasury.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.treasury.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/20 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <span className="font-mono text-sm truncate">{tx.txid}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {tx.type === 'tspend' ? 'Treasury Spend' : 'Treasury Addition'}
-                              </span>
-                            </div>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type) + ' font-semibold'}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Ticket Transactions */}
-              {txGroups.tickets.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-warning mb-3 flex items-center gap-2">
-                    <Ticket className="h-4 w-4" />
-                    Tickets ({txGroups.tickets.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.tickets.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Vote Transactions */}
-              {txGroups.votes.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-success mb-3 flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4" />
-                    Votes ({txGroups.votes.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.votes.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Revocation Transactions */}
-              {txGroups.revocations.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-red-500 mb-3 flex items-center gap-2">
-                    <XCircle className="h-4 w-4" />
-                    Revocations ({txGroups.revocations.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.revocations.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* CoinJoin Transactions */}
-              {txGroups.coinjoin.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-purple-500 mb-3 flex items-center gap-2">
-                    <Shuffle className="h-4 w-4" />
-                    CoinJoin ({txGroups.coinjoin.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.coinjoin.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Regular Transactions */}
-              {txGroups.regular.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-blue-500 mb-3 flex items-center gap-2">
-                    <ArrowRightLeft className="h-4 w-4" />
-                    Regular ({txGroups.regular.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {txGroups.regular.map((tx) => (
-                      <button
-                        key={tx.txid}
-                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
-                        className="w-full p-4 rounded-lg bg-background/50 hover:bg-background/70 transition-colors text-left"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {getTxTypeIcon(tx.type)}
-                            <span className="font-mono text-sm truncate">{tx.txid}</span>
-                            <CopyButton text={tx.txid} />
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{tx.size} bytes</span>
-                            <span className={getTxTypeColor(tx.type)}>{tx.totalValue.toFixed(2)} DCR</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            <TxGroupSections groups={txGroups} order={['treasury', 'tickets', 'votes', 'revocations', 'coinjoin', 'regular']} />
           </div>
         )}
 

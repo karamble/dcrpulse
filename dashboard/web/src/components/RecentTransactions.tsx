@@ -1,86 +1,12 @@
 import { useEffect, useState } from 'react';
-import { toYMD } from '../utils/date';
 import { Link } from 'react-router-dom';
-import {
-  ArrowDownCircle,
-  ArrowLeftRight,
-  ArrowUpCircle,
-  ArrowRight,
-  BadgeDollarSign,
-  Check,
-  Clock,
-  Coins,
-  Shuffle,
-  Ticket,
-  X,
-  Zap,
-} from 'lucide-react';
+import { ArrowRight, Clock } from 'lucide-react';
 import { getWalletTransactions, WalletTransaction } from '../services/api';
 import { calculateTicketMaturity } from '../services/ticketService';
 import { MaturityBar } from './MaturityBar';
+import { TxCategoryIcon, formatTxAmount, txAmountColor, txCategoryLabel, txWhen } from './walletTxFormat';
 
 const RECENT_LIMIT = 5;
-
-const categoryIcon = (tx: WalletTransaction) => {
-  const { category, txType, isMixed } = tx;
-  if (txType === 'ticket') return <Ticket className="h-4 w-4 text-warning" />;
-  if (txType === 'vote') return <Check className="h-4 w-4 text-success" />;
-  if (txType === 'revocation') return <X className="h-4 w-4 text-destructive" />;
-  if (tx.isChannelFunding || tx.isChannelClose) return <Zap className="h-4 w-4 text-warning" />;
-  if (category === 'vspfee') return <BadgeDollarSign className="h-4 w-4 text-orange-500" />;
-  if (category === 'coinjoin' || isMixed) return <Shuffle className="h-4 w-4 text-purple-500" />;
-  if (category === 'send') return <ArrowUpCircle className="h-4 w-4 text-red-500" />;
-  if (category === 'receive') return <ArrowDownCircle className="h-4 w-4 text-success" />;
-  if (category === 'self') return <ArrowLeftRight className="h-4 w-4 text-muted-foreground" />;
-  if (category === 'generate') return <Coins className="h-4 w-4 text-primary" />;
-  return <Coins className="h-4 w-4 text-muted-foreground" />;
-};
-
-const categoryLabel = (tx: WalletTransaction) => {
-  const { category, txType, isMixed } = tx;
-  if (txType === 'ticket') return 'Ticket Purchase';
-  if (txType === 'vote') return 'Vote';
-  if (txType === 'revocation') return 'Revocation';
-  if (tx.isChannelFunding) return 'Channel Open';
-  if (tx.isChannelClose) return 'Channel Close';
-  if (category === 'vspfee') return 'VSP Fee';
-  if (category === 'coinjoin') return 'CoinJoin';
-  if (category === 'send') return isMixed ? 'Sent (CoinJoin)' : 'Sent';
-  if (category === 'receive') return isMixed ? 'Received (CoinJoin)' : 'Received';
-  if (category === 'self') return 'Self Transfer';
-  if (category === 'generate') return 'Mined';
-  return 'Transaction';
-};
-
-const amountColor = (tx: WalletTransaction) => {
-  if (tx.txType === 'ticket') return 'text-warning';
-  if (tx.txType === 'vote') return 'text-success';
-  if (tx.txType === 'revocation') return 'text-destructive';
-  if (tx.category === 'vspfee') return 'text-orange-500';
-  if (tx.category === 'coinjoin') return 'text-purple-500';
-  if (tx.category === 'send') return 'text-red-500';
-  if (tx.category === 'receive') return 'text-success';
-  return 'text-muted-foreground';
-};
-
-const formatAmount = (amount: number) => {
-  const abs = Math.abs(amount);
-  const sign = amount < 0 ? '-' : '+';
-  // Fee-sized amounts (CoinJoin fees, self-transfer fees ~0.0001 DCR) need
-  // more decimals to be visible; larger transfers stay readable at 4.
-  const decimals = abs > 0 && abs < 0.001 ? 8 : 4;
-  return `${sign}${abs.toFixed(decimals)} DCR`;
-};
-
-const formatWhen = (tx: WalletTransaction) => {
-  const ts = tx.blockTime ? tx.blockTime * 1000 : new Date(tx.time).getTime();
-  const diff = Math.floor((Date.now() - ts) / 1000);
-  if (diff < 60) return 'Just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return toYMD(new Date(ts));
-};
 
 export const RecentTransactions = ({ hideViewAll = false }: { hideViewAll?: boolean } = {}) => {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
@@ -151,14 +77,14 @@ export const RecentTransactions = ({ hideViewAll = false }: { hideViewAll?: bool
             >
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="flex-shrink-0">{categoryIcon(tx)}</div>
+                  <div className="flex-shrink-0"><TxCategoryIcon tx={tx} className="h-4 w-4" /></div>
                   <div className="min-w-0">
-                    <div className="font-medium text-sm truncate">{categoryLabel(tx)}</div>
-                    <div className="text-xs text-muted-foreground">{formatWhen(tx)}</div>
+                    <div className="font-medium text-sm truncate">{txCategoryLabel(tx)}</div>
+                    <div className="text-xs text-muted-foreground">{txWhen(tx)}</div>
                   </div>
                 </div>
-                <div className={`text-sm font-semibold ml-3 whitespace-nowrap ${amountColor(tx)}`}>
-                  {formatAmount(tx.amount)}
+                <div className={`text-sm font-semibold ml-3 whitespace-nowrap ${txAmountColor(tx)}`}>
+                  {formatTxAmount(tx.amount, true)}
                 </div>
               </div>
               {tx.txType === 'vote' && (
