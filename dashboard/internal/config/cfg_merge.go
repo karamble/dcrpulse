@@ -86,7 +86,7 @@ func mergeSave(path string, raw map[string]json.RawMessage, dirty map[string]boo
 	if err != nil {
 		return nil, fmt.Errorf("encode config %s: %w", path, err)
 	}
-	if err := fsutil.AtomicWriteJSON(path, data); err != nil {
+	if err := fsutil.WriteFileAtomic(path, data, 0o600); err != nil {
 		return nil, err
 	}
 	return merged, nil

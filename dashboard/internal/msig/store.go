@@ -698,7 +698,7 @@ func atomicWriteJSON(path string, doc any) error {
 	if err != nil {
 		return err
 	}
-	return fsutil.AtomicWriteJSON(path, raw)
+	return fsutil.WriteFileAtomic(path, raw, 0o600)
 }
 
 // Manager opens and caches the per-wallet stores of one network and

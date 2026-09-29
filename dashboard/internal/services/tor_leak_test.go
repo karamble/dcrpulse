@@ -72,19 +72,3 @@ func TestAnUnreadableTorSettingReadsAsOn(t *testing.T) {
 		}
 	}
 }
-
-func TestWriteFileSyncedReplacesTheFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "tor.json")
-	for _, content := range []string{`{"rev":1}`, `{"rev":2}`} {
-		if err := writeFileSynced(path, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		got, err := os.ReadFile(path)
-		if err != nil || string(got) != content {
-			t.Fatalf("read back %q, %v; want %q", got, err, content)
-		}
-	}
-	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
-		t.Fatal("the temporary file was left behind")
-	}
-}

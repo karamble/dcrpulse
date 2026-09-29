@@ -235,7 +235,7 @@ func (s *Store) saveLocked() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return fmt.Errorf("create archive dir: %w", err)
 	}
-	return fsutil.AtomicWriteJSON(s.path, data)
+	return fsutil.WriteFileAtomic(s.path, data, 0o600)
 }
 
 func matches(r *Record, q Query) bool {

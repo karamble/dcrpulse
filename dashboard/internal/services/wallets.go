@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/config"
+	"dcrpulse/internal/fsutil"
 )
 
 // activeWallet is the name of the wallet dcrwallet currently serves. dcrwallet
@@ -235,11 +236,7 @@ func writeSelectedPointer(sel selectedWallet) error {
 	if err != nil {
 		return err
 	}
-	tmp := config.SelectedWalletPath() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, config.SelectedWalletPath())
+	return fsutil.WriteFileAtomic(config.SelectedWalletPath(), data, 0o600)
 }
 
 // readWalletState returns the supervisor's last reported state.

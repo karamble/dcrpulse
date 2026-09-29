@@ -58,7 +58,7 @@ func (e *engine) saveLocked() {
 		alrtLog.Errorf("create dir: %v", err)
 		return
 	}
-	if err := fsutil.AtomicWriteJSON(path, data); err != nil {
+	if err := fsutil.WriteFileAtomic(path, data, 0o600); err != nil {
 		alrtLog.Errorf("save: %v", err)
 	}
 }

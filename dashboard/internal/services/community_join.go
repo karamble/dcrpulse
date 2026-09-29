@@ -129,26 +129,9 @@ func (m *communityJoinManager) save(j *CommunityJoin) error {
 	if err := os.MkdirAll(filepath.Dir(m.path), 0700); err != nil {
 		return err
 	}
-	if err := fsutil.AtomicWriteJSON(m.path, raw); err != nil {
-		return err
-	}
-	// Redemption is an external side effect: make the saved binding durable
-	// before issuing it, including the rename into the parent directory.
-	for _, path := range []string{m.path, filepath.Dir(m.path)} {
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		err = f.Sync()
-		closeErr := f.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-	}
-	return nil
+	// Redemption is an external side effect, so the binding must be durable
+	// before it is issued; WriteFileAtomic returns only once it is.
+	return fsutil.WriteFileAtomic(m.path, raw, 0o600)
 }
 func (m *communityJoinManager) current(ctx context.Context, j *CommunityJoin) error {
 	uid, err := m.localIdentity(ctx)

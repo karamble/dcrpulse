@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/config"
+	"dcrpulse/internal/fsutil"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 	"dcrpulse/internal/utils"
@@ -150,7 +151,7 @@ func writeSentinel(account uint32) error {
 	if err := os.MkdirAll(filepath.Dir(sentinelPath()), 0o700); err != nil {
 		return fmt.Errorf("create dcrlnd state dir: %w", err)
 	}
-	return os.WriteFile(sentinelPath(), []byte(strconv.FormatUint(uint64(account), 10)), 0o600)
+	return fsutil.WriteFileAtomic(sentinelPath(), []byte(strconv.FormatUint(uint64(account), 10)), 0o600)
 }
 
 // readSentinelAccount returns the dcrwallet account number stored in
@@ -182,7 +183,7 @@ func LightningSetUp() bool {
 // it is given.
 func RequestLnMacaroonReset() error {
 	path := filepath.Join(filepath.Dir(sentinelPath()), ".reset-macaroons")
-	return os.WriteFile(path, []byte("1"), 0o600)
+	return fsutil.WriteFileAtomic(path, []byte("1"), 0o600)
 }
 
 // InitLightningWallet bootstraps dcrlnd's own internal wallet. dcrlnd
