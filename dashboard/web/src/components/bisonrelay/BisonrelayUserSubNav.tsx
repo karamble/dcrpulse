@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { ComponentType, useEffect, useRef, useState } from 'react';
+import { ComponentType, useEffect, useState } from 'react';
 import { toYMDTime } from '../../utils/date';
 import {
   AlertCircle,
@@ -43,23 +43,18 @@ import {
   listBisonrelayUserContent,
   listBisonrelayUserPosts,
   renameBisonrelayContact,
-  startBisonrelayContentGet,
   subscribeBisonrelayPosts,
   suggestKxBisonrelayContact,
   tipBisonrelayContact,
   transResetBisonrelayContact,
   unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
-import {
-  describeLnPaymentFailure,
-  failedLnPaymentHashes,
-  findNewFailedLnPayment,
-} from '../../services/lightningApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { ContactGroupModal } from './BisonrelayContactGroupModals';
 import { apiError } from '../../utils/apiError';
 import { TipModal } from './TipModal';
+import { usePaidDownload } from './usePaidDownload';
 import { formatAtomsTrimmed } from '../../utils/amounts';
 import { formatBytes as formatBytesPretty } from '../../utils/bytes';
 
@@ -673,84 +668,11 @@ const ContentFileRow = ({
   nick: string;
   file: BisonrelayContentItem;
 }) => {
-  const [phase, setPhase] = useState<
-    'idle' | 'confirm' | 'downloading' | 'mismatch' | 'done' | 'error'
-  >(file.downloaded && file.on_disk ? 'done' : 'idle');
-  const [err, setErr] = useState<string | null>(null);
-  const [realCost, setRealCost] = useState(0);
-  // BR transfers are async and the seller may be offline or unable to issue
-  // the invoice (no protocol error reaches us); hint after 30s of waiting.
-  const [slow, setSlow] = useState(false);
-  // Failed-payment hashes snapshotted when the download starts; a NEW failed
-  // payment appearing during the download means our chunk payment could not
-  // complete (e.g. no route) and the BR library parked the download silently.
-  const failedBaseline = useRef<Set<string>>(new Set());
-  const { addListener } = useBisonrelayLive();
-
-  useEffect(() => {
-    if (phase !== 'downloading') {
-      setSlow(false);
-      return undefined;
-    }
-    const t = window.setTimeout(() => setSlow(true), 30000);
-    return () => window.clearTimeout(t);
-  }, [phase]);
-
-  useEffect(() => {
-    if (phase !== 'downloading') return undefined;
-    return addListener((evt: BisonrelayLiveEvent) => {
-      const payload = (evt.payload ?? {}) as Record<string, unknown>;
-      if (payload.uid !== uid || payload.fid !== file.file_id) return;
-      if (evt.type === 'file-download-cost-rejected') {
-        setRealCost(typeof payload.cost_atoms === 'number' ? payload.cost_atoms : 0);
-        setPhase('mismatch');
-      } else if (evt.type === 'file-download-completed') {
-        setPhase('done');
-      }
-    });
-  }, [phase, addListener, uid, file.file_id]);
-
-  useEffect(() => {
-    if (phase !== 'downloading') return undefined;
-    let cancelled = false;
-    let timer: number | undefined;
-    const tick = async () => {
-      try {
-        // A concurrent unrelated payment failing in this window would be
-        // attributed to the download; rare and acceptable for surfacing.
-        const failed = await findNewFailedLnPayment(failedBaseline.current);
-        if (failed && !cancelled) {
-          setErr(`Payment failed: ${describeLnPaymentFailure(failed.failureReason)}`);
-          setPhase('error');
-          return;
-        }
-      } catch {
-        // Transient list error; keep polling.
-      }
-      if (!cancelled) timer = window.setTimeout(tick, 2000);
-    };
-    timer = window.setTimeout(tick, 2000);
-    return () => {
-      cancelled = true;
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [phase]);
-
-  const start = async (maxCostAtoms: number) => {
-    setErr(null);
-    try {
-      failedBaseline.current = await failedLnPaymentHashes();
-    } catch {
-      failedBaseline.current = new Set();
-    }
-    setPhase('downloading');
-    try {
-      await startBisonrelayContentGet(uid, file.file_id, maxCostAtoms);
-    } catch (e: any) {
-      setErr(apiError(e, 'Could not start download'));
-      setPhase('error');
-    }
-  };
+  const { phase, err, realCost, slow, request, start, reset } = usePaidDownload({
+    uid,
+    fid: file.file_id,
+    saved: file.downloaded && file.on_disk,
+  });
 
   const actionBtn = 'px-2.5 py-1 rounded-md bg-primary/20 text-primary text-xs font-semibold hover:bg-primary/30 transition-colors';
   const cancelBtn = 'px-2.5 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 text-xs';
@@ -769,7 +691,7 @@ const ContentFileRow = ({
         {phase === 'idle' && (
           <button
             type="button"
-            onClick={() => (file.cost > 0 ? setPhase('confirm') : start(0))}
+            onClick={() => request(file.cost)}
             className={`shrink-0 ml-auto ${actionBtn}`}
           >
             {file.cost > 0
@@ -805,7 +727,7 @@ const ContentFileRow = ({
             <button type="button" onClick={() => start(file.cost)} className={actionBtn}>
               Pay &amp; download
             </button>
-            <button type="button" onClick={() => setPhase('idle')} className={cancelBtn}>
+            <button type="button" onClick={reset} className={cancelBtn}>
               Cancel
             </button>
           </div>
@@ -828,7 +750,7 @@ const ContentFileRow = ({
             <button type="button" onClick={() => start(realCost)} className={actionBtn}>
               Pay &amp; download
             </button>
-            <button type="button" onClick={() => setPhase('idle')} className={cancelBtn}>
+            <button type="button" onClick={reset} className={cancelBtn}>
               Cancel
             </button>
           </div>
@@ -851,7 +773,7 @@ const ContentFileRow = ({
       {phase === 'error' && (
         <div className="mt-1 space-y-1.5">
           <div className="text-xs text-destructive break-words">{err}</div>
-          <button type="button" onClick={() => setPhase('idle')} className={cancelBtn}>
+          <button type="button" onClick={reset} className={cancelBtn}>
             Try again
           </button>
         </div>

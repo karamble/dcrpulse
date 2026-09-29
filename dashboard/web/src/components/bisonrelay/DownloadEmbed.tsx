@@ -2,26 +2,14 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toYMDTime } from '../../utils/date';
 import { isImageMime } from './embedParser';
-import {
-  BisonrelayLiveEvent,
-  bisonrelayContentFileUrl,
-  getBisonrelayManageDownloads,
-  getBisonrelayRates,
-  startBisonrelayContentGet,
-} from '../../services/bisonrelayApi';
-import {
-  describeLnPaymentFailure,
-  failedLnPaymentHashes,
-  findNewFailedLnPayment,
-} from '../../services/lightningApi';
-import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { bisonrelayContentFileUrl, getBisonrelayRates } from '../../services/bisonrelayApi';
 import { ImageViewerModal } from './ImageViewerModal';
 import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
 import { formatBytes } from '../../utils/bytes';
-import { apiError } from '../../utils/apiError';
+import { usePaidDownload } from './usePaidDownload';
 
 // DownloadEmbedSeg is the subset of a BR embed segment a file-transfer embed
 // needs. Both BisonrelayPostBodySegment and BisonrelayPageSegment satisfy it,
@@ -45,39 +33,21 @@ export interface DownloadEmbedSeg {
 // cost is only what the post advertises - the daemon pays at most the amount
 // the user approved, and when the host's real share cost is higher it rejects
 // with a file-download-cost-rejected event that we turn into a second confirm
-// showing the actual price. While in flight we poll the downloads list for
-// progress; on completion the bytes load from the dashboard's /content/file
-// proxy - images render inline, other types as a download link.
+// showing the actual price. A file already downloaded shows at once. On
+// completion the bytes load from the dashboard's /content/file proxy - images
+// render inline, other types as a download link.
 export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: string; self?: boolean }) => {
   const fid = seg.download || '';
   const filename = seg.filename || seg.name || 'file';
   const cost = seg.cost || 0;
   const isImage = isImageMime(seg.mime);
-  const [phase, setPhase] = useState<
-    'idle' | 'confirm' | 'downloading' | 'mismatch' | 'ready' | 'error'
-  >('idle');
-  const [err, setErr] = useState<string | null>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const { phase, err, realCost, progress, slow, request, start, reset } = usePaidDownload({
+    uid,
+    fid,
+    lookupSaved: !self,
+  });
   const [usd, setUsd] = useState<{ amount: number; source: string; updatedAt: string } | null>(null);
-  const [realCost, setRealCost] = useState(0);
-  // BR transfers are async and the seller may be offline or unable to issue
-  // the invoice (no protocol error reaches us); hint after 30s of waiting.
-  const [slow, setSlow] = useState(false);
   const [showViewer, setShowViewer] = useState(false);
-  // Failed-payment hashes snapshotted when the download starts; a NEW failed
-  // payment appearing during the download means our chunk payment could not
-  // complete (e.g. no route) and the BR library parked the download silently.
-  const failedBaseline = useRef<Set<string>>(new Set());
-  const { addListener } = useBisonrelayLive();
-
-  useEffect(() => {
-    if (phase !== 'downloading') {
-      setSlow(false);
-      return undefined;
-    }
-    const t = window.setTimeout(() => setSlow(true), 30000);
-    return () => window.clearTimeout(t);
-  }, [phase]);
 
   // For a paid file, look up the USD value of the cost (DCR/USD via BR, with a
   // Kraken fallback) so the price can be shown in both DCR and approximate USD.
@@ -107,78 +77,9 @@ export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: 
     ? `USD via ${usd.source || 'unknown'}${usd.updatedAt ? `, updated ${toYMDTime(new Date(usd.updatedAt))}` : ''}`
     : undefined;
 
-  useEffect(() => {
-    if (phase !== 'downloading') return undefined;
-    let cancelled = false;
-    let timer: number | undefined;
-    const tick = async () => {
-      try {
-        const items = await getBisonrelayManageDownloads();
-        const it = items.find((d) => d.fid === fid);
-        if (it) {
-          setProgress({ done: Math.max(0, it.total_chunks - it.missing_chunks), total: it.total_chunks });
-          if (it.missing_chunks === 0 && it.disk_path) {
-            if (!cancelled) setPhase('ready');
-            return;
-          }
-        }
-      } catch {
-        // Transient list error; keep polling.
-      }
-      try {
-        // A concurrent unrelated payment failing in this window would be
-        // attributed to the download; rare and acceptable for surfacing.
-        const failed = await findNewFailedLnPayment(failedBaseline.current);
-        if (failed && !cancelled) {
-          setErr(`Payment failed: ${describeLnPaymentFailure(failed.failureReason)}`);
-          setPhase('error');
-          return;
-        }
-      } catch {
-        // Transient list error; keep polling.
-      }
-      if (!cancelled) timer = window.setTimeout(tick, 2000);
-    };
-    timer = window.setTimeout(tick, 800);
-    return () => {
-      cancelled = true;
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [phase, fid]);
-
-  // The daemon rejects the download when the host's stored share cost
-  // exceeds what the user approved; switch to a second confirm showing
-  // the real price.
-  useEffect(() => {
-    if (phase !== 'downloading') return undefined;
-    return addListener((evt: BisonrelayLiveEvent) => {
-      if (evt.type !== 'file-download-cost-rejected') return;
-      const payload = (evt.payload ?? {}) as Record<string, unknown>;
-      if (payload.uid !== uid || payload.fid !== fid) return;
-      setRealCost(typeof payload.cost_atoms === 'number' ? payload.cost_atoms : 0);
-      setPhase('mismatch');
-    });
-  }, [phase, addListener, uid, fid]);
-
-  const start = async (maxCostAtoms: number) => {
-    setErr(null);
-    try {
-      failedBaseline.current = await failedLnPaymentHashes();
-    } catch {
-      failedBaseline.current = new Set();
-    }
-    setPhase('downloading');
-    try {
-      await startBisonrelayContentGet(uid, fid, maxCostAtoms);
-    } catch (e: any) {
-      setErr(apiError(e, 'Could not start download'));
-      setPhase('error');
-    }
-  };
-
   if (!fid) return null;
 
-  if (phase === 'ready') {
+  if (phase === 'done') {
     const url = bisonrelayContentFileUrl(fid, uid);
     if (isImage) {
       return (
@@ -248,7 +149,7 @@ export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: 
             </button>
             <button
               type="button"
-              onClick={() => setPhase('idle')}
+              onClick={reset}
               className="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 text-sm"
             >
               Cancel
@@ -278,7 +179,7 @@ export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: 
             </button>
             <button
               type="button"
-              onClick={() => setPhase('idle')}
+              onClick={reset}
               className="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 text-sm"
             >
               Cancel
@@ -302,7 +203,7 @@ export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: 
           <div className="text-xs text-rose-300 break-words">{err}</div>
           <button
             type="button"
-            onClick={() => setPhase('idle')}
+            onClick={reset}
             className="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 text-sm"
           >
             Try again
@@ -311,7 +212,7 @@ export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: 
       ) : (
         <button
           type="button"
-          onClick={() => (cost > 0 ? setPhase('confirm') : start(0))}
+          onClick={() => request(cost)}
           title={usdTitle}
           className="max-w-full truncate px-4 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
         >

@@ -64,7 +64,6 @@ import {
   postBisonrelayComment,
   relayBisonrelayPost,
   subscribeBisonrelayPosts,
-  tipBisonrelayContact,
   unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
@@ -75,6 +74,7 @@ import { UserProfileView } from './BisonrelayUserProfile';
 import { identityToHex } from '../../utils/identity';
 import { apiError } from '../../utils/apiError';
 import { displayNick } from './bisonrelayNick';
+import { TipStatusLine, useTipStatus } from './useTipStatus';
 
 type Section = 'list' | 'yours' | 'subs' | 'new' | 'detail' | 'user';
 
@@ -803,12 +803,9 @@ const PostDetailView = ({
   const [relayCount, setRelayCount] = useState(0);
   const [relayErr, setRelayErr] = useState<string | null>(null);
   const [showTip, setShowTip] = useState(false);
-  const [tipStatus, setTipStatus] = useState<{
-    state: 'requesting' | 'paying' | 'sent' | 'failed';
-    line: string;
-  } | null>(null);
   const isOwnPost = !!ownUid && uid === ownUid;
   const authorNick = summary?.author_nick || uid.slice(0, 12);
+  const { status: tipStatus, submit: submitTip } = useTipStatus(uid, authorNick);
   const { addListener } = useBisonrelayLive();
 
   const startRelay = async () => {
@@ -832,22 +829,6 @@ const PostDetailView = ({
       setRelayErr(apiError(e, 'Relay failed'));
       setRelayState('confirm');
     }
-  };
-
-  // Fire-and-forget like the chat page's tip flow; the live
-  // tip-invoice-generated / tip-sent / tip-failed events advance the line.
-  const submitTip = (dcrAmount: number) => {
-    setTipStatus({
-      state: 'requesting',
-      line: `Requesting invoice for ${dcrAmount} DCR to tip ${authorNick}...`,
-    });
-    tipBisonrelayContact(uid, dcrAmount).catch((e: any) => {
-      const msg = apiError(e, 'Tip failed');
-      setTipStatus({
-        state: 'failed',
-        line: `Tip attempt of ${dcrAmount} DCR failed due to ${msg}. Given up on attempting to tip.`,
-      });
-    });
   };
 
   const loadBody = useCallback(async () => {
@@ -911,27 +892,6 @@ const PostDetailView = ({
       loadReceipts();
     });
   }, [addListener, uid, pid, loadHearts, loadReceipts]);
-
-  // Tip progress mirrors the chat page's handling of the same events.
-  useEffect(() => {
-    return addListener((evt: BisonrelayLiveEvent) => {
-      if (evt.type === 'tip-invoice-generated') {
-        const payload = (evt.payload ?? {}) as Record<string, unknown>;
-        if (String(payload.uid ?? '') !== uid) return;
-        const nick = String(payload.nick ?? '');
-        setTipStatus((prev) =>
-          prev && prev.state === 'requesting'
-            ? { state: 'paying', line: `Invoice received, paying tip to ${nick}...` }
-            : prev,
-        );
-        return;
-      }
-      if (evt.type !== 'tip-sent' && evt.type !== 'tip-failed') return;
-      const payload = (evt.payload ?? {}) as Record<string, string>;
-      if (payload.recipient !== uid || !payload.line) return;
-      setTipStatus({ state: evt.type === 'tip-sent' ? 'sent' : 'failed', line: payload.line });
-    });
-  }, [addListener, uid]);
 
   const toggleHeart = async () => {
     if (hearting) return;
@@ -1086,22 +1046,11 @@ const PostDetailView = ({
             </div>
           )}
           {relayErr && <p className="text-xs text-destructive">{relayErr}</p>}
-          {tipStatus && (
-            <div
-              className={`flex items-center gap-2 text-xs ${
-                tipStatus.state === 'sent'
-                  ? 'text-success'
-                  : tipStatus.state === 'failed'
-                    ? 'text-destructive'
-                    : 'text-muted-foreground'
-              }`}
-            >
-              {(tipStatus.state === 'requesting' || tipStatus.state === 'paying') && (
-                <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-              )}
-              <span className="min-w-0 break-words">{tipStatus.line}</span>
-            </div>
-          )}
+          <TipStatusLine
+            status={tipStatus}
+            className="flex items-center gap-2 text-xs"
+            lineClassName="min-w-0 break-words"
+          />
         </div>
       </header>
       <article className="rounded-xl bg-gradient-card border border-border/50 p-5 space-y-3">

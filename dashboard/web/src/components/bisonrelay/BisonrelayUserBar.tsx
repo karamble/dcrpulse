@@ -2,19 +2,14 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
-import { Coins, Loader2, UserRound } from 'lucide-react';
-import {
-  BisonrelayContact,
-  BisonrelayLiveEvent,
-  tipBisonrelayContact,
-} from '../../services/bisonrelayApi';
+import { useState } from 'react';
+import { Coins, UserRound } from 'lucide-react';
+import { BisonrelayContact } from '../../services/bisonrelayApi';
 import { AuthorAvatar } from './AuthorAvatar';
 import { TipModal } from './TipModal';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
-import { useBisonrelayLive } from './BisonrelayLiveProvider';
-import { apiError } from '../../utils/apiError';
 import { displayNick } from './bisonrelayNick';
+import { TipStatusLine, useTipStatus } from './useTipStatus';
 
 const navigateTo = (hash: string): void => {
   window.location.hash = hash;
@@ -41,47 +36,10 @@ export const BisonrelayUserBar = ({
 }) => {
   const [showTip, setShowTip] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const [tipStatus, setTipStatus] = useState<{
-    state: 'requesting' | 'paying' | 'sent' | 'failed';
-    line: string;
-  } | null>(null);
-  const { addListener } = useBisonrelayLive();
 
   const nick = contact ? displayNick(contact) : `${uid.slice(0, 8)}…`;
   const avatarB64 = contact?.id?.avatar;
-
-  // Track the tip outcome from the live event stream, the same way the user
-  // profile header does.
-  useEffect(() => {
-    return addListener((evt: BisonrelayLiveEvent) => {
-      if (evt.type === 'tip-invoice-generated') {
-        const p = (evt.payload ?? {}) as Record<string, unknown>;
-        if (String(p.uid ?? '') !== uid) return;
-        setTipStatus((prev) =>
-          prev && prev.state === 'requesting'
-            ? { state: 'paying', line: `Invoice received, paying tip to ${nick}...` }
-            : prev,
-        );
-        return;
-      }
-      if (evt.type === 'tip-sent' || evt.type === 'tip-failed') {
-        const p = (evt.payload ?? {}) as Record<string, string>;
-        if (p.recipient !== uid || !p.line) return;
-        setTipStatus({ state: evt.type === 'tip-sent' ? 'sent' : 'failed', line: p.line });
-      }
-    });
-  }, [addListener, uid, nick]);
-
-  const submitTip = (dcrAmount: number) => {
-    setTipStatus({
-      state: 'requesting',
-      line: `Requesting invoice for ${dcrAmount} DCR to tip ${nick}...`,
-    });
-    tipBisonrelayContact(uid, dcrAmount).catch((e: any) => {
-      const msg = apiError(e, 'Tip failed');
-      setTipStatus({ state: 'failed', line: `Tip of ${dcrAmount} DCR failed: ${msg}` });
-    });
-  };
+  const { status: tipStatus, submit: submitTip } = useTipStatus(uid, nick);
 
   const btnCls =
     'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border/50 bg-muted/20 text-xs font-medium text-foreground hover:bg-muted/30 transition-colors';
@@ -135,24 +93,11 @@ export const BisonrelayUserBar = ({
         </button>
       </div>
 
-      {tipStatus && (
-        <div
-          className={`flex items-center gap-1.5 text-[11px] ${
-            tipStatus.state === 'sent'
-              ? 'text-success'
-              : tipStatus.state === 'failed'
-                ? 'text-destructive'
-                : 'text-muted-foreground'
-          }`}
-        >
-          {(tipStatus.state === 'requesting' || tipStatus.state === 'paying') && (
-            <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
-          )}
-          <span className="max-w-[16rem] truncate" title={tipStatus.line}>
-            {tipStatus.line}
-          </span>
-        </div>
-      )}
+      <TipStatusLine
+        status={tipStatus}
+        className="flex items-center gap-1.5 text-[11px]"
+        lineClassName="max-w-[16rem] truncate"
+      />
 
       {showTip && (
         <TipModal nick={nick} uid={uid} onClose={() => setShowTip(false)} onSubmit={submitTip} />

@@ -37,7 +37,6 @@ import {
   getBisonrelayTipAttempts,
   listBisonrelayGCs,
   subscribeBisonrelayPosts,
-  tipBisonrelayContact,
   unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
@@ -58,8 +57,8 @@ import {
   ratchetHealth,
   relativeTime,
 } from './BisonrelayStats';
-import { apiError } from '../../utils/apiError';
 import { displayNick } from './bisonrelayNick';
+import { TipStatusLine, useTipStatus } from './useTipStatus';
 
 const healthMeta: Record<RatchetHealth, { label: string; cls: string }> = {
   green: { label: 'Active', cls: 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' },
@@ -100,10 +99,6 @@ export const UserProfileView = ({
   const [showContent, setShowContent] = useState(false);
   const [copied, setCopied] = useState(false);
   const [subBusy, setSubBusy] = useState(false);
-  const [tipStatus, setTipStatus] = useState<{
-    state: 'requesting' | 'paying' | 'sent' | 'failed';
-    line: string;
-  } | null>(null);
   const { addListener } = useBisonrelayLive();
 
   const contact = contacts.find((c) => c.id?.identity === uid);
@@ -161,24 +156,6 @@ export const UserProfileView = ({
 
   useEffect(() => {
     return addListener((evt: BisonrelayLiveEvent) => {
-      if (evt.type === 'tip-invoice-generated') {
-        const payload = (evt.payload ?? {}) as Record<string, unknown>;
-        if (String(payload.uid ?? '') !== uid) return;
-        const evNick = String(payload.nick ?? '');
-        setTipStatus((prev) =>
-          prev && prev.state === 'requesting'
-            ? { state: 'paying', line: `Invoice received, paying tip to ${evNick}...` }
-            : prev,
-        );
-        return;
-      }
-      if (evt.type === 'tip-sent' || evt.type === 'tip-failed') {
-        const payload = (evt.payload ?? {}) as Record<string, string>;
-        if (payload.recipient !== uid || !payload.line) return;
-        setTipStatus({ state: evt.type === 'tip-sent' ? 'sent' : 'failed', line: payload.line });
-        refreshTips();
-        return;
-      }
       if (
         evt.type === 'posts-subscribed' ||
         evt.type === 'posts-unsubscribed' ||
@@ -187,21 +164,9 @@ export const UserProfileView = ({
         refreshContacts();
       }
     });
-  }, [addListener, uid, refreshContacts, refreshTips]);
+  }, [addListener, refreshContacts]);
 
-  const submitTip = (dcrAmount: number) => {
-    setTipStatus({
-      state: 'requesting',
-      line: `Requesting invoice for ${dcrAmount} DCR to tip ${nick}...`,
-    });
-    tipBisonrelayContact(uid, dcrAmount).catch((e: any) => {
-      const msg = apiError(e, 'Tip failed');
-      setTipStatus({
-        state: 'failed',
-        line: `Tip attempt of ${dcrAmount} DCR failed due to ${msg}. Given up on attempting to tip.`,
-      });
-    });
-  };
+  const { status: tipStatus, submit: submitTip } = useTipStatus(uid, nick, refreshTips);
 
   const toggleSubscribe = async () => {
     if (!contact || subBusy) return;
@@ -316,22 +281,11 @@ export const UserProfileView = ({
                     )}
                 </div>
               )}
-              {tipStatus && (
-                <div
-                  className={`flex items-center justify-center sm:justify-start gap-2 text-xs ${
-                    tipStatus.state === 'sent'
-                      ? 'text-success'
-                      : tipStatus.state === 'failed'
-                        ? 'text-destructive'
-                        : 'text-muted-foreground'
-                  }`}
-                >
-                  {(tipStatus.state === 'requesting' || tipStatus.state === 'paying') && (
-                    <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-                  )}
-                  <span className="min-w-0 break-words">{tipStatus.line}</span>
-                </div>
-              )}
+              <TipStatusLine
+                status={tipStatus}
+                className="flex items-center justify-center sm:justify-start gap-2 text-xs"
+                lineClassName="min-w-0 break-words"
+              />
             </div>
             {!isOwn && contact && (
               <div className="flex flex-wrap justify-center gap-2 sm:justify-end sm:max-w-[12rem]">
