@@ -82,7 +82,7 @@ func ParseSignedTransaction(data []byte) ([]byte, *wire.MsgTx, error) {
 // deserializing cleanly with no trailing data, and having at least one input and
 // one output.
 func deserializeTx(b []byte) ([]byte, *wire.MsgTx, bool) {
-	if len(b) == 0 || len(b) > maxSignedTxBytes {
+	if len(b) == 0 || len(b) > maxSignedTxBytes || TxCountsFit(b) != nil {
 		return nil, nil, false
 	}
 	rdr := bytes.NewReader(b)

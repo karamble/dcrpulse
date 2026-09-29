@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"runtime"
 	"testing"
 
 	"decred.org/dcrwallet/v5/wallet/txrules"
@@ -569,5 +570,21 @@ func TestDecodeTxHexStrict(t *testing.T) {
 	}
 	if _, err := DecodeTxHex("zz"); err == nil {
 		t.Fatalf("bad hex not detected")
+	}
+}
+
+// MSIG-9: a member's sign request is decoded before any verification, so a few
+// bytes claiming millions of outputs must be refused without the allocation.
+func TestDecodeTxHexRefusesCountsItsBytesCannotBack(t *testing.T) {
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, err := DecodeTxHex("0100000000fec0c62d00")
+	runtime.ReadMemStats(&after)
+	if err == nil {
+		t.Fatal("a 10-byte transaction claiming 3,000,000 outputs decoded")
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 1<<20 {
+		t.Fatalf("decoding it allocated %d bytes", alloc)
 	}
 }

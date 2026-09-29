@@ -21,6 +21,8 @@ import (
 	"github.com/decred/dcrd/txscript/v4"
 	"github.com/decred/dcrd/txscript/v4/stdaddr"
 	"github.com/decred/dcrd/wire"
+
+	"dcrpulse/internal/services"
 )
 
 // MaxInputs bounds a proposal's input count so the framed transaction
@@ -226,6 +228,9 @@ func DecodeTxHex(txHex string) (*wire.MsgTx, error) {
 	raw, err := hex.DecodeString(strings.TrimSpace(txHex))
 	if err != nil {
 		return nil, fmt.Errorf("invalid transaction hex: %v", err)
+	}
+	if err := services.TxCountsFit(raw); err != nil {
+		return nil, fmt.Errorf("invalid transaction: %v", err)
 	}
 	r := bytes.NewReader(raw)
 	var tx wire.MsgTx
