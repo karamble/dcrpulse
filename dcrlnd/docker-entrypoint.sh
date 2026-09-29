@@ -119,7 +119,6 @@ launch() {
         --rpclisten=0.0.0.0:10009 \
         --tlsextradomain="${DCRLND_TLS_EXTRA_DOMAIN:-dcrlnd}" \
         --wtclient.active \
-        --wtclient.sweep-fee-rate=10000000 \
         ${NETWORK_ARGS} ${TOR_ARGS} &
     CHILD_PID=$!
 }
