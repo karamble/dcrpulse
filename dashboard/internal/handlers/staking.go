@@ -78,8 +78,7 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req types.PurchaseTicketsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Passphrase == "" {
@@ -120,9 +119,7 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(types.PurchaseTicketsAsyncResponse{Async: true})
+		writeJSONStatus(w, http.StatusAccepted, types.PurchaseTicketsAsyncResponse{Async: true})
 		return
 	}
 
@@ -204,8 +201,7 @@ func GetAutobuyerSettingsHandler(w http.ResponseWriter, r *http.Request) {
 // SaveAutobuyerSettingsHandler atomically persists settings to disk.
 func SaveAutobuyerSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	var s types.AutobuyerSettings
-	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &s) {
 		return
 	}
 	if s.VspHost == "" || s.VspPubkey == "" {
@@ -232,8 +228,7 @@ func StartAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req types.StartAutobuyerRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Passphrase == "" {
@@ -288,8 +283,7 @@ func StreamAutobuyerEventsHandler(w http.ResponseWriter, r *http.Request) {
 func vspTicketRepair(w http.ResponseWriter, r *http.Request, label string,
 	repair func(context.Context, string, string, uint32, uint32, []byte) (*types.SyncFailedVSPTicketsResponse, error)) {
 	var req types.SyncFailedVSPTicketsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Passphrase == "" {

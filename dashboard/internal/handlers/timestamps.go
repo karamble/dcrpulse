@@ -52,8 +52,7 @@ type createTimestampRequest struct {
 // file itself is never sent; the browser hashes it and posts only the digest.
 func CreateTimestampHandler(w http.ResponseWriter, r *http.Request) {
 	var req createTimestampRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	digest := strings.ToLower(strings.TrimSpace(req.Digest))
@@ -80,9 +79,7 @@ func CreateTimestampHandler(w http.ResponseWriter, r *http.Request) {
 	if err := store.Create(rec); err != nil {
 		if errors.Is(err, timestamp.ErrDuplicate) {
 			existing, _ := store.Get(digest)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]any{
+			writeJSONStatus(w, http.StatusConflict, map[string]any{
 				"error":  "this file is already in your archive",
 				"record": existing,
 			})
@@ -163,8 +160,7 @@ type updateTimestampRequest struct {
 // UpdateTimestampHandler edits the user-supplied metadata only.
 func UpdateTimestampHandler(w http.ResponseWriter, r *http.Request) {
 	var req updateTimestampRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	store, ok := timestampArchive(w)
@@ -273,9 +269,8 @@ func TimestampProofHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	proof := timestamp.NewProof(rec, timestamp.ChainName(ctx), timestamp.APIHost(ctx))
 	name := fmt.Sprintf("timestamp-proof-%s.json", short(rec.Digest))
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+name+"\"")
-	json.NewEncoder(w).Encode(proof)
+	writeJSON(w, proof)
 }
 
 type verifyTimestampRequest struct {
@@ -286,8 +281,7 @@ type verifyTimestampRequest struct {
 // (when anchored) the Decred chain via dcrpulse's own dcrd.
 func VerifyTimestampHandler(w http.ResponseWriter, r *http.Request) {
 	var req verifyTimestampRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	digest := strings.ToLower(strings.TrimSpace(req.Digest))
@@ -337,8 +331,7 @@ type validateTimestampRequest struct {
 // digest is given, looked up from the archive.
 func ValidateTimestampHandler(w http.ResponseWriter, r *http.Request) {
 	var req validateTimestampRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	digest := strings.ToLower(strings.TrimSpace(req.Digest))
@@ -403,9 +396,8 @@ func ExportTimestampsHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"dcrpulse-timestamps.json\"")
-	json.NewEncoder(w).Encode(store.All())
+	writeJSON(w, store.All())
 }
 
 func digestVar(r *http.Request) string {

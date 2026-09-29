@@ -7,7 +7,6 @@ package handlers
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -51,8 +50,7 @@ func DecodeSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req types.DecodeSignedTxRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	data, err := decodeSignedTxInput(req.SignedTxB64, req.SignedTx)
@@ -83,8 +81,7 @@ func BroadcastSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req types.BroadcastSignedTxRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	data, err := decodeSignedTxInput(req.SignedTxB64, req.SignedTx)
@@ -110,8 +107,7 @@ func BroadcastSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 			respondDaemonError(w, r, services.LogComponentDcrwallet, err)
 		case reDuplicateTx.MatchString(low):
 			// Already broadcast: report success with the known txid.
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(types.BroadcastSignedTxResponse{TxHash: txid, AlreadyBroadcast: true})
+			writeJSON(w, types.BroadcastSignedTxResponse{TxHash: txid, AlreadyBroadcast: true})
 		case strings.Contains(low, "missing") || strings.Contains(low, "orphan") || strings.Contains(low, "spent"):
 			http.Error(w, err.Error(), http.StatusConflict)
 		default:
@@ -128,8 +124,7 @@ func BroadcastSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 // no keys are needed, and the file carries only public key material.
 func ParseAccountExportHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.ParseAccountExportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.FileB64))
@@ -186,8 +181,7 @@ func BuildSignRequestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req types.ConstructTransactionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 

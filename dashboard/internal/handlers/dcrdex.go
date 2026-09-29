@@ -168,21 +168,7 @@ func setDcrdexSeedBackedUp(v bool) error {
 }
 
 func formatSemver(major, minor, patch uint32) string {
-	return itoa(major) + "." + itoa(minor) + "." + itoa(patch)
-}
-
-func itoa(v uint32) string {
-	if v == 0 {
-		return "0"
-	}
-	var buf [10]byte
-	i := len(buf)
-	for v > 0 {
-		i--
-		buf[i] = byte('0' + v%10)
-		v /= 10
-	}
-	return string(buf[i:])
+	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
 }
 
 type dcrdexAuthRequest struct {
@@ -603,14 +589,9 @@ func GetDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 
 // GetDcrdexExchangesHandler returns the known/registered DEX servers (raw).
 func GetDcrdexExchangesHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	client, ok := dexClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	dexProxyJSON(w, func() (json.RawMessage, error) { return client.Exchanges(ctx) })
+	dexCall(w, r, dexClient, 15*time.Second, func(ctx context.Context, client *bisonw.Client) (any, error) {
+		return client.Exchanges(ctx)
+	})
 }
 
 // atomsToConv converts an atomic amount to conventional units using the asset's
@@ -673,42 +654,30 @@ func dexAssetID(r *http.Request) uint32 {
 // client; the asset backend manages the address index and returns its next unused
 // one.
 func NewDexDepositAddressHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	addr, err := client.NewDepositAddress(ctx, dexAssetID(r))
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"address": addr})
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		addr, err := client.NewDepositAddress(ctx, dexAssetID(r))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"address": addr}, nil
+	})
 }
 
 // DexAddressUsedHandler reports whether an address has already received funds,
 // used to warn against deposit-address reuse on the Wallets page.
 func DexAddressUsedHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	addr := r.URL.Query().Get("addr")
 	if addr == "" {
 		http.Error(w, "addr is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	used, err := client.AddressUsed(ctx, dexAssetID(r), addr)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"used": used})
+	dexCall(w, r, dexWebSession, 15*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		used, err := client.AddressUsed(ctx, dexAssetID(r), addr)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]bool{"used": used}, nil
+	})
 }
 
 // DexWalletState is the funding view of a single DCRDEX-managed wallet. Balances
@@ -866,6 +835,23 @@ type dexBondOffer struct {
 	Amt   uint64 `json:"amount"`
 }
 
+// dexBondAssets lists a server's bond offers by symbol, amounts converted with
+// the local asset driver's factor.
+func dexBondAssets(offers map[string]dexBondOffer) []DexBondAsset {
+	out := make([]DexBondAsset, 0, len(offers))
+	for sym, ba := range offers {
+		out = append(out, DexBondAsset{
+			Symbol:   strings.ToUpper(sym),
+			AssetID:  ba.ID,
+			Confs:    ba.Confs,
+			AmtAtoms: ba.Amt,
+			Amt:      atomsToConv(ba.Amt, dexassets.ConvFactor(ba.ID)),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Symbol < out[j].Symbol })
+	return out
+}
+
 // resolveBondAsset picks the bond asset for display and per-tier amounts.
 // bisonw treats bondAssetID as configured only while maintenance is on
 // (targetTier >= 1); an unset id persists as zero, Bitcoin's real id.
@@ -942,17 +928,7 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 	for _, b := range xc.Auth.PendingBonds {
 		pending = append(pending, DexPendingBond{Symbol: strings.ToUpper(b.Symbol), AssetID: b.AssetID, Confs: b.Confs})
 	}
-	bondAssets := make([]DexBondAsset, 0, len(xc.BondAssets))
-	for sym, ba := range xc.BondAssets {
-		bondAssets = append(bondAssets, DexBondAsset{
-			Symbol:   strings.ToUpper(sym),
-			AssetID:  ba.ID,
-			Confs:    ba.Confs,
-			AmtAtoms: ba.Amt,
-			Amt:      atomsToConv(ba.Amt, dexassets.ConvFactor(ba.ID)),
-		})
-	}
-	sort.Slice(bondAssets, func(i, j int) bool { return bondAssets[i].Symbol < bondAssets[j].Symbol })
+	bondAssets := dexBondAssets(xc.BondAssets)
 	bondSym, perTier := resolveBondAsset(xc.Auth.TargetTier, xc.Auth.BondAssetID, xc.BondAssets)
 	json.NewEncoder(w).Encode(DexAccount{
 		Host:               host,
@@ -1224,20 +1200,10 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	convFactor := func(assetID uint32) uint64 {
-		return xc.Assets[itoa(assetID)].UnitInfo.Conventional.ConversionFactor
+		return xc.Assets[strconv.FormatUint(uint64(assetID), 10)].UnitInfo.Conventional.ConversionFactor
 	}
 	dcr := xc.BondAssets["dcr"]
-	cfgBondAssets := make([]DexBondAsset, 0, len(xc.BondAssets))
-	for sym, ba := range xc.BondAssets {
-		cfgBondAssets = append(cfgBondAssets, DexBondAsset{
-			Symbol:   strings.ToUpper(sym),
-			AssetID:  ba.ID,
-			Confs:    ba.Confs,
-			AmtAtoms: ba.Amt,
-			Amt:      atomsToConv(ba.Amt, dexassets.ConvFactor(ba.ID)),
-		})
-	}
-	sort.Slice(cfgBondAssets, func(i, j int) bool { return cfgBondAssets[i].Symbol < cfgBondAssets[j].Symbol })
+	cfgBondAssets := dexBondAssets(xc.BondAssets)
 	markets := make([]DexMarket, 0, len(xc.Markets))
 	for _, m := range xc.Markets {
 		base, quote := strings.ToUpper(m.BaseSymbol), strings.ToUpper(m.QuoteSymbol)
@@ -1297,24 +1263,18 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 // adds it to the bond when checking the deposit covers a bond post. The amount is
 // returned in the asset's conventional units.
 func GetDcrdexBondsFeeBufferHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	assetID, err := strconv.ParseUint(r.URL.Query().Get("assetID"), 10, 32)
 	if err != nil {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	raw, err := client.BondsFeeBuffer(ctx, uint32(assetID))
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]float64{"feeBuffer": atomsToConv(raw, dexassets.ConvFactor(uint32(assetID)))})
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		raw, err := client.BondsFeeBuffer(ctx, uint32(assetID))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]float64{"feeBuffer": atomsToConv(raw, dexassets.ConvFactor(uint32(assetID)))}, nil
+	})
 }
 
 // dexBondSession and postDexBondTx are the two calls a test cannot make for
@@ -1433,7 +1393,7 @@ func relayBisonwWS(w http.ResponseWriter, r *http.Request, client *bisonw.Client
 	if err != nil {
 		msg := "dcrdex ws: " + err.Error()
 		if resp != nil {
-			msg += " (http " + itoa(uint32(resp.StatusCode)) + ")"
+			msg += " (http " + strconv.Itoa(resp.StatusCode) + ")"
 		}
 		front.WriteJSON(map[string]string{"error": msg})
 		return
@@ -1462,14 +1422,9 @@ func relayBisonwWS(w http.ResponseWriter, r *http.Request, client *bisonw.Client
 // GetDcrdexMyOrdersHandler returns the user's active and recent orders (raw),
 // optionally filtered to the `host` query parameter.
 func GetDcrdexMyOrdersHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	client, ok := dexClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	dexProxyJSON(w, func() (json.RawMessage, error) { return client.MyOrders(ctx, r.URL.Query().Get("host")) })
+	dexCall(w, r, dexClient, 15*time.Second, func(ctx context.Context, client *bisonw.Client) (any, error) {
+		return client.MyOrders(ctx, r.URL.Query().Get("host"))
+	})
 }
 
 // bwCoin/bwMatch/bwOrder mirror the core.Order JSON the webserver /api/orders
@@ -1736,7 +1691,6 @@ func normalizeDexFullOrder(o *bwOrder) *dexFullOrder {
 // and the orders archive omit confs; this is the only source of live confs, used
 // by the order-detail swap tracker.
 func GetDcrdexSingleOrderHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		ID string `json:"id"`
 	}
@@ -1744,28 +1698,21 @@ func GetDcrdexSingleOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "id is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	raw, err := client.Order(ctx, req.ID)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	var o bwOrder
-	if err := json.Unmarshal(raw, &o); err != nil {
-		http.Error(w, "decode order: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	json.NewEncoder(w).Encode(normalizeDexFullOrder(&o))
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		raw, err := client.Order(ctx, req.ID)
+		if err != nil {
+			return nil, err
+		}
+		var o bwOrder
+		if err := json.Unmarshal(raw, &o); err != nil {
+			return nil, fmt.Errorf("decode order: %w", err)
+		}
+		return normalizeDexFullOrder(&o), nil
+	})
 }
 
 // CancelDcrdexOrderHandler cancels an active order by its hex order ID.
 func CancelDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		OrderID string `json:"orderID"`
 	}
@@ -1773,24 +1720,15 @@ func CancelDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "orderID is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexUnlockedClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := client.Cancel(ctx, req.OrderID); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexDo(w, r, dexUnlockedClient, 30*time.Second, func(ctx context.Context, client *bisonw.Client) error {
+		return client.Cancel(ctx, req.OrderID)
+	})
 }
 
 // PlaceDcrdexOrderHandler places a limit or market order. Qty and Rate are in
 // atomic units. This spends real funds on mainnet; the dashboard calls it only
 // on explicit user action.
 func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		Host    string            `json:"host"`
 		IsLimit bool              `json:"isLimit"`
@@ -1806,18 +1744,9 @@ func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host and qty are required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	raw, err := client.Trade(ctx, req.Host, req.IsLimit, req.Sell, req.Base, req.Quote, req.Qty, req.Rate, req.TifNow, req.Options)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	w.Write(raw)
+	dexCall(w, r, dexWebSession, 60*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		return client.Trade(ctx, req.Host, req.IsLimit, req.Sell, req.Base, req.Quote, req.Qty, req.Rate, req.TifNow, req.Options)
+	})
 }
 
 // GetDcrdexActionsHandler returns the actions bisonw is waiting on the user
@@ -1825,13 +1754,7 @@ func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 // so a dashboard that was not connected when one fired can only discover it
 // here; this list, not the notification, is what the UI recovers from.
 func GetDcrdexActionsHandler(w http.ResponseWriter, r *http.Request) {
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	dexProxyJSON(w, func() (json.RawMessage, error) {
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-		defer cancel()
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
 		return client.PendingActions(ctx)
 	})
 }
@@ -1870,7 +1793,6 @@ func TakeDcrdexActionHandler(w http.ResponseWriter, r *http.Request) {
 // already, change locked by another order), so the caller shows the error
 // rather than a disabled control.
 func PreDcrdexAccelerateHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		OrderID string `json:"orderID"`
 	}
@@ -1878,24 +1800,14 @@ func PreDcrdexAccelerateHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "orderID is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	raw, err := client.PreAccelerate(ctx, req.OrderID)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	w.Write(raw)
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		return client.PreAccelerate(ctx, req.OrderID)
+	})
 }
 
 // DcrdexAccelerationEstimateHandler returns the fee an acceleration to newRate
 // would cost, in atoms of the order's from asset. Read-only, no password.
 func DcrdexAccelerationEstimateHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		OrderID string `json:"orderID"`
 		NewRate uint64 `json:"newRate"`
@@ -1904,18 +1816,13 @@ func DcrdexAccelerationEstimateHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "orderID and newRate are required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	fee, err := client.AccelerationEstimate(ctx, req.OrderID, req.NewRate)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	_ = json.NewEncoder(w).Encode(map[string]uint64{"fee": fee})
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		fee, err := client.AccelerationEstimate(ctx, req.OrderID, req.NewRate)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]uint64{"fee": fee}, nil
+	})
 }
 
 // AccelerateDcrdexOrderHandler broadcasts a child transaction lifting the
@@ -1923,7 +1830,6 @@ func DcrdexAccelerationEstimateHandler(w http.ResponseWriter, r *http.Request) {
 // take the password from the session cache; this spends a fee, so it is
 // demanded per call as the send route does.
 func AccelerateDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		OrderID string `json:"orderID"`
 		NewRate uint64 `json:"newRate"`
@@ -1937,18 +1843,13 @@ func AccelerateDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appPass is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	txID, err := client.AccelerateOrder(ctx, req.AppPass, req.OrderID, req.NewRate)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	_ = json.NewEncoder(w).Encode(map[string]string{"txID": txID})
+	dexCall(w, r, dexWebSession, 60*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		txID, err := client.AccelerateOrder(ctx, req.AppPass, req.OrderID, req.NewRate)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"txID": txID}, nil
+	})
 }
 
 // PreDcrdexOrderHandler returns bisonw's pre-order estimate (swap + redeem fee
@@ -1956,7 +1857,6 @@ func AccelerateDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 // order form can show fees and options before the user commits. Read-only; goes
 // through the webserver, which the RPC server has no equivalent for.
 func PreDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		Host    string            `json:"host"`
 		IsLimit bool              `json:"isLimit"`
@@ -1972,13 +1872,7 @@ func PreDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host and qty are required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	dexProxyJSON(w, func() (json.RawMessage, error) {
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
 		return client.PreOrder(ctx, req.Host, req.IsLimit, req.Sell, req.Base, req.Quote, req.Qty, req.Rate, req.TifNow, req.Options)
 	})
 }
@@ -1986,7 +1880,6 @@ func PreDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 // MaxDcrdexBuyHandler returns the largest buy order fundable at the given rate on
 // the market, with fee estimates. Webserver-only route.
 func MaxDcrdexBuyHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		Host  string `json:"host"`
 		Base  uint32 `json:"base"`
@@ -1997,13 +1890,7 @@ func MaxDcrdexBuyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host and rate are required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	dexProxyJSON(w, func() (json.RawMessage, error) {
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
 		return client.MaxBuy(ctx, req.Host, req.Base, req.Quote, req.Rate)
 	})
 }
@@ -2011,7 +1898,6 @@ func MaxDcrdexBuyHandler(w http.ResponseWriter, r *http.Request) {
 // MaxDcrdexSellHandler returns the largest sell order fundable on the market,
 // with fee estimates. Webserver-only route.
 func MaxDcrdexSellHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		Host  string `json:"host"`
 		Base  uint32 `json:"base"`
@@ -2021,13 +1907,9 @@ func MaxDcrdexSellHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	dexProxyJSON(w, func() (json.RawMessage, error) { return client.MaxSell(ctx, req.Host, req.Base, req.Quote) })
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		return client.MaxSell(ctx, req.Host, req.Base, req.Quote)
+	})
 }
 
 // GetDcrdexAssetsHandler serves the embedded DCRDEX supported-asset catalog
@@ -2043,7 +1925,6 @@ func GetDcrdexAssetsHandler(w http.ResponseWriter, r *http.Request) {
 // handler (CreateDcrdexWalletHandler) that wires the pinned dex account; this
 // generic path serves every other asset. Requires the DEX session unlocked.
 func CreateDcrdexAssetWalletHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		AssetID    uint32            `json:"assetID"`
 		WalletType string            `json:"walletType"`
@@ -2054,18 +1935,10 @@ func CreateDcrdexAssetWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID and walletType are required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
 	// bisonw's webserver cuts responses at its 2min write timeout.
-	ctx, cancel := context.WithTimeout(r.Context(), 110*time.Second)
-	defer cancel()
-	if err := client.NewWallet(ctx, req.AssetID, req.WalletType, req.Config, req.WalletPass); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexDo(w, r, dexWebSession, 110*time.Second, func(ctx context.Context, client *bisonw.WebClient) error {
+		return client.NewWallet(ctx, req.AssetID, req.WalletType, req.Config, req.WalletPass)
+	})
 }
 
 // DexWalletTx is a wallet transaction with amounts converted to conventional
@@ -2403,7 +2276,6 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 // send route refuses the session password cache, so the app password is
 // re-entered in the request body for this action.
 func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		AssetID uint32  `json:"assetID"`
 		Value   float64 `json:"value"`
@@ -2418,19 +2290,14 @@ func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appPass is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
-	coin, err := client.Send(ctx, req.AppPass, req.AssetID, atoms, req.Address, false)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"coin": coin})
+	dexCall(w, r, dexWebSession, 60*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
+		coin, err := client.Send(ctx, req.AppPass, req.AssetID, atoms, req.Address, false)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"coin": coin}, nil
+	})
 }
 
 // EstimateDcrdexSendFeeHandler estimates the network fee to send from a wallet and
@@ -2438,7 +2305,6 @@ func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 // fee estimation). The fee is returned in conventional units of the fee asset (the
 // parent chain for a token), with that asset's symbol.
 func EstimateDcrdexSendFeeHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		AssetID  uint32  `json:"assetID"`
 		Value    float64 `json:"value"`
@@ -2449,23 +2315,18 @@ func EstimateDcrdexSendFeeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID, value and address are required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
-	txFee, validAddr, err := client.EstimateSendTxFee(ctx, req.AssetID, req.Address, atoms, req.Subtract, false)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	feeAsset := dexassets.FeeAsset(req.AssetID)
-	json.NewEncoder(w).Encode(map[string]any{
-		"fee":          atomsToConv(txFee, dexassets.ConvFactor(feeAsset)),
-		"feeSymbol":    dexassets.Symbol(feeAsset),
-		"validAddress": validAddr,
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
+		txFee, validAddr, err := client.EstimateSendTxFee(ctx, req.AssetID, req.Address, atoms, req.Subtract, false)
+		if err != nil {
+			return nil, err
+		}
+		feeAsset := dexassets.FeeAsset(req.AssetID)
+		return map[string]any{
+			"fee":          atomsToConv(txFee, dexassets.ConvFactor(feeAsset)),
+			"feeSymbol":    dexassets.Symbol(feeAsset),
+			"validAddress": validAddr,
+		}, nil
 	})
 }
 
@@ -2478,19 +2339,6 @@ type dexWalletAction struct {
 	Address string `json:"address"`
 }
 
-// dexProxyJSON forwards a bisonw reply verbatim, mapping a failure through the
-// shared error writer. No content type is set, matching what these handlers
-// have always sent.
-func dexProxyJSON(w http.ResponseWriter, call func() (json.RawMessage, error)) {
-	raw, err := call()
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(raw)
-}
-
 func dexWalletActionBody(r *http.Request) (dexWalletAction, error) {
 	var req dexWalletAction
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -2499,45 +2347,21 @@ func dexWalletActionBody(r *http.Request) (dexWalletAction, error) {
 
 // OpenDcrdexWalletHandler unlocks a wallet. Requires the DEX session unlocked.
 func OpenDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	req, err := dexWalletActionBody(r)
 	if err != nil {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := client.OpenWallet(ctx, req.AssetID); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexDo(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) error {
+		return client.OpenWallet(ctx, req.AssetID)
+	})
 }
 
 // CloseDcrdexWalletHandler locks a wallet.
 func CloseDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	req, err := dexWalletActionBody(r)
-	if err != nil {
-		http.Error(w, "assetID is required", http.StatusBadRequest)
-		return
-	}
-	assetID := req.AssetID
-	client, ok := dexUnlockedClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := client.CloseWallet(ctx, assetID); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexWalletExec(w, r, func(ctx context.Context, client *bisonw.Client, req dexWalletAction) error {
+		return client.CloseWallet(ctx, req.AssetID)
+	})
 }
 
 // ToggleDcrdexWalletHandler enables or disables a wallet.
@@ -2551,23 +2375,14 @@ func ToggleDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 // only in the bisonw call.
 func dexWalletExec(w http.ResponseWriter, r *http.Request,
 	act func(ctx context.Context, client *bisonw.Client, req dexWalletAction) error) {
-	w.Header().Set("Content-Type", "application/json")
 	req, err := dexWalletActionBody(r)
 	if err != nil {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexUnlockedClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := act(ctx, client, req); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexDo(w, r, dexUnlockedClient, 30*time.Second, func(ctx context.Context, client *bisonw.Client) error {
+		return act(ctx, client, req)
+	})
 }
 
 // RescanDcrdexWalletHandler triggers a wallet rescan.
@@ -2579,41 +2394,27 @@ func RescanDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 
 // GetDcrdexWalletPeersHandler returns a wallet's peers (raw). Query: assetID.
 func GetDcrdexWalletPeersHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	assetID, err := strconv.ParseUint(r.URL.Query().Get("assetID"), 10, 32)
 	if err != nil {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	dexProxyJSON(w, func() (json.RawMessage, error) { return client.WalletPeers(ctx, uint32(assetID)) })
+	dexCall(w, r, dexClient, 15*time.Second, func(ctx context.Context, client *bisonw.Client) (any, error) {
+		return client.WalletPeers(ctx, uint32(assetID))
+	})
 }
 
 // dexWalletPeerExec is the shared body of the peer add/remove pair.
 func dexWalletPeerExec(w http.ResponseWriter, r *http.Request,
 	act func(ctx context.Context, client *bisonw.Client, assetID uint32, addr string) error) {
-	w.Header().Set("Content-Type", "application/json")
 	req, err := dexWalletActionBody(r)
 	if err != nil || req.Address == "" {
 		http.Error(w, "assetID and address are required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexUnlockedClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := act(ctx, client, req.AssetID, req.Address); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexDo(w, r, dexUnlockedClient, 30*time.Second, func(ctx context.Context, client *bisonw.Client) error {
+		return act(ctx, client, req.AssetID, req.Address)
+	})
 }
 
 // AddDcrdexWalletPeerHandler adds a persistent peer to a wallet.
@@ -2634,18 +2435,13 @@ func RemoveDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
 // (raw: type, topic, subject, details, severity, stamp, acked, id) for the
 // notifications panel. Defaults to 50.
 func GetDcrdexNotificationsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	n := 50
 	if v, err := strconv.Atoi(r.URL.Query().Get("n")); err == nil && v > 0 {
 		n = v
 	}
-	client, ok := dexClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	dexProxyJSON(w, func() (json.RawMessage, error) { return client.Notifications(ctx, n) })
+	dexCall(w, r, dexClient, 15*time.Second, func(ctx context.Context, client *bisonw.Client) (any, error) {
+		return client.Notifications(ctx, n)
+	})
 }
 
 // dexRateCache caches Kraken USD rates across requests.
@@ -2690,7 +2486,6 @@ func GetDcrdexRatesHandler(w http.ResponseWriter, r *http.Request) {
 // app password must be re-entered in the request body (not taken from the
 // session) for this sensitive action. The seed is never persisted.
 func ExportDcrdexSeedHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		AppPass string `json:"appPass"`
 	}
@@ -2698,18 +2493,13 @@ func ExportDcrdexSeedHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appPass is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	seed, err := client.AppSeed(ctx, req.AppPass)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"seed": seed})
+	dexCall(w, r, dexClient, 15*time.Second, func(ctx context.Context, client *bisonw.Client) (any, error) {
+		seed, err := client.AppSeed(ctx, req.AppPass)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"seed": seed}, nil
+	})
 }
 
 // MarkDcrdexSeedBackedUpHandler records that the user has backed up the app seed,
@@ -2730,7 +2520,6 @@ func MarkDcrdexSeedBackedUpHandler(w http.ResponseWriter, r *http.Request) {
 // fidelity bond. A successful discover records the account locally, so the UI
 // can then treat the account as registered and skip bond posting.
 func DiscoverDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		Host string `json:"host"`
 	}
@@ -2738,17 +2527,12 @@ func DiscoverDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
 	// bisonw's webserver cuts responses at its 2min write timeout.
-	ctx, cancel := context.WithTimeout(r.Context(), 110*time.Second)
-	defer cancel()
-	paid, err := client.DiscoverAccount(ctx, req.Host, "")
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"paid": paid})
+	dexCall(w, r, dexWebSession, 110*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		paid, err := client.DiscoverAccount(ctx, req.Host, "")
+		if err != nil {
+			return nil, err
+		}
+		return map[string]bool{"paid": paid}, nil
+	})
 }

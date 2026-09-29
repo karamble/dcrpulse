@@ -48,8 +48,7 @@ func GetThemesHandler(w http.ResponseWriter, r *http.Request) {
 // frontend. The body size is bounded by the global JSON-body limit.
 func SaveThemesHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.ThemeStore
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Schema != themeSchemaVersion {

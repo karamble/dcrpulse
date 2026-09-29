@@ -48,6 +48,16 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 
+// decodeRequest is decodeBody for the routes that answer every malformed body
+// with the same fixed message.
+func decodeRequest(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
 // msgWalletUnavailable is the single wording for "the wallet is not wired up
 // yet", which the routes used to phrase four different ways for one condition.
 const msgWalletUnavailable = "wallet is not available yet"

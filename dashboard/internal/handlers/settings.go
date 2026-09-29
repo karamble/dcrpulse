@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -71,8 +70,7 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 // files are preserved by the WalletCfg/GlobalCfg layers.
 func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.SettingsEnvelope
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 
@@ -172,8 +170,7 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 // ChangePassphraseHandler rotates the wallet's private passphrase.
 func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.ChangePassphraseRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.NewPassphrase == "" {
@@ -295,8 +292,7 @@ func GetLogsHandler(w http.ResponseWriter, r *http.Request) {
 // addresses under the requested gap limit. Long-running.
 func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.DiscoverUsageRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.GapLimit == 0 {

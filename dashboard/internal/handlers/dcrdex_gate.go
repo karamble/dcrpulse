@@ -5,7 +5,10 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
+	"time"
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/pkg/bisonw"
@@ -48,4 +51,38 @@ func dexWebSession(w http.ResponseWriter) (*bisonw.WebClient, bool) {
 		return nil, false
 	}
 	return web, true
+}
+
+// dexCall gates the request, runs call under timeout and writes its result: a
+// json.RawMessage from bisonw byte for byte, anything else as JSON.
+func dexCall[C any](w http.ResponseWriter, r *http.Request, gate func(http.ResponseWriter) (C, bool),
+	timeout time.Duration, call func(ctx context.Context, c C) (any, error)) {
+	c, ok := gate(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+	v, err := call(ctx, c)
+	if err != nil {
+		dexWriteErr(w, err)
+		return
+	}
+	if raw, isRaw := v.(json.RawMessage); isRaw {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+		return
+	}
+	writeJSON(w, v)
+}
+
+// dexDo is dexCall for an action whose success is {"ok": true}.
+func dexDo[C any](w http.ResponseWriter, r *http.Request, gate func(http.ResponseWriter) (C, bool),
+	timeout time.Duration, act func(ctx context.Context, c C) error) {
+	dexCall(w, r, gate, timeout, func(ctx context.Context, c C) (any, error) {
+		if err := act(ctx, c); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
+	})
 }

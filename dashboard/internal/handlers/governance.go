@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -59,8 +58,7 @@ func GetAgendaVotesHandler(w http.ResponseWriter, r *http.Request) {
 // SetAgendaChoiceHandler updates one agenda's vote preference.
 func SetAgendaChoiceHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.SetAgendaChoiceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.AgendaID == "" || req.ChoiceID == "" {
@@ -99,8 +97,7 @@ func GetTreasuryKeyPoliciesHandler(w http.ResponseWriter, r *http.Request) {
 // SetTreasuryKeyPolicyHandler updates one PI-key policy.
 func SetTreasuryKeyPolicyHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.SetTreasuryKeyPolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Key == "" {
@@ -148,8 +145,7 @@ func GetTSpendPoliciesHandler(w http.ResponseWriter, r *http.Request) {
 // SetTSpendPolicyHandler updates one TSpend's policy.
 func SetTSpendPolicyHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.SetTSpendPolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Hash == "" {
@@ -371,8 +367,7 @@ func PrepareProposalVoteHandler(w http.ResponseWriter, r *http.Request) {
 // CastPoliteiaVoteHandler runs the sign + ballot-cast flow.
 func CastPoliteiaVoteHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.CastPoliteiaVoteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Token == "" || req.VoteOption == "" {

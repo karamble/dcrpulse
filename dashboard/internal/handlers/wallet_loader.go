@@ -33,9 +33,8 @@ func init() {
 // SeedWordsHandler returns the PGP wordlist used for seed mnemonics, sourced
 // from dcrwallet's pgpwordlist package (upstream source of truth).
 func SeedWordsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	json.NewEncoder(w).Encode(seedWordList)
+	writeJSON(w, seedWordList)
 }
 
 // WalletExistsHandler checks if a wallet database exists
@@ -94,8 +93,7 @@ func GenerateSeedHandler(w http.ResponseWriter, r *http.Request) {
 // SeedService.DecodeSeed gRPC and returns the canonical hex on success.
 func DecodeSeedHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.DecodeSeedRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.UserInput == "" {
@@ -117,8 +115,7 @@ func DecodeSeedHandler(w http.ResponseWriter, r *http.Request) {
 // CreateWalletHandler creates a new wallet
 func CreateWalletHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.CreateWalletRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 
@@ -141,13 +138,7 @@ func CreateWalletHandler(w http.ResponseWriter, r *http.Request) {
 	err := services.CreateNewWallet(ctx, req.PublicPassphrase, privatePass, req.SeedHex, req.DiscoverAccounts)
 	if err != nil {
 		wlltLog.Errorf("Error creating wallet: %v", err)
-		resp := types.CreateWalletResponse{
-			Success: false,
-			Message: err.Error(),
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(resp)
+		writeJSONStatus(w, http.StatusInternalServerError, types.CreateWalletResponse{Success: false, Message: err.Error()})
 		return
 	}
 
@@ -163,8 +154,7 @@ func CreateWalletHandler(w http.ResponseWriter, r *http.Request) {
 // OpenWalletHandler opens an existing wallet
 func OpenWalletHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.OpenWalletRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 
@@ -175,13 +165,7 @@ func OpenWalletHandler(w http.ResponseWriter, r *http.Request) {
 	err := services.OpenWallet(ctx, req.PublicPassphrase)
 	if err != nil {
 		wlltLog.Errorf("Error opening wallet: %v", err)
-		resp := types.OpenWalletResponse{
-			Success: false,
-			Message: err.Error(),
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(resp)
+		writeJSONStatus(w, http.StatusUnauthorized, types.OpenWalletResponse{Success: false, Message: err.Error()})
 		return
 	}
 

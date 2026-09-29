@@ -5,7 +5,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
@@ -52,8 +51,7 @@ func AuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if !auth.Enabled() {
@@ -86,8 +84,7 @@ func AuthSetupHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if auth.Configured() {
@@ -135,8 +132,7 @@ func AuthChangeHandler(w http.ResponseWriter, r *http.Request) {
 		Current string `json:"current"`
 		New     string `json:"new"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if err := auth.Change(req.Current, req.New); err != nil {
@@ -158,8 +154,7 @@ func AuthDisableHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Current string `json:"current"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if err := auth.Disable(req.Current); err != nil {

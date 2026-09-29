@@ -77,8 +77,7 @@ func MsigInviteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req types.MsigInviteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if len(req.Passphrase) > 1024 {
@@ -301,8 +300,7 @@ func MsigImportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req types.MsigImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if len(req.Body) > 600_000 {
@@ -368,8 +366,7 @@ func MsigProposeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req types.MsigProposeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if len(req.Passphrase) > 1024 {

@@ -41,8 +41,7 @@ func LightningSetupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req types.LightningSetupRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Passphrase == "" {
@@ -110,8 +109,7 @@ func LightningSetupHandler(w http.ResponseWriter, r *http.Request) {
 // dcrlnd wallet is already initialised.
 func LightningUnlockHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.LightningUnlockRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Passphrase == "" {
@@ -222,8 +220,7 @@ func LightningChannelsHandler(w http.ResponseWriter, r *http.Request) {
 // LightningOpenChannelHandler — ConnectPeer + OpenChannelSync.
 func LightningOpenChannelHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.OpenChannelRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.PeerURI == "" {
@@ -252,8 +249,7 @@ func LightningOpenChannelHandler(w http.ResponseWriter, r *http.Request) {
 // closePending is received.
 func LightningCloseChannelHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.CloseChannelRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.ChannelPoint == "" {
@@ -287,8 +283,7 @@ func LightningAutopilotStatusHandler(w http.ResponseWriter, r *http.Request) {
 // LightningAutopilotSetHandler — toggle autopilot.
 func LightningAutopilotSetHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.AutopilotStatus
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -449,8 +444,7 @@ func LightningDecodePayReqHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PayReq string `json:"payReq"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.PayReq) == "" {
@@ -556,8 +550,7 @@ func LightningPaymentsHandler(w http.ResponseWriter, r *http.Request) {
 // returns the canonical record.
 func LightningAddInvoiceHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.LightningAddInvoiceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.ValueAtoms < 0 {
@@ -639,8 +632,7 @@ func LightningInvoiceEventsHandler(w http.ResponseWriter, r *http.Request) {
 // LightningCancelInvoiceHandler cancels an OPEN invoice.
 func LightningCancelInvoiceHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.LightningCancelInvoiceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.PaymentHash) == "" {
@@ -675,8 +667,7 @@ func LightningBackupExportHandler(w http.ResponseWriter, r *http.Request) {
 // LightningBackupVerifyHandler validates a user-uploaded backup blob.
 func LightningBackupVerifyHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.LightningVerifyBackupRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.BackupBase64) == "" {
@@ -699,8 +690,7 @@ func LightningWatchtowersHandler(w http.ResponseWriter, r *http.Request) {
 // LightningWatchtowerAddHandler registers a new watchtower.
 func LightningWatchtowerAddHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.LightningAddTowerRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.PubKeyHex) == "" || strings.TrimSpace(req.Address) == "" {
@@ -719,8 +709,7 @@ func LightningWatchtowerAddHandler(w http.ResponseWriter, r *http.Request) {
 // LightningWatchtowerRemoveHandler deregisters a watchtower.
 func LightningWatchtowerRemoveHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.LightningRemoveTowerRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.PubKeyHex) == "" {
@@ -756,8 +745,7 @@ func LightningGraphNodeHandler(w http.ResponseWriter, r *http.Request) {
 // LightningGraphRoutesHandler queries candidate payment routes.
 func LightningGraphRoutesHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.LightningQueryRoutesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.PubKey) == "" || req.AmtAtoms <= 0 {
@@ -793,8 +781,7 @@ func LightningLiquidityDefaultsHandler(w http.ResponseWriter, r *http.Request) {
 // for a channel size without paying anything.
 func LightningLiquidityEstimateHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.RequestLiquidityEstimateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.ChanSizeAtoms < 1000 {
@@ -817,8 +804,7 @@ func LightningLiquidityEstimateHandler(w http.ResponseWriter, r *http.Request) {
 // as well as the channel open.
 func LightningLiquidityRequestHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.RequestLiquidityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.ChanSizeAtoms < 1000 {
@@ -855,8 +841,7 @@ func LightningLiquidityConfirmHandler(w http.ResponseWriter, r *http.Request) {
 		ID      string `json:"id"`
 		Approve bool   `json:"approve"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if err := services.ResolveLiquidityConfirm(req.ID, req.Approve); err != nil {

@@ -5,7 +5,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -60,8 +59,7 @@ func GetAlertsSettingsHandler(w http.ResponseWriter, r *http.Request) {
 // category's active conditions.
 func SaveAlertsSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	var req alerts.SettingsData
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if err := alerts.UpdateSettings(req); err != nil {

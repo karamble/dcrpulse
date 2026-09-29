@@ -30,22 +30,16 @@ import (
 
 // GetDcrdexMMStatusHandler returns the market-making status (bots + CEX state).
 func GetDcrdexMMStatusHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	status, err := client.MMStatus(ctx)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	if len(status) == 0 {
-		status = json.RawMessage("null")
-	}
-	w.Write(status)
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		status, err := client.MMStatus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(status) == 0 {
+			status = json.RawMessage("null")
+		}
+		return status, nil
+	})
 }
 
 // GetDcrdexMMMarketReportHandler returns the market report (oracle prices and
@@ -53,7 +47,6 @@ func GetDcrdexMMStatusHandler(w http.ResponseWriter, r *http.Request) {
 // The bot configuration UI uses it for the placements chart, the oracle table,
 // and lots-to-USD conversion.
 func GetDcrdexMMMarketReportHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	q := r.URL.Query()
 	host := q.Get("host")
 	baseID, err1 := strconv.ParseUint(q.Get("baseID"), 10, 32)
@@ -62,21 +55,16 @@ func GetDcrdexMMMarketReportHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host, baseID and quoteID are required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	report, err := client.MarketReport(ctx, host, uint32(baseID), uint32(quoteID))
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	if len(report) == 0 {
-		report = json.RawMessage("null")
-	}
-	w.Write(report)
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		report, err := client.MarketReport(ctx, host, uint32(baseID), uint32(quoteID))
+		if err != nil {
+			return nil, err
+		}
+		if len(report) == 0 {
+			report = json.RawMessage("null")
+		}
+		return report, nil
+	})
 }
 
 // GetDcrdexMMRunLogsHandler returns a market-maker run's event log (the bot's
@@ -84,7 +72,6 @@ func GetDcrdexMMMarketReportHandler(w http.ResponseWriter, r *http.Request) {
 // identified by host/baseID/quoteID/startTime. n caps the events returned; the
 // optional refID pages older events (the oldest event id already held).
 func GetDcrdexMMRunLogsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	q := r.URL.Query()
 	host := q.Get("host")
 	baseID, err1 := strconv.ParseUint(q.Get("baseID"), 10, 32)
@@ -104,65 +91,45 @@ func GetDcrdexMMRunLogsHandler(w http.ResponseWriter, r *http.Request) {
 			refID = &v
 		}
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	logs, err := client.RunLogs(ctx, host, uint32(baseID), uint32(quoteID), startTime, n, refID)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	if len(logs) == 0 {
-		logs = json.RawMessage("null")
-	}
-	w.Write(logs)
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		logs, err := client.RunLogs(ctx, host, uint32(baseID), uint32(quoteID), startTime, n, refID)
+		if err != nil {
+			return nil, err
+		}
+		if len(logs) == 0 {
+			logs = json.RawMessage("null")
+		}
+		return logs, nil
+	})
 }
 
 // GetDcrdexMMArchivedRunsHandler returns the market-maker run history: past runs
 // (start time, market, profit), newest first, for the run-history view.
 func GetDcrdexMMArchivedRunsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	runs, err := client.ArchivedRuns(ctx)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	if len(runs) == 0 {
-		runs = json.RawMessage("[]")
-	}
-	w.Write(runs)
+	dexCall(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		runs, err := client.ArchivedRuns(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(runs) == 0 {
+			runs = json.RawMessage("[]")
+		}
+		return runs, nil
+	})
 }
 
 // mmConfigUpdate posts a raw config body; the limit differs per member
 // because a bot config carries markets while CEX credentials are small.
 func mmConfigUpdate(w http.ResponseWriter, r *http.Request, limit int64,
 	act func(ctx context.Context, client *bisonw.WebClient, body []byte) error) {
-	w.Header().Set("Content-Type", "application/json")
 	body, err := io.ReadAll(io.LimitReader(r.Body, limit))
 	if err != nil || len(body) == 0 {
 		http.Error(w, "config is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := act(ctx, client, body); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexDo(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) error {
+		return act(ctx, client, body)
+	})
 }
 
 // UpdateDcrdexMMBotConfigHandler persists (and validates) a bot config. The
@@ -178,7 +145,6 @@ func UpdateDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
 // only in the webclient call.
 func mmMarketAction(w http.ResponseWriter, r *http.Request,
 	act func(ctx context.Context, client *bisonw.WebClient, host string, baseID, quoteID uint32) error) {
-	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		Host    string `json:"host"`
 		BaseID  uint32 `json:"baseID"`
@@ -188,17 +154,9 @@ func mmMarketAction(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := act(ctx, client, req.Host, req.BaseID, req.QuoteID); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexDo(w, r, dexWebSession, 30*time.Second, func(ctx context.Context, client *bisonw.WebClient) error {
+		return act(ctx, client, req.Host, req.BaseID, req.QuoteID)
+	})
 }
 
 // RemoveDcrdexMMBotConfigHandler deletes a stored bot config.
@@ -220,23 +178,14 @@ func UpdateDcrdexMMCexConfigHandler(w http.ResponseWriter, r *http.Request) {
 // mm.StartConfig (MarketWithHost plus optional alloc/autoRebalance). This spends
 // real funds; the frontend gates it behind an explicit confirmation.
 func StartDcrdexMMBotHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil || len(body) == 0 {
 		http.Error(w, "start config is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexWebSession(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	if err := client.StartBot(ctx, body); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexDo(w, r, dexWebSession, 60*time.Second, func(ctx context.Context, client *bisonw.WebClient) error {
+		return client.StartBot(ctx, body)
+	})
 }
 
 // StopDcrdexMMBotHandler stops a running bot on the given market.
@@ -400,7 +349,6 @@ func UpdateDcrdexMMRunningBotCfgHandler(w http.ResponseWriter, r *http.Request) 
 // allocation and the wallet, leaving its config alone. This spends real funds;
 // the frontend gates it behind an explicit confirmation.
 func UpdateDcrdexMMRunningBotInventoryHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	req, ok := decodeRunningBotUpdate(w, r)
 	if !ok {
 		return
@@ -409,16 +357,8 @@ func UpdateDcrdexMMRunningBotInventoryHandler(w http.ResponseWriter, r *http.Req
 		http.Error(w, "at least one balance change is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexUnlockedClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	if err := client.UpdateRunningBotInventory(ctx, req.Host, req.BaseID, req.QuoteID,
-		req.DexDiffs, req.CexDiffs); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexDo(w, r, dexUnlockedClient, 60*time.Second, func(ctx context.Context, client *bisonw.Client) error {
+		return client.UpdateRunningBotInventory(ctx, req.Host, req.BaseID, req.QuoteID,
+			req.DexDiffs, req.CexDiffs)
+	})
 }

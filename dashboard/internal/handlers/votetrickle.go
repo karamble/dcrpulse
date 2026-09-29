@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -27,8 +26,7 @@ func StartVoteTrickleHandler(w http.ResponseWriter, r *http.Request) {
 		Bunches         int    `json:"bunches"`
 		Passphrase      string `json:"passphrase"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Token == "" || req.VoteOption == "" {

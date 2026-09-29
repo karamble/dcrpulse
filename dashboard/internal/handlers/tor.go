@@ -5,7 +5,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"dcrpulse/internal/services"
@@ -21,8 +20,7 @@ func GetTorHandler(w http.ResponseWriter, r *http.Request) {
 // relaunch their daemons with or without the proxy flags.
 func SetTorHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.TorSettings
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	out, err := services.WriteTorSettings(req)

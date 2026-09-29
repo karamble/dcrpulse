@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -113,8 +112,7 @@ func SetMCPEnabledHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	// The agent surface can move funds, so it must not run on an install whose
@@ -142,8 +140,7 @@ func CreateMCPTokenHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	name := strings.TrimSpace(req.Name)
@@ -189,8 +186,7 @@ func SetMCPAgentDomainsHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Domains []string `json:"domains"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	known := map[string]bool{}
@@ -224,8 +220,7 @@ func SetMCPAgentAllowedIPsHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IPs []string `json:"ips"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	ips, err := mcp.ParseAllowedIPs(req.IPs)
@@ -263,8 +258,7 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 		Passphrase  string   `json:"passphrase"`
 		WriteScopes []string `json:"writeScopes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	pass := []byte(req.Passphrase)
@@ -397,8 +391,7 @@ func SetMCPNotifyHandler(w http.ResponseWriter, r *http.Request) {
 		Enabled bool   `json:"enabled"`
 		Contact string `json:"contact"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	contact := strings.TrimSpace(req.Contact)
@@ -418,8 +411,7 @@ func SetMCPLoggingHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if err := mcp.SetLogging(req.Enabled); err != nil {

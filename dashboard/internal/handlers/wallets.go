@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -63,8 +62,7 @@ func SelectWalletHandler(w http.ResponseWriter, r *http.Request) {
 		Name             string `json:"name"`
 		PublicPassphrase string `json:"publicPassphrase"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 
@@ -104,8 +102,7 @@ func CloseWalletHandler(w http.ResponseWriter, r *http.Request) {
 // CreateNamedWalletHandler creates a new named wallet and makes it active.
 func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.CreateWalletRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 
@@ -135,13 +132,10 @@ func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := services.CreateNamedWatchOnlyWallet(ctx, name, req.PublicPassphrase, strings.TrimSpace(req.ExtendedPubKey), req.AccountIndex); err != nil {
 			wlltLog.Errorf("Error creating watch-only wallet %q: %v", name, err)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(types.CreateWalletResponse{Success: false, Message: err.Error()})
+			writeJSONStatus(w, http.StatusInternalServerError, types.CreateWalletResponse{Success: false, Message: err.Error()})
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(types.CreateWalletResponse{Success: true, Message: "Watch-only wallet created successfully"})
+		writeJSON(w, types.CreateWalletResponse{Success: true, Message: "Watch-only wallet created successfully"})
 		return
 	}
 
@@ -160,9 +154,7 @@ func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := services.CreateNamedWallet(ctx, name, req.PublicPassphrase, privatePass, req.SeedHex, req.DiscoverAccounts); err != nil {
 		wlltLog.Errorf("Error creating wallet %q: %v", name, err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(types.CreateWalletResponse{Success: false, Message: err.Error()})
+		writeJSONStatus(w, http.StatusInternalServerError, types.CreateWalletResponse{Success: false, Message: err.Error()})
 		return
 	}
 
@@ -175,8 +167,7 @@ func RenameWalletHandler(w http.ResponseWriter, r *http.Request) {
 		From string `json:"from"`
 		To   string `json:"to"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 
@@ -197,8 +188,7 @@ func DeleteWalletHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 

@@ -165,8 +165,7 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req types.ImportXpubRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 
@@ -176,8 +175,7 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 			Success: false,
 			Message: "Invalid xpub format. Decred mainnet xpubs must start with 'dpub'",
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		writeJSON(w, response)
 		return
 	}
 
@@ -577,8 +575,7 @@ func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
 		AccountName string `json:"accountName"`
 		Passphrase  string `json:"passphrase"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	name := strings.TrimSpace(req.AccountName)
@@ -630,8 +627,7 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 		AccountNumber uint32 `json:"accountNumber"`
 		NewName       string `json:"newName"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	name := strings.TrimSpace(req.NewName)
@@ -699,8 +695,7 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte("{}"))
+	writeJSON(w, struct{}{})
 }
 
 // ClaimableAccountNamesHandler lists the reserved account names a rename may
@@ -772,8 +767,7 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Passphrase string `json:"passphrase"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Passphrase == "" {
@@ -833,8 +827,7 @@ func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Passphrase string `json:"passphrase"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.Passphrase == "" {
@@ -866,28 +859,24 @@ func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte("{}"))
+	writeJSON(w, struct{}{})
 }
 
 func PrivacyStopHandler(w http.ResponseWriter, r *http.Request) {
 	services.StopMixer()
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte("{}"))
+	writeJSON(w, struct{}{})
 }
 
 // MixerDebugHandler reads or toggles MIXC + TKBY debug logging on dcrwallet.
 func MixerDebugHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{"enabled": services.MixerDebugEnabled()})
+		writeJSON(w, map[string]bool{"enabled": services.MixerDebugEnabled()})
 		return
 	}
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -1019,8 +1008,7 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	// for watch-only wallets to export for offline signing. Signing stays gated in
 	// SignPublishTransactionHandler (and dcrwallet rejects signing without keys).
 	var req types.ConstructTransactionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 
@@ -1056,8 +1044,7 @@ func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req types.SignPublishTransactionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeRequest(w, r, &req) {
 		return
 	}
 	if req.UnsignedTxHex == "" || req.Passphrase == "" {
