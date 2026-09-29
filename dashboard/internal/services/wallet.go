@@ -1811,7 +1811,8 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 // PartialPassphraseChangeError reports that the wallet passphrase was changed
 // but the listed accounts kept the previous one. The wallet-wide change cannot
 // be rolled back, so this is a state the user has to know about: those accounts
-// cannot be unlocked for spending with either passphrase until they are updated.
+// still unlock with the previous passphrase until they are updated, and changing
+// the passphrase back to the previous one makes every account match again.
 type PartialPassphraseChangeError struct {
 	Accounts []uint32
 	Err      error
@@ -1822,8 +1823,8 @@ func (e *PartialPassphraseChangeError) Error() string {
 	for i, a := range e.Accounts {
 		nums[i] = strconv.FormatUint(uint64(a), 10)
 	}
-	return fmt.Sprintf("the wallet passphrase was changed, but account(s) %s still use the previous one "+
-		"and cannot be spent from until updated: %v", strings.Join(nums, ", "), e.Err)
+	return fmt.Sprintf("the wallet passphrase was changed, but account(s) %s still unlock with the previous one; "+
+		"changing the passphrase back to the previous one makes every account match again: %v", strings.Join(nums, ", "), e.Err)
 }
 
 func (e *PartialPassphraseChangeError) Unwrap() error { return e.Err }
@@ -1832,9 +1833,10 @@ func (e *PartialPassphraseChangeError) Unwrap() error { return e.Err }
 // passphrase and every account's per-account passphrase. Mirrors
 // Decrediton's app/actions/ControlActions.js:187-232: wallet-wide
 // rotation first, then a parallel fan-out of SetAccountPassphrase over
-// every account with accountNumber < 2^31 - 1, always passing the old
-// passphrase as AccountPassphrase. Every account is expected to be
-// per-account-encrypted already (set at creation by CreateAccount).
+// the accounts below 2^31 - 1, passing the old passphrase as
+// AccountPassphrase. An account without its own passphrase is left out:
+// the wallet passphrase just changed already covers it, and dcrwallet
+// would refuse the update without a wallet-wide unlock.
 // The caller is expected to zero both byte slices after this returns.
 func ChangePrivatePassphrase(ctx context.Context, oldPass, newPass []byte) error {
 	if rpc.WalletGrpcClient == nil {
@@ -1863,7 +1865,7 @@ func ChangePrivatePassphrase(ctx context.Context, oldPass, newPass []byte) error
 	// Skip imported (2^31 - 1) and xpub-imported (>= 2^31) accounts.
 	targets := make([]uint32, 0, len(acctsResp.GetAccounts()))
 	for _, a := range acctsResp.GetAccounts() {
-		if a.GetAccountNumber() < 2147483647 {
+		if a.GetAccountNumber() < 2147483647 && a.GetAccountEncrypted() {
 			targets = append(targets, a.GetAccountNumber())
 		}
 	}

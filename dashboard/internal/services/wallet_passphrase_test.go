@@ -31,6 +31,8 @@ type fakeWalletClient struct {
 
 	accounts []uint32
 	failOn   map[uint32]error
+	// plain lists accounts without their own passphrase; the rest are encrypted.
+	plain map[uint32]bool
 
 	mu     sync.Mutex
 	called []uint32
@@ -43,7 +45,7 @@ func (f *fakeWalletClient) ChangePassphrase(ctx context.Context, in *pb.ChangePa
 func (f *fakeWalletClient) Accounts(ctx context.Context, in *pb.AccountsRequest, _ ...grpc.CallOption) (*pb.AccountsResponse, error) {
 	out := &pb.AccountsResponse{}
 	for _, n := range f.accounts {
-		out.Accounts = append(out.Accounts, &pb.AccountsResponse_Account{AccountNumber: n})
+		out.Accounts = append(out.Accounts, &pb.AccountsResponse_Account{AccountNumber: n, AccountEncrypted: !f.plain[n]})
 	}
 	return out, nil
 }
@@ -132,5 +134,25 @@ func TestChangePassphraseSkipsImportedAccounts(t *testing.T) {
 	}
 	if len(f.called) != 2 {
 		t.Errorf("updated %v, want only accounts 0 and 1", f.called)
+	}
+}
+
+// An account without its own passphrase is covered by the wallet passphrase,
+// which has just changed; dcrwallet would refuse to update it without a
+// wallet-wide unlock, so asking would turn every such wallet into a partial
+// change.
+func TestChangePassphraseLeavesUnencryptedAccountsToTheWalletPassphrase(t *testing.T) {
+	f := &fakeWalletClient{
+		accounts: []uint32{0, 1, 2},
+		plain:    map[uint32]bool{1: true},
+		failOn:   map[uint32]error{1: errors.New("wallet must be unlocked to set a unique account passphrase")},
+	}
+	withFakeWallet(t, f)
+
+	if err := ChangePrivatePassphrase(context.Background(), []byte("old"), []byte("new")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(f.called) != 2 {
+		t.Errorf("updated %v, want only the encrypted accounts 0 and 2", f.called)
 	}
 }

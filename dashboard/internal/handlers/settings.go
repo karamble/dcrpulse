@@ -167,6 +167,13 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, result)
 }
 
+// lnSetUp and armMacaroonReset are the Lightning follow-up of a passphrase
+// change, as variables so tests can observe it without a dcrlnd data dir.
+var (
+	lnSetUp          = services.LightningSetUp
+	armMacaroonReset = services.RequestLnMacaroonReset
+)
+
 // ChangePassphraseHandler rotates the wallet's private passphrase.
 func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.ChangePassphraseRequest
@@ -210,22 +217,22 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 		defer dexPassphraseLogout()
 	}
 
-	if err := services.ChangePrivatePassphrase(ctx, oldPass, newPass); err != nil {
-		msg := err.Error()
-		var partial *services.PartialPassphraseChangeError
-		switch {
-		// Must precede the passphrase case: this message contains the word, and
-		// reporting it as a wrong passphrase would send the user to retry with
-		// the old one when the change has in fact already happened.
-		case errors.As(err, &partial):
-			settLog.Errorf("ChangePrivatePassphrase partial: %v", err)
-			http.Error(w, msg, http.StatusInternalServerError)
-		case isWrongPassphrase(err):
-			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
-		default:
-			settLog.Errorf("ChangePrivatePassphrase failed: %v", err)
-			http.Error(w, msg, http.StatusInternalServerError)
-		}
+	err = services.ChangePrivatePassphrase(ctx, oldPass, newPass)
+	var partial *services.PartialPassphraseChangeError
+	switch {
+	case err == nil:
+	// Must precede the passphrase case: this message contains the word, and
+	// reporting it as a wrong passphrase would send the user to retry with
+	// the old one when the change has in fact already happened. The wallet
+	// passphrase did change, so the steps below still run.
+	case errors.As(err, &partial):
+		settLog.Errorf("ChangePrivatePassphrase partial: %v", err)
+	case isWrongPassphrase(err):
+		http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		return
+	default:
+		settLog.Errorf("ChangePrivatePassphrase failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -233,8 +240,8 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 	// a stale value. Arm the supervisor's reset before anything else can
 	// fail: the next dcrlnd start drops the store and the next unlock
 	// rebakes it under the new passphrase.
-	if services.LightningSetUp() {
-		if err := services.RequestLnMacaroonReset(); err != nil {
+	if lnSetUp() {
+		if err := armMacaroonReset(); err != nil {
 			settLog.Errorf("ChangePrivatePassphrase: arm macaroon reset: %v", err)
 			http.Error(w, "the wallet passphrase was changed, but the Lightning macaroon reset could not be requested; repeat the change with the new passphrase as both values to retry", http.StatusInternalServerError)
 			return
@@ -248,6 +255,10 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 	if err := syncDexWalletPassphrase(ctx, dexPass); err != nil {
 		settLog.Errorf("ChangePrivatePassphrase: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if partial != nil {
+		http.Error(w, partial.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
