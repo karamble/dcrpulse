@@ -10,7 +10,7 @@ import {
   fetchBisonrelayUserPost,
   getBisonrelayPostBody,
 } from '../../services/bisonrelayApi';
-import { isImageMime, parseEmbeds } from './embedParser';
+import { isImageMime, parseEmbeds, stripEmbedTags } from './embedParser';
 import { apiError } from '../../utils/apiError';
 
 // QuoteEmbedCard renders a quote-by-reference embed
@@ -40,14 +40,6 @@ const firstImageIndex = (markdown: string): { index: number; mime: string } | nu
   }
   return null;
 };
-
-// stripEmbedTags reduces a quoted body to plain text: quote depth is one,
-// so nothing nested is ever resolved or rendered.
-const stripEmbedTags = (s: string): string =>
-  s
-    .replace(/--(embed|download)\[.*?\]--/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 
 // FeedCardQuote shows a quoting post's quoted content on the feed
 // OVERVIEW card. The summary meta only flags that a quote embed exists

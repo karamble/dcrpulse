@@ -1,8 +1,8 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { linkifyChatText } from './chatLinkify';
-import { parseBlocks } from './chatMarkdown';
-import { parseEmbeds, type MessageSegment } from './embedParser';
+import { ATX_RE, FENCE_RE, OL_RE, QUOTE_RE, UL_RE, parseBlocks } from './chatMarkdown';
+import { parseEmbeds, stripEmbedTags, type MessageSegment } from './embedParser';
 
 afterEach(cleanup);
 
@@ -98,5 +98,74 @@ describe('parseEmbeds', () => {
 
   it('stays fast on many unclosed tags', () => {
     fast(() => parseEmbeds('--embed['.repeat(100_000)));
+  });
+});
+
+// The pre-fix block regexes, kept to check the rewrites capture every line
+// without a CR, U+2028 or U+2029 the same way.
+const OLD = {
+  fence: /^\s{0,3}(`{3,}|~{3,})\s*([^\s`]*)\s*$/,
+  atx: /^\s{0,3}(#{1,6})\s+(.*)$/,
+  quote: /^\s{0,3}>\s?(.*)$/,
+  ul: /^(\s*)[-*+]\s+(.*)$/,
+  ol: /^(\s*)\d{1,9}[.)]\s+(.*)$/,
+};
+const NEW = { fence: FENCE_RE, atx: ATX_RE, quote: QUOTE_RE, ul: UL_RE, ol: OL_RE };
+
+describe('parseBlocks', () => {
+  it('reads fences, headings, quotes and lists as the old regexes did', () => {
+    const parts = ['```', '~~~', '`', ' ', '  ', '\t', 'a', 'go', '#', '##', '>', '-', '*', '+', '1.', '2)', 'x y'];
+    let seed = 11;
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+    for (let i = 0; i < 5000; i++) {
+      let line = '';
+      const n = 1 + (next() % 6);
+      for (let j = 0; j < n; j++) line += parts[next() % parts.length];
+      for (const name of Object.keys(OLD) as (keyof typeof OLD)[]) {
+        const was = line.match(OLD[name])?.slice(1) ?? null;
+        const now = line.match(NEW[name])?.slice(1).map((g) => g ?? '') ?? null;
+        expect(now, `${name} ${JSON.stringify(line)}`).toEqual(was);
+      }
+    }
+  });
+
+  it('renders headings, quotes and lists from a CRLF sender', () => {
+    expect(parseBlocks('# Title\r\nbody\r\n')[0]).toMatchObject({ kind: 'heading', level: 1 });
+    expect(parseBlocks('> hi\r\n')[0]).toMatchObject({ kind: 'quote' });
+    expect(parseBlocks('- a\r\n- b\r\n')[0]).toMatchObject({ kind: 'list', ordered: false });
+  });
+
+  it('stays fast on long whitespace runs before a CR or a stray backtick', () => {
+    const run = ' '.repeat(100_000);
+    fast(() => parseBlocks('```' + run + 'a`'));
+    fast(() => parseBlocks('# ' + run + '\ra\rb'));
+    fast(() => parseBlocks('- ' + run + '\ra\rb'));
+    fast(() => parseBlocks('1. ' + run + '\ra\rb'));
+  });
+});
+
+describe('stripEmbedTags', () => {
+  const oldStrip = (s: string) => s.replace(/--(embed|download)\[.*?\]--/g, ' ').replace(/\s+/g, ' ').trim();
+
+  it('reduces bodies exactly as the regex strip did', () => {
+    const parts = ['--embed[', '--download[', ']--', ']', '--', 'a', ' ', '\n', '\r', 'name=x.png', ',', '['];
+    let seed = 5;
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+    for (let i = 0; i < 3000; i++) {
+      let body = '';
+      const n = next() % 12;
+      for (let j = 0; j < n; j++) body += parts[next() % parts.length];
+      expect(stripEmbedTags(body), JSON.stringify(body)).toBe(oldStrip(body));
+    }
+  });
+
+  it('keeps the text around embeds and downloads', () => {
+    const body = 'look  --embed[name=a.png,type=image/png,data=QUJD]--\nhere --download[nick=bob,filename=f.txt,size=3]-- done';
+    expect(stripEmbedTags(body)).toBe('look here done');
+    expect(stripEmbedTags('a--embed[name=b.png]--c')).toBe('a c');
+  });
+
+  it('stays fast on many unclosed tags', () => {
+    fast(() => stripEmbedTags('--embed['.repeat(100_000)));
   });
 });

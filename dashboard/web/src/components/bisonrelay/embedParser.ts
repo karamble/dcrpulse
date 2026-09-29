@@ -79,6 +79,15 @@ export function parseEmbeds(body: string): MessageSegment[] {
   return segments;
 }
 
+// stripEmbedTags reduces a quoted body to plain text: quote depth is one,
+// so nothing nested is ever resolved or rendered.
+export const stripEmbedTags = (s: string): string =>
+  parseEmbeds(s)
+    .map((seg) => (seg.kind === 'text' ? seg.text : ' '))
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 function parseEmbedArgs(raw: string, inner: string): EmbedSegment {
   const out: EmbedSegment = {
     kind: 'embed',

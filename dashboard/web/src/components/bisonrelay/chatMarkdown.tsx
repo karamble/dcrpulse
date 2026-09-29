@@ -25,15 +25,15 @@ export type Block =
   | { kind: 'quote'; blocks: Block[] }
   | { kind: 'list'; ordered: boolean; items: ListItem[] };
 
-const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})\s*([^\s`]*)\s*$/;
-const ATX_RE = /^\s{0,3}(#{1,6})\s+(.*)$/;
+export const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})\s*(?:([^\s`]+)\s*)?$/;
+export const ATX_RE = /^\s{0,3}(#{1,6})\s+([^]*)$/;
 const RULE_RE = /^\s{0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$/;
 // Three or more, unlike CommonMark: a lone "-" in chat is a stray bullet, not
 // a heading underline.
 const SETEXT_RE = /^\s{0,3}(={3,}|-{3,})\s*$/;
-const QUOTE_RE = /^\s{0,3}>\s?(.*)$/;
-const UL_RE = /^(\s*)[-*+]\s+(.*)$/;
-const OL_RE = /^(\s*)\d{1,9}[.)]\s+(.*)$/;
+export const QUOTE_RE = /^\s{0,3}>\s?([^]*)$/;
+export const UL_RE = /^(\s*)[-*+]\s+([^]*)$/;
+export const OL_RE = /^(\s*)\d{1,9}[.)]\s+([^]*)$/;
 const DELIM_CELL_RE = /^:?-+:?$/;
 
 // stripClosingHashes drops an ATX heading's closing "#" run and the whitespace
@@ -154,11 +154,11 @@ export const parseBlocks = (src: string, depth = 0): Block[] => {
       i++;
       for (; i < lines.length; i++) {
         const close = lines[i].match(FENCE_RE);
-        if (close && close[1][0] === marker && close[1].length >= width && close[2] === '') break;
+        if (close && close[1][0] === marker && close[1].length >= width && close[2] === undefined) break;
         body.push(lines[i]);
       }
       if (i < lines.length) i++;
-      blocks.push({ kind: 'code', lang: fence[2], text: body.join('\n') });
+      blocks.push({ kind: 'code', lang: fence[2] ?? '', text: body.join('\n') });
       continue;
     }
 
