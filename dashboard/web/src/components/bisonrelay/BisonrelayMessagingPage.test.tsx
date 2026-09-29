@@ -18,6 +18,7 @@ vi.mock('../../services/bisonrelayApi', async (original) => ({
   getCommunityJoin: vi.fn(async () => null),
   getBisonrelayMessages: vi.fn(),
   getBisonrelayContactGroups: vi.fn(async () => ({ groups: [], contacts: {} })),
+  sendBisonrelayPM: vi.fn(async () => ({})),
 }));
 
 class FakeWS {
@@ -105,4 +106,40 @@ it('badges the thread that was open once the chat tab is left', async () => {
     (FakeWS.last as any).onmessage({ data: JSON.stringify({ type: 'pm', payload: { from: B } }) });
   });
   expect(total).toBe(1);
+});
+
+// FEBR-7: a draft and a staged reply stay with the conversation they were made
+// in, as in bruig, so switching chats cannot send them to someone else.
+it('keeps each chat\'s draft and staged reply to that chat', async () => {
+  vi.mocked(api.getBisonrelayContacts).mockResolvedValue([contact(A, 'alice'), contact(B, 'bob')] as any);
+  vi.mocked(api.getBisonrelayMessages).mockImplementation(async (uid: string) =>
+    uid === A ? history(A, 'ALICE-HELLO', 'alice') : history(B, 'BOB-HELLO', 'bob'),
+  );
+  vi.mocked(api.sendBisonrelayPM).mockClear();
+  render(
+    <BisonrelayLiveProvider>
+      <BisonrelayMessagingPage ownNick="me" />
+    </BisonrelayLiveProvider>,
+  );
+  await act(async () => {});
+  fireEvent.click(await screen.findByText('alice'));
+  await screen.findByText('ALICE-HELLO');
+  fireEvent.change(screen.getByPlaceholderText('Message alice…'), { target: { value: 'private note for alice' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Quote reply' }));
+  expect(screen.getByText('Replying to alice')).toBeTruthy();
+
+  fireEvent.click(screen.getByText('bob'));
+  await screen.findByText('BOB-HELLO');
+  expect((screen.getByPlaceholderText('Message bob…') as HTMLTextAreaElement).value).toBe('');
+  expect(screen.queryByText(/Replying to/)).toBeNull();
+
+  fireEvent.click(screen.getByText('alice'));
+  await screen.findByText('ALICE-HELLO');
+  const aliceDraft = screen.getByPlaceholderText('Message alice…') as HTMLTextAreaElement;
+  expect(aliceDraft.value).toBe('private note for alice');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  });
+  expect(api.sendBisonrelayPM).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(api.sendBisonrelayPM).mock.calls[0][0]).toBe(A);
 });

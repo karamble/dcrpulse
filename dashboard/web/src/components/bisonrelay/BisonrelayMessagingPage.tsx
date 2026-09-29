@@ -216,6 +216,8 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   // must not go through handleAttachPick.
   const offerInputRef = useRef<HTMLInputElement | null>(null);
   const draftInputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Each conversation keeps its own unsent text, as bruig's chat.workingMsg.
+  const draftsRef = useRef(new Map<string, string>());
   const {
     unread,
     clearUnread,
@@ -1298,6 +1300,19 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     setAttachErr(null);
   };
 
+  // As bruig cancels attachments on a chat switch, what was staged for the
+  // previous conversation is dropped; an unsent offer made for it is unshared.
+  const attachmentRef = useRef(attachment);
+  attachmentRef.current = attachment;
+  useEffect(() => {
+    dropOfferShare(attachmentRef.current);
+    setAttachment(null);
+    setAttachErr(null);
+    setAttachNote(null);
+    setStagedReply(null);
+    setQuotedEmbeds([]);
+  }, [conversationKey]);
+
   // Stage a reply to a bubble's message: the composer shows a "Replying to"
   // banner while the textarea stays empty; the quote block is prepended in
   // wire format only at send. Raster-image embeds are re-encoded into small
@@ -1708,8 +1723,10 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               </div>
             ) : (
             <ChatComposer
+              key={conversationKey}
               selectedContact={selectedContact}
               conversationKey={conversationKey}
+              drafts={draftsRef.current}
               sending={sending}
               attachment={attachment}
               transfer={transfer}
@@ -1932,6 +1949,8 @@ function quoteBlock(flat: string, from: string): string {
 interface ChatComposerProps {
   selectedContact: BisonrelayContact | null;
   conversationKey: string;
+  // Unsent text per conversation; the composer restores and updates its entry.
+  drafts: Map<string, string>;
   sending: boolean;
   attachment: StagedAttachment | null;
   transfer: { pct: number; phase: 'upload' | 'relay' } | null;
@@ -1968,6 +1987,7 @@ interface ChatComposerProps {
 const ChatComposer = ({
   selectedContact,
   conversationKey,
+  drafts,
   sending,
   attachment,
   transfer,
@@ -1991,7 +2011,10 @@ const ChatComposer = ({
   onShowTip,
   onSendAudioNote,
 }: ChatComposerProps) => {
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(() => drafts.get(conversationKey) ?? '');
+  useEffect(() => {
+    drafts.set(conversationKey, draft);
+  }, [drafts, conversationKey, draft]);
 
   // Grow the composer to fit its content up to COMPOSER_MAX_PX, then let it
   // scroll. Re-runs when the draft changes (typing, paste, and the reset to ''
