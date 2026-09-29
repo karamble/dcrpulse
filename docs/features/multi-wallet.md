@@ -28,9 +28,9 @@ The **default wallet** (internally `default-wallet`) is special:
 
 - It maps to dcrwallet's original single-wallet appdata path. An installation that existed before multi-wallet support keeps its wallet exactly where it was, with no migration, and that wallet appears in the list as the default.
 - Its appdata root also holds the **shared control and backup directories** used by every wallet.
-- It **cannot be renamed** and **cannot be deleted**. It is the fallback wallet the dashboard resolves to when no explicit selection exists.
+- It **cannot be deleted**. It is the fallback wallet the dashboard resolves to when no explicit selection exists.
 
-Every other wallet you create lives in its own directory under the wallets root and can be renamed or deleted.
+Every other wallet you create lives in its own directory under the wallets root and can be deleted. Wallets cannot be renamed: the Lightning node, Bison Relay identity and DEX profile are filed under the wallet's name, as in Decrediton.
 
 ---
 
@@ -109,25 +109,9 @@ From the picker, choose **Create new wallet** to run the standard setup flow und
 
 ---
 
-## Renaming a Wallet
-
-In the picker, click **Edit**, then the rename (pencil) action on a wallet to give it a new name.
-
-Constraints:
-
-- The **default wallet cannot be renamed**.
-- The **active wallet cannot be renamed** - close it first.
-- The new name must pass the same name rules as creation, and must not already exist.
-
-Renaming moves the wallet's data directory to the new name and renames its dashboard-side config directory to match.
-
-**API**: `POST /api/wallets/rename` with `{ "from": "...", "to": "..." }`. Rate limited.
-
----
-
 ## Deleting a Wallet
 
-In the picker, click **Edit**, then the delete (trash) action. A confirmation dialog warns that the deletion cannot be undone and that the wallet is not backed up, and it requires you to type **DELETE** to confirm before the button becomes usable.
+In the picker, click **Edit**, then the delete (trash) action. A confirmation dialog lists everything that will be removed, warns that the deletion cannot be undone and that nothing is backed up, and requires you to type **DELETE** to confirm before the button becomes usable.
 
 Constraints:
 
@@ -137,6 +121,14 @@ Constraints:
 ### What delete does to your data
 
 Deleting is **irreversible and takes no backup**. The wallet's data directory (`wallet.db` and everything beside it) is removed from disk outright, and the dashboard-side config directory (metadata only) is removed with it. A wallet whose seed you control can be restored from that seed; without the seed the coins are gone.
+
+Everything else filed under the wallet's name goes with it, as Decrediton removes a wallet's folder:
+
+- **Lightning node** (channel database, macaroons). Close its channels first; otherwise the funds in them depend on the channel backup.
+- **Bison Relay identity** (contacts, chats, the identity). It cannot be recovered.
+- **DCRDEX profile** (the DEX app seed, account and bonds). Export the DEX app seed first, or any fidelity bond still locked is lost.
+
+The dashboard removes the Lightning data itself. The Bison Relay and DEX data are removed by the brclientd and dcrdex containers a few seconds later. Creating a wallet with the same name is refused until they are gone.
 
 **API**: `POST /api/wallets/delete` with `{ "name": "..." }`. Rate limited.
 
@@ -182,8 +174,8 @@ Deleting is **irreversible and takes no backup**. The wallet's data directory (`
 
 **Solution**: Create or restore the wallet again, or delete the empty entry.
 
-### Cannot rename or delete a wallet
-**Problem**: The rename/delete actions are unavailable for a wallet.
+### Cannot delete a wallet
+**Problem**: The delete action is unavailable for a wallet.
 
 **Cause**: The wallet is the **default wallet** or is **currently active**.
 

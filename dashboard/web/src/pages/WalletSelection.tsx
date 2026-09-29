@@ -4,11 +4,10 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Wallet, Plus, Eye, ShieldCheck, Pencil, Trash2, Check, X, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Wallet, Plus, Eye, ShieldCheck, Trash2, AlertCircle, ArrowLeft } from 'lucide-react';
 import {
   listWallets,
   selectWallet,
-  renameWallet,
   deleteWallet,
   type WalletInfo,
 } from '../services/api';
@@ -33,10 +32,7 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
   const [passphraseFor, setPassphraseFor] = useState<string | null>(null);
   const [passphrase, setPassphrase] = useState('');
 
-  // Rename / delete UI state.
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<WalletInfo | null>(null);
   // Typed confirmation: the user must type DELETE to permanently purge a wallet.
   const [deleteConfirm, setDeleteConfirm] = useState('');
 
@@ -67,18 +63,6 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
         return;
       }
       setError(apiError(err, 'Failed to open wallet.'));
-    }
-  };
-
-  const handleRename = async (from: string) => {
-    setError(null);
-    try {
-      await renameWallet(from, renameValue.trim());
-      setRenaming(null);
-      setRenameValue('');
-      load();
-    } catch (err: any) {
-      setError(apiError(err, 'Failed to rename wallet.'));
     }
   };
 
@@ -138,41 +122,20 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  {renaming === w.name ? (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        className="flex-1 px-3 py-1 bg-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
-                        placeholder="New name"
-                        autoFocus
-                      />
-                      <button onClick={() => handleRename(w.name)} className="p-1 text-green-500 hover:text-green-400">
-                        <Check className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => setRenaming(null)} className="p-1 text-muted-foreground hover:text-foreground">
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold truncate">{w.name}</span>
-                        {w.active && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary">Active</span>}
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                        <span>{w.network}</span>
-                        {w.isWatchOnly && (
-                          <span className="flex items-center gap-1"><Eye className="h-3 w-3" /> Watch-only</span>
-                        )}
-                        {w.isPrivacy && (
-                          <span className="flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Privacy</span>
-                        )}
-                        {!w.hasDb && <span className="text-warning">No database</span>}
-                      </div>
-                    </>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold truncate">{w.name}</span>
+                    {w.active && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary">Active</span>}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                    <span>{w.network}</span>
+                    {w.isWatchOnly && (
+                      <span className="flex items-center gap-1"><Eye className="h-3 w-3" /> Watch-only</span>
+                    )}
+                    {w.isPrivacy && (
+                      <span className="flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Privacy</span>
+                    )}
+                    {!w.hasDb && <span className="text-warning">No database</span>}
+                  </div>
                 </div>
 
                 {editMode ? (
@@ -180,19 +143,7 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
                     {!w.isDefault && !w.active && (
                       <button
                         onClick={() => {
-                          setRenaming(w.name);
-                          setRenameValue(w.name);
-                        }}
-                        className="p-2 text-muted-foreground hover:text-foreground"
-                        title="Rename"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                    )}
-                    {!w.isDefault && !w.active && (
-                      <button
-                        onClick={() => {
-                          setDeleting(w.name);
+                          setDeleting(w);
                           setDeleteConfirm('');
                         }}
                         className="p-2 text-red-500 hover:text-red-400"
@@ -293,11 +244,22 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
       {deleting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="bg-gradient-card border border-border/50 rounded-xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-lg font-semibold text-red-500">Delete wallet "{deleting}"?</h3>
+            <h3 className="text-lg font-semibold text-red-500">Delete wallet "{deleting.name}"?</h3>
             <p className="text-sm text-muted-foreground">
-              This permanently deletes wallet "{deleting}" and all of its data. This cannot be undone
-              and the wallet is not backed up. Make sure you have its seed phrase before continuing.
+              This permanently deletes the following. It cannot be undone and nothing is backed up.
             </p>
+            <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
+              <li>The wallet and all of its data. Make sure you have its seed phrase.</li>
+              {deleting.hasLightning && (
+                <li>Its Lightning node. Close its channels first, or the funds in them depend on the channel backup.</li>
+              )}
+              {deleting.hasBisonRelay && (
+                <li>Its Bison Relay identity. Its contacts, chats and the identity itself cannot be recovered.</li>
+              )}
+              {deleting.hasDex && (
+                <li>Its DCRDEX profile. Export the DEX app seed first, or any fidelity bond still locked is lost.</li>
+              )}
+            </ul>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">
                 Type DELETE to confirm
@@ -322,7 +284,7 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
                 Cancel
               </button>
               <button
-                onClick={() => handleDelete(deleting)}
+                onClick={() => handleDelete(deleting.name)}
                 disabled={deleteConfirm !== 'DELETE'}
                 className="flex-1 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >

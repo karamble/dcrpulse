@@ -687,15 +687,14 @@ See [Wallet Dashboard](../features/wallet-dashboard.md) and [Wallet Operations](
 
 ## Multi-Wallet
 
-Manage multiple independent wallet stacks (each with its own dcrwallet, dcrlnd, Bison Relay, and DEX state). Select/create/rename/delete relaunch the dcrwallet daemon and are rate limited (1 / 5s each).
+Manage multiple independent wallet stacks (each with its own dcrwallet, dcrlnd, Bison Relay, and DEX state). Select/create/delete relaunch the dcrwallet daemon and are rate limited (1 / 5s each).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/wallets` | List configured wallets and the active one |
 | `POST` | `/api/wallets/select` | Switch the active wallet (relaunches daemons) |
 | `POST` | `/api/wallets/create` | Create a new named wallet |
-| `POST` | `/api/wallets/rename` | Rename a wallet |
-| `POST` | `/api/wallets/delete` | Delete a wallet |
+| `POST` | `/api/wallets/delete` | Delete a wallet and its Lightning, Bison Relay and DEX data |
 
 See [Multi-Wallet](../features/multi-wallet.md).
 
@@ -1105,7 +1104,6 @@ gate is on, the session cookie.
 | `GET` | `/api/wallets` |  |
 | `POST` | `/api/wallets/create` | Rate limit 1 per 5s |
 | `POST` | `/api/wallets/delete` | Rate limit 1 per 5s |
-| `POST` | `/api/wallets/rename` | Rate limit 1 per 5s |
 | `POST` | `/api/wallets/select` | Rate limit 1 per 5s |
 
 ### Shared (multisig) wallets (21 routes)
@@ -1582,7 +1580,7 @@ Most endpoints are not rate limited (the dashboard is single-user). A token-buck
 - `POST /api/auth/login`: 5 / second
 - `POST /api/auth/change` and `POST /api/auth/disable`: 5 / second, shared between the two
 - `POST /api/wallet/open`, `/api/wallet/ln/unlock`, `/api/br/setup`, `/api/dcrdex/init`, `/api/dcrdex/unlock`: 5 / second, shared across all five, because each costs a daemon a key derivation
-- `POST /api/wallets/select`, `/create`, `/rename`, `/delete`: 1 / 5 seconds each
+- `POST /api/wallets/select`, `/create`, `/delete`: 1 / 5 seconds each
 - `POST /api/dcrdex/discover-account`: 1 / 10 seconds
 - `POST /api/wallet/importxpub`: 1 / 30 seconds
 - `POST /api/wallet/settings/discover-addresses`: 1 / 30 seconds

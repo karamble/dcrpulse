@@ -25,6 +25,10 @@ type WalletInfo struct {
 	IsPrivacy   bool   `json:"isPrivacy"`
 	LastAccess  int64  `json:"lastAccess,omitempty"`
 	Active      bool   `json:"active"`
+	// Service data filed under the wallet's name, which a delete also removes.
+	HasLightning  bool `json:"hasLightning"`
+	HasBisonRelay bool `json:"hasBisonRelay"`
+	HasDex        bool `json:"hasDex"`
 }
 
 // ListWallets enumerates every wallet dcrwallet can load: the default wallet at
@@ -54,6 +58,16 @@ func ListWallets(ctx context.Context) ([]WalletInfo, error) {
 			IsDefault: isDefault,
 			HasDB:     fileExists(config.WalletDbPath(appdata, network)),
 			Active:    name == active,
+		}
+		for _, l := range leftoverWalletData(name) {
+			switch l {
+			case lightningDataLabel:
+				info.HasLightning = true
+			case bisonRelayDataLabel:
+				info.HasBisonRelay = true
+			case dexDataLabel:
+				info.HasDex = true
+			}
 		}
 		if cfg, err := config.LoadWalletCfg(network, name); err == nil {
 			info.LastAccess = cfg.LastAccess()

@@ -6,9 +6,13 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"dcrpulse/internal/alerts"
@@ -212,7 +216,93 @@ func newWalletSlot(ctx context.Context, name string) (string, error) {
 	if walletExistsByName(name, network) {
 		return "", fmt.Errorf("wallet %q already exists", name)
 	}
+	if err := claimWalletServiceData(name); err != nil {
+		return "", err
+	}
 	return network, nil
+}
+
+// claimWalletServiceData refuses a new wallet name while service data filed
+// under it remains, and otherwise clears a stale removal marker so no
+// supervisor removes the new wallet's trees.
+func claimWalletServiceData(name string) error {
+	if left := leftoverWalletData(name); len(left) > 0 {
+		if purgePending(name) {
+			return fmt.Errorf("wallet %q is still being removed (%s data remain); try again shortly", name, strings.Join(left, ", "))
+		}
+		return fmt.Errorf("%s data of an earlier wallet named %q remain; choose another name", strings.Join(left, ", "), name)
+	}
+	if err := os.Remove(walletPurgeMarker(name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("clear removal marker: %w", err)
+	}
+	return nil
+}
+
+// walletServiceDir is a daemon's data tree filed under a wallet's name. local
+// trees sit on a read-write mount the dashboard removes itself; the others are
+// removed by their own supervisor.
+type walletServiceDir struct {
+	label string
+	dir   string
+	local bool
+}
+
+const (
+	lightningDataLabel  = "Lightning"
+	bisonRelayDataLabel = "Bison Relay"
+	dexDataLabel        = "DCRDEX"
+)
+
+// walletServiceDirs lists the service trees kept under a wallet's name; a var
+// so tests can point it at temp dirs.
+var walletServiceDirs = func(name string) []walletServiceDir {
+	return []walletServiceDir{
+		{lightningDataLabel, config.DcrlndDir(name), true},
+		{bisonRelayDataLabel, config.BrclientdDir(name), false},
+		{dexDataLabel, config.DcrdexDir(name), false},
+	}
+}
+
+// walletPurgeDir holds one marker per deleted wallet; the brclientd and dcrdex
+// supervisors remove that wallet's trees when they see it.
+var walletPurgeDir = func() string { return filepath.Join(config.StackControlDir(), "purge") }
+
+func walletPurgeMarker(name string) string { return filepath.Join(walletPurgeDir(), name) }
+
+func purgePending(name string) bool { return fileExists(walletPurgeMarker(name)) }
+
+// leftoverWalletData names the service trees on disk for a wallet name. The
+// default wallet's trees are the service roots, so it has none of its own.
+func leftoverWalletData(name string) []string {
+	if name == config.DefaultWalletName {
+		return nil
+	}
+	var left []string
+	for _, d := range walletServiceDirs(name) {
+		if walletDirExists(d.dir) {
+			left = append(left, d.label)
+		}
+	}
+	return left
+}
+
+// removeWalletServiceData removes the local trees of a deleted wallet and
+// leaves a marker for the supervisors that own the others.
+func removeWalletServiceData(name string) error {
+	for _, d := range walletServiceDirs(name) {
+		if d.local {
+			if err := os.RemoveAll(d.dir); err != nil {
+				return fmt.Errorf("remove %s data: %w", d.label, err)
+			}
+		}
+	}
+	if err := os.MkdirAll(walletPurgeDir(), 0o755); err != nil {
+		return fmt.Errorf("mark wallet for removal: %w", err)
+	}
+	if err := os.WriteFile(walletPurgeMarker(name), nil, 0o644); err != nil {
+		return fmt.Errorf("mark wallet for removal: %w", err)
+	}
+	return nil
 }
 
 // switchDaemonToNewWallet runs the supervisor handshake that brings a fresh
@@ -255,50 +345,10 @@ func finishWalletCreate(ctx context.Context, network, name string) {
 	reconnectStackServices(ctx, name)
 }
 
-// RenameWallet renames a non-active, non-default wallet on disk and renames its
-// dashboard config directory to match.
-func RenameWallet(ctx context.Context, from, to string) error {
-	if err := ValidateWalletName(to); err != nil {
-		return err
-	}
-	// Validate the source name too: it is used to build the on-disk path that
-	// gets renamed, so an unvalidated value such as "../.." could move a
-	// directory outside the wallets tree.
-	if err := ValidateWalletName(from); err != nil {
-		return err
-	}
-	if from == config.DefaultWalletName {
-		return fmt.Errorf("the default wallet cannot be renamed")
-	}
-	if from == ActiveWalletName() {
-		return fmt.Errorf("close the wallet before renaming it")
-	}
-	network, err := CurrentNetwork(ctx)
-	if err != nil {
-		return err
-	}
-	if !walletDirExists(config.WalletAppdataDir(from)) {
-		return fmt.Errorf("wallet %q not found", from)
-	}
-	if walletDirExists(config.WalletAppdataDir(to)) {
-		return fmt.Errorf("wallet %q already exists", to)
-	}
-
-	if err := os.Rename(config.WalletAppdataDir(from), config.WalletAppdataDir(to)); err != nil {
-		return fmt.Errorf("rename wallet data: %w", err)
-	}
-	// Best-effort rename of the dashboard-side config directory.
-	if walletDirExists(config.WalletDir(network, from)) {
-		if err := os.Rename(config.WalletDir(network, from), config.WalletDir(network, to)); err != nil {
-			wlltLog.Warnf("Rename wallet: config dir (data already renamed): %v", err)
-		}
-	}
-	return nil
-}
-
-// DeleteWallet permanently removes a non-active wallet's data and its dashboard
-// config. This is irreversible and does NOT back up: the UI gates it behind a
-// typed "DELETE" confirmation. The default wallet cannot be deleted; it is the
+// DeleteWallet permanently removes a non-active wallet's data, its dashboard
+// config and its Lightning, Bison Relay and DCRDEX data, as Decrediton removes a
+// wallet's folder. This is irreversible and does NOT back up: the UI gates it
+// behind a typed "DELETE" confirmation. The default wallet cannot be deleted; it is the
 // fallback wallet and its appdata root holds the shared control dirs.
 func DeleteWallet(ctx context.Context, name string) error {
 	if err := ValidateWalletName(name); err != nil {
@@ -330,7 +380,7 @@ func DeleteWallet(ctx context.Context, name string) error {
 	if err := os.RemoveAll(config.WalletDir(network, name)); err != nil {
 		wlltLog.Warnf("Delete wallet: remove config dir: %v", err)
 	}
-	return nil
+	return removeWalletServiceData(name)
 }
 
 // waitForSupervisor blocks until the dcrwallet entrypoint supervisor reports it

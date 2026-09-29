@@ -161,29 +161,7 @@ func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, types.CreateWalletResponse{Success: true, Message: "Wallet created successfully"})
 }
 
-// RenameWalletHandler renames a non-active, non-default wallet.
-func RenameWalletHandler(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		From string `json:"from"`
-		To   string `json:"to"`
-	}
-	if !decodeRequest(w, r, &req) {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-
-	if err := services.RenameWallet(ctx, req.From, req.To); err != nil {
-		wlltLog.Errorf("Error renaming wallet %q -> %q: %v", req.From, req.To, err)
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	writeJSON(w, map[string]any{"success": true})
-}
-
-// DeleteWalletHandler backs up and removes a non-active wallet.
+// DeleteWalletHandler removes a non-active wallet and the data filed under its name.
 func DeleteWalletHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`

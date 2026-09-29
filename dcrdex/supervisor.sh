@@ -69,6 +69,19 @@ resolve_dir() {
     fi
 }
 
+# The dashboard marks a deleted wallet here but cannot write this volume, so
+# its tree goes on the next pass; never the selected or default wallet.
+PURGE_DIR="/app-data/control/purge"
+purge_deleted() {
+    for f in "${PURGE_DIR}"/*; do
+        [ -f "${f}" ] || continue
+        n=${f##*/}
+        case "${n}" in *[!A-Za-z0-9_-]*|"${DEFAULT_WALLET_NAME}"|"${NAME}") continue ;; esac
+        d="${DEX_ROOT}/wallets/${n}"
+        [ -d "${d}" ] && rm -rf "${d}" && echo "Removed data of deleted wallet '${n}'"
+    done
+}
+
 stop_child() {
     [ -z "${CHILD_PID}" ] && return
     kill -INT "${CHILD_PID}" 2>/dev/null
@@ -121,6 +134,7 @@ trap shutdown INT TERM
 
 while true; do
     NAME=$(read_selected)
+    purge_deleted
 
     if [ -z "${NAME}" ]; then
         [ -n "${CHILD_PID}" ] && stop_child

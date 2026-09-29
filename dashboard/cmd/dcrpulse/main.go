@@ -349,9 +349,6 @@ func main() {
 	api.Handle("/wallets/create",
 		middleware.RateLimit("wallet-create", 5*time.Second, 1)(
 			http.HandlerFunc(handlers.CreateNamedWalletHandler))).Methods("POST")
-	api.Handle("/wallets/rename",
-		middleware.RateLimit("wallet-rename", 5*time.Second, 1)(
-			http.HandlerFunc(handlers.RenameWalletHandler))).Methods("POST")
 	api.Handle("/wallets/delete",
 		middleware.RateLimit("wallet-delete", 5*time.Second, 1)(
 			http.HandlerFunc(handlers.DeleteWalletHandler))).Methods("POST")

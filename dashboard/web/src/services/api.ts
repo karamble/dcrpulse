@@ -727,6 +727,9 @@ export interface WalletInfo {
   isPrivacy: boolean;
   lastAccess?: number;
   active: boolean;
+  hasLightning: boolean;
+  hasBisonRelay: boolean;
+  hasDex: boolean;
 }
 
 export interface ListWalletsResponse {
@@ -753,11 +756,6 @@ export const closeActiveWallet = async (): Promise<{ success: boolean }> => {
 
 export const createNamedWallet = async (request: CreateWalletRequest): Promise<CreateWalletResponse> => {
   const response = await api.post<CreateWalletResponse>('/wallets/create', request);
-  return response.data;
-};
-
-export const renameWallet = async (from: string, to: string): Promise<{ success: boolean }> => {
-  const response = await api.post<{ success: boolean }>('/wallets/rename', { from, to });
   return response.data;
 };
 
