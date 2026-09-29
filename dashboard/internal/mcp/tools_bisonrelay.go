@@ -712,143 +712,113 @@ var bisonrelayTools = []toolDef{
 	agentTool("bisonrelay", "br_store_save_product",
 		"Create or update a product in the Bison Relay storefront. Requires a grant with Bison Relay write enabled. Price is in DCR.",
 		func(ctx context.Context, a *agent, in brSaveProductInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "denied", err.Error())
-				return nil, err
-			}
-			// The store delivers this file to a buyer on purchase, so a path
-			// escaping the store dir would exfiltrate any file the daemon reads.
-			if in.SendFilename != "" && !utils.SafeStoreMediaPath(in.SendFilename) {
-				err := fmt.Errorf("invalid sendfilename")
-				recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "error", err.Error())
-				return nil, err
-			}
-			tags := in.Tags
-			if tags == nil {
-				tags = []string{}
-			}
-			body := map[string]any{
-				"sku":          in.SKU,
-				"title":        in.Title,
-				"description":  in.Description,
-				"price":        in.Price,
-				"tags":         tags,
-				"shipping":     in.Shipping,
-				"disabled":     in.Disabled,
-				"sendfilename": in.SendFilename,
-			}
-			if err := rpc.BrclientdSaveStoreProduct(ctx, body); err != nil {
-				recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "ok", in.Title)
-			return map[string]any{"sku": in.SKU, "title": in.Title, "ok": true}, nil
+			return gatedWrite(a, "br_store_save_product", scopeBR, &in.SKU, func() (any, string, error) {
+				// The store delivers this file to a buyer on purchase, so a path
+				// escaping the store dir would exfiltrate any file the daemon reads.
+				if in.SendFilename != "" && !utils.SafeStoreMediaPath(in.SendFilename) {
+					return nil, "", fmt.Errorf("invalid sendfilename")
+				}
+				tags := in.Tags
+				if tags == nil {
+					tags = []string{}
+				}
+				body := map[string]any{
+					"sku":          in.SKU,
+					"title":        in.Title,
+					"description":  in.Description,
+					"price":        in.Price,
+					"tags":         tags,
+					"shipping":     in.Shipping,
+					"disabled":     in.Disabled,
+					"sendfilename": in.SendFilename,
+				}
+				if err := rpc.BrclientdSaveStoreProduct(ctx, body); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"sku": in.SKU, "title": in.Title, "ok": true}, in.Title, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_store_delete_product",
 		"Delete a product from the Bison Relay storefront by SKU. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brDeleteProductInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_store_delete_product", 0, 0, in.SKU, "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdDeleteStoreProduct(ctx, in.SKU); err != nil {
-				recordSpend(a, "br_store_delete_product", 0, 0, in.SKU, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_store_delete_product", 0, 0, in.SKU, "ok", "")
-			return map[string]any{"sku": in.SKU, "ok": true}, nil
+			return gatedWrite(a, "br_store_delete_product", scopeBR, &in.SKU, func() (any, string, error) {
+				if err := rpc.BrclientdDeleteStoreProduct(ctx, in.SKU); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"sku": in.SKU, "ok": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_send_message",
 		"Send a private message to a Bison Relay contact (text only). A message to the operator's oversight contact is prefixed with [agent \"<name>\"] by dcrpulse and may not contain \"dcrpulse approval\". Requires a grant with Bison Relay write enabled. To deliver a Lightning invoice, generate it with ln_add_invoice and send the bolt11 string as the message.",
 		func(ctx context.Context, a *agent, in brSendMessageInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_send_message", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			uid, toApprover, err := agentPMRecipient(ctx, in.UID)
-			if err == nil && toApprover {
-				in.Message, err = labelForApprover(a.name, in.Message)
-			}
-			if err != nil {
-				recordSpend(a, "br_send_message", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			in.UID = uid
-			if err := sendAgentPM(ctx, in.UID, in.Message); err != nil {
-				recordSpend(a, "br_send_message", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_send_message", 0, 0, in.UID, "ok", "")
-			return map[string]any{"uid": in.UID, "sent": true}, nil
+			return gatedWrite(a, "br_send_message", scopeBR, &in.UID, func() (any, string, error) {
+				uid, toApprover, err := agentPMRecipient(ctx, in.UID)
+				if err == nil && toApprover {
+					in.Message, err = labelForApprover(a.name, in.Message)
+				}
+				if err != nil {
+					return nil, "", denial{err}
+				}
+				in.UID = uid
+				if err := sendAgentPM(ctx, in.UID, in.Message); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"uid": in.UID, "sent": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_send_groupchat_message",
 		"Post a message to a Bison Relay group chat. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brSendGCMessageInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_send_groupchat_message", 0, 0, in.GCID, "denied", err.Error())
-				return nil, err
-			}
-			gcid, err := rpc.ParseShortIDHex(in.GCID)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdGCMessage(ctx, gcid, in.Message, 0); err != nil {
-				recordSpend(a, "br_send_groupchat_message", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_send_groupchat_message", 0, 0, in.GCID, "ok", "")
-			return map[string]any{"gcid": in.GCID, "sent": true}, nil
+			return gatedWrite(a, "br_send_groupchat_message", scopeBR, &in.GCID, func() (any, string, error) {
+				gcid, err := rpc.ParseShortIDHex(in.GCID)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdGCMessage(ctx, gcid, in.Message, 0); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"gcid": in.GCID, "sent": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_send_message_image",
 		"Send a private message with an image attached inline in the chat (renders in the message bubble, not as a separate file download). The image is read from the agent outbox by relative path; the agent supplies only the path and an optional caption, and the tool reads the file and embeds it (no base64 handling by the agent). Inline images are capped at 800 KiB; for larger files use br_file_send_path. To the operator's oversight contact the caption is prefixed with [agent \"<name>\"]. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brSendMessageImageInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			uid, toApprover, err := agentPMRecipient(ctx, in.UID)
-			if err == nil && toApprover {
-				in.Message, err = labelForApprover(a.name, in.Message)
-			}
-			if err != nil {
-				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			in.UID = uid
-			body, err := buildImageEmbedBody(in.Path, in.Message, in.Mime)
-			if err != nil {
-				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			if err := sendAgentPM(ctx, in.UID, body); err != nil {
-				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_send_message_image", 0, 0, in.UID, "ok", filepath.Base(in.Path))
-			return map[string]any{"uid": in.UID, "sent": true}, nil
+			return gatedWrite(a, "br_send_message_image", scopeBR, &in.UID, func() (any, string, error) {
+				uid, toApprover, err := agentPMRecipient(ctx, in.UID)
+				if err == nil && toApprover {
+					in.Message, err = labelForApprover(a.name, in.Message)
+				}
+				if err != nil {
+					return nil, "", denial{err}
+				}
+				in.UID = uid
+				body, err := buildImageEmbedBody(in.Path, in.Message, in.Mime)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := sendAgentPM(ctx, in.UID, body); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"uid": in.UID, "sent": true}, filepath.Base(in.Path), nil
+			})
 		}),
 	agentTool("bisonrelay", "br_send_groupchat_image",
 		"Post a group-chat message with an image attached inline (renders in the message, not as a separate file download). The image is read from the agent outbox by relative path; the agent supplies only the path and an optional caption, and the tool reads the file and embeds it (no base64 handling by the agent). Inline images are capped at 800 KiB; for larger files use br_file_send_path. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brSendGroupchatImageInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_send_groupchat_image", 0, 0, in.GCID, "denied", err.Error())
-				return nil, err
-			}
-			body, err := buildImageEmbedBody(in.Path, in.Message, in.Mime)
-			if err != nil {
-				recordSpend(a, "br_send_groupchat_image", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			gcid, err := rpc.ParseShortIDHex(in.GCID)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdGCMessage(ctx, gcid, body, 0); err != nil {
-				recordSpend(a, "br_send_groupchat_image", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_send_groupchat_image", 0, 0, in.GCID, "ok", filepath.Base(in.Path))
-			return map[string]any{"gcid": in.GCID, "sent": true}, nil
+			return gatedWrite(a, "br_send_groupchat_image", scopeBR, &in.GCID, func() (any, string, error) {
+				body, err := buildImageEmbedBody(in.Path, in.Message, in.Mime)
+				if err != nil {
+					return nil, "", err
+				}
+				gcid, err := rpc.ParseShortIDHex(in.GCID)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdGCMessage(ctx, gcid, body, 0); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"gcid": in.GCID, "sent": true}, filepath.Base(in.Path), nil
+			})
 		}),
 	agentTool("bisonrelay", "br_tip_user",
 		"Tip a Bison Relay contact over Lightning. Spends DCR: requires a grant with Lightning enabled, and the amount counts against the per-transaction and daily caps. dcrlnd must be unlocked.",
@@ -898,424 +868,313 @@ var bisonrelayTools = []toolDef{
 	agentTool("bisonrelay", "br_unshare_file",
 		"Revoke a shared file on Bison Relay by file id. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brUnshareInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_unshare_file", 0, 0, in.FID, "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdUnshareFile(ctx, in.FID, in.TargetUID); err != nil {
-				recordSpend(a, "br_unshare_file", 0, 0, in.FID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_unshare_file", 0, 0, in.FID, "ok", "")
-			return map[string]any{"fid": in.FID, "unshared": true}, nil
+			return gatedWrite(a, "br_unshare_file", scopeBR, &in.FID, func() (any, string, error) {
+				if err := rpc.BrclientdUnshareFile(ctx, in.FID, in.TargetUID); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"fid": in.FID, "unshared": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_post_create",
 		"Author a new Bison Relay post. Requires a grant with Bison Relay write enabled. Returns the created post metadata.",
 		func(ctx context.Context, a *agent, in brPostCreateInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_post_create", 0, 0, "", "denied", err.Error())
-				return nil, err
-			}
-			body, err := rpc.BrclientdCreatePost(ctx, in.Post, in.Descr)
-			if err != nil {
-				recordSpend(a, "br_post_create", 0, 0, "", "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_post_create", 0, 0, "", "ok", "")
-			return decodeBRResult(body), nil
+			return gatedWrite(a, "br_post_create", scopeBR, new(string), func() (any, string, error) {
+				body, err := rpc.BrclientdCreatePost(ctx, in.Post, in.Descr)
+				if err != nil {
+					return nil, "", err
+				}
+				return decodeBRResult(body), "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_post_comment",
 		"Comment on a Bison Relay post (or reply to a comment via 'parent'), optionally embedding an image from the agent outbox via imagePath. Requires a grant with Bison Relay write enabled. Returns the new comment identifier.",
 		func(ctx context.Context, a *agent, in brPostCommentInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_post_comment", 0, 0, in.PID, "denied", err.Error())
-				return nil, err
-			}
-			comment := in.Comment
-			if in.ImagePath != "" {
-				embedded, err := buildImageEmbedBody(in.ImagePath, in.Comment, in.ImageMime)
-				if err != nil {
-					recordSpend(a, "br_post_comment", 0, 0, in.PID, "error", err.Error())
-					return nil, err
+			return gatedWrite(a, "br_post_comment", scopeBR, &in.PID, func() (any, string, error) {
+				comment := in.Comment
+				if in.ImagePath != "" {
+					embedded, err := buildImageEmbedBody(in.ImagePath, in.Comment, in.ImageMime)
+					if err != nil {
+						return nil, "", err
+					}
+					comment = embedded
 				}
-				comment = embedded
-			}
-			identifier, err := rpc.BrclientdPostComment(ctx, in.UID, in.PID, comment, in.Parent)
-			if err != nil {
-				recordSpend(a, "br_post_comment", 0, 0, in.PID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_post_comment", 0, 0, in.PID, "ok", "")
-			return map[string]any{"pid": in.PID, "identifier": identifier, "ok": true}, nil
+				identifier, err := rpc.BrclientdPostComment(ctx, in.UID, in.PID, comment, in.Parent)
+				if err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"pid": in.PID, "identifier": identifier, "ok": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_post_heart",
 		"Add or remove the local identity's heart on a Bison Relay post. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brPostHeartInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_post_heart", 0, 0, in.PID, "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdPostHeart(ctx, in.UID, in.PID, in.Heart); err != nil {
-				recordSpend(a, "br_post_heart", 0, 0, in.PID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_post_heart", 0, 0, in.PID, "ok", "")
-			return map[string]any{"pid": in.PID, "heart": in.Heart, "ok": true}, nil
+			return gatedWrite(a, "br_post_heart", scopeBR, &in.PID, func() (any, string, error) {
+				if err := rpc.BrclientdPostHeart(ctx, in.UID, in.PID, in.Heart); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"pid": in.PID, "heart": in.Heart, "ok": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_post_relay",
 		"Relay a Bison Relay post to one contact, or to all post subscribers when 'toUid' is empty. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brPostRelayInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_post_relay", 0, 0, in.PID, "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdRelayPost(ctx, in.UID, in.PID, in.ToUID); err != nil {
-				recordSpend(a, "br_post_relay", 0, 0, in.PID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_post_relay", 0, 0, in.PID, "ok", "")
-			return map[string]any{"pid": in.PID, "relayed": true}, nil
+			return gatedWrite(a, "br_post_relay", scopeBR, &in.PID, func() (any, string, error) {
+				if err := rpc.BrclientdRelayPost(ctx, in.UID, in.PID, in.ToUID); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"pid": in.PID, "relayed": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_page_save",
 		"Create or overwrite a markdown page this node hosts over Bison Relay. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brPageSaveInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_page_save", 0, 0, in.Name, "denied", err.Error())
-				return nil, err
-			}
-			if !utils.SafeBRPath(in.Name) {
-				err := fmt.Errorf("invalid name")
-				recordSpend(a, "br_page_save", 0, 0, in.Name, "error", err.Error())
-				return nil, err
-			}
-			body := map[string]any{"name": in.Name, "content": in.Content}
-			if err := rpc.BrclientdPagesLocalSave(ctx, body); err != nil {
-				recordSpend(a, "br_page_save", 0, 0, in.Name, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_page_save", 0, 0, in.Name, "ok", "")
-			return map[string]any{"name": in.Name, "ok": true}, nil
+			return gatedWrite(a, "br_page_save", scopeBR, &in.Name, func() (any, string, error) {
+				if !utils.SafeBRPath(in.Name) {
+					return nil, "", fmt.Errorf("invalid name")
+				}
+				body := map[string]any{"name": in.Name, "content": in.Content}
+				if err := rpc.BrclientdPagesLocalSave(ctx, body); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"name": in.Name, "ok": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_page_import_embed",
 		"Copy a received chat embed image into the pages directory server-side, so a page can reference it via an embed localfilename without the bytes transiting the agent. Imported assets cannot be deleted via MCP. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brPageImportEmbedInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "denied", err.Error())
-				return nil, err
-			}
-			if !chatEmbedRE.MatchString(in.Source) || strings.Contains(in.Source, "..") {
-				err := fmt.Errorf("invalid source: must be embeds/<uid16>/<file>")
-				recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "error", err.Error())
-				return nil, err
-			}
-			if !utils.SafeBRPath(in.Dest) || !pageImageExtRE.MatchString(in.Dest) {
-				err := fmt.Errorf("invalid dest: must be an image path (jpg/jpeg/jfif/png/gif/webp) inside the pages directory")
-				recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "error", err.Error())
-				return nil, err
-			}
-			res, err := rpc.BrclientdPagesImportEmbed(ctx, map[string]any{"source": in.Source, "dest": in.Dest})
-			if err != nil {
-				recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "ok", "")
-			return res, nil
+			return gatedWrite(a, "br_page_import_embed", scopeBR, &in.Dest, func() (any, string, error) {
+				if !chatEmbedRE.MatchString(in.Source) || strings.Contains(in.Source, "..") {
+					return nil, "", fmt.Errorf("invalid source: must be embeds/<uid16>/<file>")
+				}
+				if !utils.SafeBRPath(in.Dest) || !pageImageExtRE.MatchString(in.Dest) {
+					return nil, "", fmt.Errorf("invalid dest: must be an image path (jpg/jpeg/jfif/png/gif/webp) inside the pages directory")
+				}
+				res, err := rpc.BrclientdPagesImportEmbed(ctx, map[string]any{"source": in.Source, "dest": in.Dest})
+				if err != nil {
+					return nil, "", err
+				}
+				return res, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_page_delete",
 		"Delete a hosted Bison Relay page by name. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brPageDeleteInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_page_delete", 0, 0, in.Name, "denied", err.Error())
-				return nil, err
-			}
-			if !utils.SafeBRPath(in.Name) {
-				err := fmt.Errorf("invalid name")
-				recordSpend(a, "br_page_delete", 0, 0, in.Name, "error", err.Error())
-				return nil, err
-			}
-			body := map[string]any{"name": in.Name}
-			if err := rpc.BrclientdPagesLocalDelete(ctx, body); err != nil {
-				recordSpend(a, "br_page_delete", 0, 0, in.Name, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_page_delete", 0, 0, in.Name, "ok", "")
-			return map[string]any{"name": in.Name, "ok": true}, nil
+			return gatedWrite(a, "br_page_delete", scopeBR, &in.Name, func() (any, string, error) {
+				if !utils.SafeBRPath(in.Name) {
+					return nil, "", fmt.Errorf("invalid name")
+				}
+				body := map[string]any{"name": in.Name}
+				if err := rpc.BrclientdPagesLocalDelete(ctx, body); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"name": in.Name, "ok": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_file_send",
 		"Send a file directly to a Bison Relay contact. The file bytes are supplied base64-encoded in 'dataB64'. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brFileSendInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_file_send", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			data, err := base64.StdEncoding.DecodeString(in.DataB64)
-			if err != nil {
-				err = fmt.Errorf("invalid dataB64: %w", err)
-				recordSpend(a, "br_file_send", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			uid, err := agentRecipient(ctx, in.UID)
-			if err != nil {
-				recordSpend(a, "br_file_send", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			in.UID = uid
-			result, err := rpc.BrclientdSendFile(ctx, in.UID, in.Filename, in.Mime, bytes.NewReader(data))
-			if err != nil {
-				recordSpend(a, "br_file_send", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_file_send", 0, 0, in.UID, "ok", in.Filename)
-			return map[string]any{"uid": in.UID, "filename": in.Filename, "result": result, "ok": true}, nil
+			return gatedWrite(a, "br_file_send", scopeBR, &in.UID, func() (any, string, error) {
+				data, err := base64.StdEncoding.DecodeString(in.DataB64)
+				if err != nil {
+					return nil, "", fmt.Errorf("invalid dataB64: %w", err)
+				}
+				uid, err := agentRecipient(ctx, in.UID)
+				if err != nil {
+					return nil, "", denial{err}
+				}
+				in.UID = uid
+				result, err := rpc.BrclientdSendFile(ctx, in.UID, in.Filename, in.Mime, bytes.NewReader(data))
+				if err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"uid": in.UID, "filename": in.Filename, "result": result, "ok": true}, in.Filename, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_file_send_path",
 		"Send a file to a Bison Relay contact by reading it from the agent outbox directory, avoiding base64 for large files. 'path' is relative to that directory (set via MCP_AGENT_OUTBOX_DIR, default <brclientd-data>/agent-outbox); absolute paths and '..' segments are rejected. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brFileSendPathInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			candidate, err := resolveOutboxPath(in.Path)
-			if err != nil {
-				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			f, err := os.Open(candidate)
-			if err != nil {
-				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			defer f.Close()
-			fi, err := f.Stat()
-			if err != nil {
-				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			if fi.IsDir() {
-				err := fmt.Errorf("path is a directory")
-				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			name := in.Filename
-			if name == "" {
-				name = filepath.Base(candidate)
-			}
-			uid, err := agentRecipient(ctx, in.UID)
-			if err != nil {
-				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			in.UID = uid
-			result, err := rpc.BrclientdSendFile(ctx, in.UID, name, in.Mime, f)
-			if err != nil {
-				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_file_send_path", 0, 0, in.UID, "ok", name)
-			return map[string]any{"uid": in.UID, "filename": name, "result": result, "ok": true}, nil
+			return gatedWrite(a, "br_file_send_path", scopeBR, &in.UID, func() (any, string, error) {
+				candidate, err := resolveOutboxPath(in.Path)
+				if err != nil {
+					return nil, "", err
+				}
+				f, err := os.Open(candidate)
+				if err != nil {
+					return nil, "", err
+				}
+				defer f.Close()
+				fi, err := f.Stat()
+				if err != nil {
+					return nil, "", err
+				}
+				if fi.IsDir() {
+					return nil, "", fmt.Errorf("path is a directory")
+				}
+				name := in.Filename
+				if name == "" {
+					name = filepath.Base(candidate)
+				}
+				uid, err := agentRecipient(ctx, in.UID)
+				if err != nil {
+					return nil, "", denial{err}
+				}
+				in.UID = uid
+				result, err := rpc.BrclientdSendFile(ctx, in.UID, name, in.Mime, f)
+				if err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"uid": in.UID, "filename": name, "result": result, "ok": true}, name, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_file_add",
 		"Add a file to Bison Relay shared files (globally or scoped to one contact). The file bytes are supplied base64-encoded in 'dataB64'; an optional per-download cost is set in DCR. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brFileAddInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_file_add", 0, 0, in.Filename, "denied", err.Error())
-				return nil, err
-			}
-			data, err := base64.StdEncoding.DecodeString(in.DataB64)
-			if err != nil {
-				err = fmt.Errorf("invalid dataB64: %w", err)
-				recordSpend(a, "br_file_add", 0, 0, in.Filename, "error", err.Error())
-				return nil, err
-			}
-			if in.CostDCR < 0 {
-				err := fmt.Errorf("costDcr must not be negative")
-				recordSpend(a, "br_file_add", 0, 0, in.Filename, "error", err.Error())
-				return nil, err
-			}
-			amt, err := dcrutil.NewAmount(in.CostDCR)
-			if err != nil {
-				err = fmt.Errorf("invalid costDcr: %w", err)
-				recordSpend(a, "br_file_add", 0, 0, in.Filename, "error", err.Error())
-				return nil, err
-			}
-			body, err := rpc.BrclientdShareFile(ctx, in.Filename, in.Mime, bytes.NewReader(data), uint64(amt), in.TargetUID, in.Descr)
-			if err != nil {
-				recordSpend(a, "br_file_add", 0, 0, in.Filename, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_file_add", 0, 0, in.Filename, "ok", in.Filename)
-			return decodeBRResult(body), nil
+			return gatedWrite(a, "br_file_add", scopeBR, &in.Filename, func() (any, string, error) {
+				data, err := base64.StdEncoding.DecodeString(in.DataB64)
+				if err != nil {
+					return nil, "", fmt.Errorf("invalid dataB64: %w", err)
+				}
+				if in.CostDCR < 0 {
+					return nil, "", fmt.Errorf("costDcr must not be negative")
+				}
+				amt, err := dcrutil.NewAmount(in.CostDCR)
+				if err != nil {
+					return nil, "", fmt.Errorf("invalid costDcr: %w", err)
+				}
+				body, err := rpc.BrclientdShareFile(ctx, in.Filename, in.Mime, bytes.NewReader(data), uint64(amt), in.TargetUID, in.Descr)
+				if err != nil {
+					return nil, "", err
+				}
+				return decodeBRResult(body), in.Filename, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_store_order_status",
 		"Update the status of a Bison Relay storefront order. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brStoreOrderStatusInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_store_order_status", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdSetStoreOrderStatus(ctx, in.UID, in.ID, in.Status); err != nil {
-				recordSpend(a, "br_store_order_status", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_store_order_status", 0, 0, in.UID, "ok", in.Status)
-			return map[string]any{"uid": in.UID, "id": in.ID, "status": in.Status, "ok": true}, nil
+			return gatedWrite(a, "br_store_order_status", scopeBR, &in.UID, func() (any, string, error) {
+				if err := rpc.BrclientdSetStoreOrderStatus(ctx, in.UID, in.ID, in.Status); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"uid": in.UID, "id": in.ID, "status": in.Status, "ok": true}, in.Status, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_store_order_comment",
 		"Append a merchant comment to a Bison Relay storefront order; brclientd DMs the buyer. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brStoreOrderCommentInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_store_order_comment", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdAddStoreOrderComment(ctx, in.UID, in.ID, in.Comment); err != nil {
-				recordSpend(a, "br_store_order_comment", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_store_order_comment", 0, 0, in.UID, "ok", "")
-			return map[string]any{"uid": in.UID, "id": in.ID, "ok": true}, nil
+			return gatedWrite(a, "br_store_order_comment", scopeBR, &in.UID, func() (any, string, error) {
+				if err := rpc.BrclientdAddStoreOrderComment(ctx, in.UID, in.ID, in.Comment); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"uid": in.UID, "id": in.ID, "ok": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_store_file_upload",
 		"Upload a digital-download file into the Bison Relay storefront. The file bytes are supplied base64-encoded in 'dataB64'. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brStoreFileUploadInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "denied", err.Error())
-				return nil, err
-			}
-			if in.Path != "" && !utils.SafeStoreMediaPath(in.Path) {
-				err := fmt.Errorf("invalid path")
-				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "error", err.Error())
-				return nil, err
-			}
-			// The media guard, matching the dashboard's own upload route: a name
-			// ending .tmpl would be executed as a Go template by the store.
-			if !utils.SafeStoreMediaPath(in.Filename) || strings.ContainsRune(in.Filename, '/') {
-				err := fmt.Errorf("invalid filename")
-				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "error", err.Error())
-				return nil, err
-			}
-			data, err := base64.StdEncoding.DecodeString(in.DataB64)
-			if err != nil {
-				err = fmt.Errorf("invalid dataB64: %w", err)
-				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "error", err.Error())
-				return nil, err
-			}
-			body, err := rpc.BrclientdUploadStoreFile(ctx, in.Path, in.Filename, in.Mime, in.Overwrite, bytes.NewReader(data))
-			if err != nil {
-				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "ok", in.Filename)
-			return decodeBRResult(body), nil
+			return gatedWrite(a, "br_store_file_upload", scopeBR, &in.Filename, func() (any, string, error) {
+				if in.Path != "" && !utils.SafeStoreMediaPath(in.Path) {
+					return nil, "", fmt.Errorf("invalid path")
+				}
+				// The media guard, matching the dashboard's own upload route: a name
+				// ending .tmpl would be executed as a Go template by the store.
+				if !utils.SafeStoreMediaPath(in.Filename) || strings.ContainsRune(in.Filename, '/') {
+					return nil, "", fmt.Errorf("invalid filename")
+				}
+				data, err := base64.StdEncoding.DecodeString(in.DataB64)
+				if err != nil {
+					return nil, "", fmt.Errorf("invalid dataB64: %w", err)
+				}
+				body, err := rpc.BrclientdUploadStoreFile(ctx, in.Path, in.Filename, in.Mime, in.Overwrite, bytes.NewReader(data))
+				if err != nil {
+					return nil, "", err
+				}
+				return decodeBRResult(body), in.Filename, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_store_template_save",
 		"Create or overwrite a Bison Relay storefront template file. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brStoreTemplateSaveInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_store_template_save", 0, 0, in.Name, "denied", err.Error())
-				return nil, err
-			}
-			if !utils.SafeBRPath(in.Name) {
-				err := fmt.Errorf("invalid name")
-				recordSpend(a, "br_store_template_save", 0, 0, in.Name, "error", err.Error())
-				return nil, err
-			}
-			body := map[string]any{"name": in.Name, "content": in.Content}
-			if err := rpc.BrclientdSaveStoreTemplate(ctx, body); err != nil {
-				recordSpend(a, "br_store_template_save", 0, 0, in.Name, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_store_template_save", 0, 0, in.Name, "ok", "")
-			return map[string]any{"name": in.Name, "ok": true}, nil
+			return gatedWrite(a, "br_store_template_save", scopeBR, &in.Name, func() (any, string, error) {
+				if !utils.SafeBRPath(in.Name) {
+					return nil, "", fmt.Errorf("invalid name")
+				}
+				body := map[string]any{"name": in.Name, "content": in.Content}
+				if err := rpc.BrclientdSaveStoreTemplate(ctx, body); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"name": in.Name, "ok": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_store_template_delete",
 		"Delete a Bison Relay storefront template file by name. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brStoreTemplateDeleteInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_store_template_delete", 0, 0, in.Name, "denied", err.Error())
-				return nil, err
-			}
-			if !utils.SafeBRPath(in.Name) {
-				err := fmt.Errorf("invalid name")
-				recordSpend(a, "br_store_template_delete", 0, 0, in.Name, "error", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdDeleteStoreTemplate(ctx, in.Name); err != nil {
-				recordSpend(a, "br_store_template_delete", 0, 0, in.Name, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_store_template_delete", 0, 0, in.Name, "ok", "")
-			return map[string]any{"name": in.Name, "ok": true}, nil
+			return gatedWrite(a, "br_store_template_delete", scopeBR, &in.Name, func() (any, string, error) {
+				if !utils.SafeBRPath(in.Name) {
+					return nil, "", fmt.Errorf("invalid name")
+				}
+				if err := rpc.BrclientdDeleteStoreTemplate(ctx, in.Name); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"name": in.Name, "ok": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_gc_create",
 		"Create a new Bison Relay group chat. Requires a grant with Bison Relay write enabled. Returns the new group chat metadata.",
 		func(ctx context.Context, a *agent, in brGCCreateInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_gc_create", 0, 0, in.Name, "denied", err.Error())
-				return nil, err
-			}
-			body, err := rpc.BrclientdGCCreate(ctx, in.Name)
-			if err != nil {
-				recordSpend(a, "br_gc_create", 0, 0, in.Name, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_gc_create", 0, 0, in.Name, "ok", "")
-			return decodeBRResult(body), nil
+			return gatedWrite(a, "br_gc_create", scopeBR, &in.Name, func() (any, string, error) {
+				body, err := rpc.BrclientdGCCreate(ctx, in.Name)
+				if err != nil {
+					return nil, "", err
+				}
+				return decodeBRResult(body), "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_gc_invite",
 		"Invite a contact to a Bison Relay group chat. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brGCInviteInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_gc_invite", 0, 0, in.GCID, "denied", err.Error())
-				return nil, err
-			}
-			gcid, err := rpc.ParseShortIDHex(in.GCID)
-			if err != nil {
-				return nil, err
-			}
-			uid, err := agentRecipient(ctx, in.UID)
-			if err != nil {
-				recordSpend(a, "br_gc_invite", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			in.UID = uid
-			if err := rpc.BrclientdGCInvite(ctx, gcid, in.UID); err != nil {
-				recordSpend(a, "br_gc_invite", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_gc_invite", 0, 0, in.GCID, "ok", in.UID)
-			return map[string]any{"gcid": in.GCID, "uid": in.UID, "invited": true}, nil
+			target := in.GCID
+			return gatedWrite(a, "br_gc_invite", scopeBR, &target, func() (any, string, error) {
+				gcid, err := rpc.ParseShortIDHex(in.GCID)
+				if err != nil {
+					return nil, "", err
+				}
+				uid, err := agentRecipient(ctx, in.UID)
+				if err != nil {
+					// The refusal concerns the contact, so its row names the contact.
+					target = in.UID
+					return nil, "", denial{err}
+				}
+				in.UID = uid
+				if err := rpc.BrclientdGCInvite(ctx, gcid, in.UID); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"gcid": in.GCID, "uid": in.UID, "invited": true}, in.UID, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_gc_invites_accept",
 		"Accept a pending Bison Relay group-chat invite by invite id. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brGCInvitesAcceptInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_gc_invites_accept", 0, 0, fmt.Sprintf("%d", in.IID), "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdGCInvitesAccept(ctx, in.IID); err != nil {
-				recordSpend(a, "br_gc_invites_accept", 0, 0, fmt.Sprintf("%d", in.IID), "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_gc_invites_accept", 0, 0, fmt.Sprintf("%d", in.IID), "ok", "")
-			return map[string]any{"iid": in.IID, "accepted": true}, nil
+			target := fmt.Sprintf("%d", in.IID)
+			return gatedWrite(a, "br_gc_invites_accept", scopeBR, &target, func() (any, string, error) {
+				if err := rpc.BrclientdGCInvitesAccept(ctx, in.IID); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"iid": in.IID, "accepted": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_gc_part",
 		"Leave a Bison Relay group chat (non-owner). Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brGCPartInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_gc_part", 0, 0, in.GCID, "denied", err.Error())
-				return nil, err
-			}
-			gcid, err := rpc.ParseShortIDHex(in.GCID)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdGCPart(ctx, gcid, in.Reason); err != nil {
-				recordSpend(a, "br_gc_part", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_gc_part", 0, 0, in.GCID, "ok", "")
-			return map[string]any{"gcid": in.GCID, "parted": true}, nil
+			return gatedWrite(a, "br_gc_part", scopeBR, &in.GCID, func() (any, string, error) {
+				gcid, err := rpc.ParseShortIDHex(in.GCID)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdGCPart(ctx, gcid, in.Reason); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"gcid": in.GCID, "parted": true}, "", nil
+			})
 		}),
 	readTool("bisonrelay", "br_rtdt_messages",
 		"Read the chat buffer of a realtime-voice session. Requires 'rv'. The buffer is in memory and lives only as long as the session, so it is empty once the session ends.",
@@ -1329,288 +1188,224 @@ var bisonrelayTools = []toolDef{
 	agentTool("bisonrelay", "br_rtdt_create",
 		"Create a Bison Relay realtime-voice (RTDT) session. Requires a grant with Bison Relay write enabled. Returns the session metadata.",
 		func(ctx context.Context, a *agent, in brRTDTCreateInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_rtdt_create", 0, 0, "", "denied", err.Error())
-				return nil, err
-			}
-			body, err := rpc.BrclientdRTDTCreate(ctx, in.Size, in.Description)
-			if err != nil {
-				recordSpend(a, "br_rtdt_create", 0, 0, "", "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_rtdt_create", 0, 0, "", "ok", "")
-			return decodeBRResult(body), nil
+			return gatedWrite(a, "br_rtdt_create", scopeBR, new(string), func() (any, string, error) {
+				body, err := rpc.BrclientdRTDTCreate(ctx, in.Size, in.Description)
+				if err != nil {
+					return nil, "", err
+				}
+				return decodeBRResult(body), "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_rtdt_create_instant",
 		"Create an instant Bison Relay realtime-voice call to a set of contacts. Requires a grant with Bison Relay write enabled. Returns the session metadata.",
 		func(ctx context.Context, a *agent, in brRTDTCreateInstantInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_rtdt_create_instant", 0, 0, "", "denied", err.Error())
-				return nil, err
-			}
-			body, err := rpc.BrclientdRTDTCreateInstant(ctx, in.UIDs)
-			if err != nil {
-				recordSpend(a, "br_rtdt_create_instant", 0, 0, "", "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_rtdt_create_instant", 0, 0, "", "ok", "")
-			return decodeBRResult(body), nil
+			return gatedWrite(a, "br_rtdt_create_instant", scopeBR, new(string), func() (any, string, error) {
+				body, err := rpc.BrclientdRTDTCreateInstant(ctx, in.UIDs)
+				if err != nil {
+					return nil, "", err
+				}
+				return decodeBRResult(body), "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_rtdt_invite",
 		"Invite contacts to an existing Bison Relay realtime-voice session. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brRTDTInviteInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_rtdt_invite", 0, 0, in.RV, "denied", err.Error())
-				return nil, err
-			}
-			rv, err := rpc.ParseShortIDHex(in.RV)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdRTDTInvite(ctx, rv, in.UIDs, in.AsPublisher); err != nil {
-				recordSpend(a, "br_rtdt_invite", 0, 0, in.RV, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_rtdt_invite", 0, 0, in.RV, "ok", "")
-			return map[string]any{"rv": in.RV, "invited": true}, nil
+			return gatedWrite(a, "br_rtdt_invite", scopeBR, &in.RV, func() (any, string, error) {
+				rv, err := rpc.ParseShortIDHex(in.RV)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdRTDTInvite(ctx, rv, in.UIDs, in.AsPublisher); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"rv": in.RV, "invited": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_rtdt_accept",
 		"Accept a pending Bison Relay realtime-voice invite. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brRTDTAcceptInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_rtdt_accept", 0, 0, in.RV, "denied", err.Error())
-				return nil, err
-			}
-			rv, err := rpc.ParseShortIDHex(in.RV)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdRTDTAccept(ctx, rv, in.Inviter, in.AsPublisher); err != nil {
-				recordSpend(a, "br_rtdt_accept", 0, 0, in.RV, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_rtdt_accept", 0, 0, in.RV, "ok", "")
-			return map[string]any{"rv": in.RV, "accepted": true}, nil
+			return gatedWrite(a, "br_rtdt_accept", scopeBR, &in.RV, func() (any, string, error) {
+				rv, err := rpc.ParseShortIDHex(in.RV)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdRTDTAccept(ctx, rv, in.Inviter, in.AsPublisher); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"rv": in.RV, "accepted": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_rtdt_join",
 		"Join the live audio of a Bison Relay realtime-voice session. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brRTDTRVInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_rtdt_join", 0, 0, in.RV, "denied", err.Error())
-				return nil, err
-			}
-			rv, err := rpc.ParseShortIDHex(in.RV)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdRTDTJoin(ctx, rv); err != nil {
-				recordSpend(a, "br_rtdt_join", 0, 0, in.RV, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_rtdt_join", 0, 0, in.RV, "ok", "")
-			return map[string]any{"rv": in.RV, "joined": true}, nil
+			return gatedWrite(a, "br_rtdt_join", scopeBR, &in.RV, func() (any, string, error) {
+				rv, err := rpc.ParseShortIDHex(in.RV)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdRTDTJoin(ctx, rv); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"rv": in.RV, "joined": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_rtdt_leave",
 		"Leave a Bison Relay realtime-voice session. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brRTDTRVInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_rtdt_leave", 0, 0, in.RV, "denied", err.Error())
-				return nil, err
-			}
-			rv, err := rpc.ParseShortIDHex(in.RV)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdRTDTLeave(ctx, rv); err != nil {
-				recordSpend(a, "br_rtdt_leave", 0, 0, in.RV, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_rtdt_leave", 0, 0, in.RV, "ok", "")
-			return map[string]any{"rv": in.RV, "left": true}, nil
+			return gatedWrite(a, "br_rtdt_leave", scopeBR, &in.RV, func() (any, string, error) {
+				rv, err := rpc.ParseShortIDHex(in.RV)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdRTDTLeave(ctx, rv); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"rv": in.RV, "left": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_rtdt_dissolve",
 		"Dissolve a Bison Relay realtime-voice session you own. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brRTDTRVInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_rtdt_dissolve", 0, 0, in.RV, "denied", err.Error())
-				return nil, err
-			}
-			rv, err := rpc.ParseShortIDHex(in.RV)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdRTDTDissolve(ctx, rv); err != nil {
-				recordSpend(a, "br_rtdt_dissolve", 0, 0, in.RV, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_rtdt_dissolve", 0, 0, in.RV, "ok", "")
-			return map[string]any{"rv": in.RV, "dissolved": true}, nil
+			return gatedWrite(a, "br_rtdt_dissolve", scopeBR, &in.RV, func() (any, string, error) {
+				rv, err := rpc.ParseShortIDHex(in.RV)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdRTDTDissolve(ctx, rv); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"rv": in.RV, "dissolved": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_rtdt_chat",
 		"Send a text message into a live Bison Relay realtime-voice session. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brRTDTChatInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_rtdt_chat", 0, 0, in.RV, "denied", err.Error())
-				return nil, err
-			}
-			rv, err := rpc.ParseShortIDHex(in.RV)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdRTDTChat(ctx, rv, in.Message); err != nil {
-				recordSpend(a, "br_rtdt_chat", 0, 0, in.RV, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_rtdt_chat", 0, 0, in.RV, "ok", "")
-			return map[string]any{"rv": in.RV, "sent": true}, nil
+			return gatedWrite(a, "br_rtdt_chat", scopeBR, &in.RV, func() (any, string, error) {
+				rv, err := rpc.ParseShortIDHex(in.RV)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdRTDTChat(ctx, rv, in.Message); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"rv": in.RV, "sent": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_gc_kick",
 		"Kick a member from a Bison Relay group chat (admin action). Requires a grant with Bison Relay group admin enabled.",
 		func(ctx context.Context, a *agent, in brGCKickInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBRAdmin, time.Now()); err != nil {
-				recordSpend(a, "br_gc_kick", 0, 0, in.GCID, "denied", err.Error())
-				return nil, err
-			}
-			gcid, err := rpc.ParseShortIDHex(in.GCID)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdGCKick(ctx, gcid, in.UID, in.Reason); err != nil {
-				recordSpend(a, "br_gc_kick", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_gc_kick", 0, 0, in.GCID, "ok", in.UID)
-			return map[string]any{"gcid": in.GCID, "uid": in.UID, "kicked": true}, nil
+			return gatedWrite(a, "br_gc_kick", scopeBRAdmin, &in.GCID, func() (any, string, error) {
+				gcid, err := rpc.ParseShortIDHex(in.GCID)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdGCKick(ctx, gcid, in.UID, in.Reason); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"gcid": in.GCID, "uid": in.UID, "kicked": true}, in.UID, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_gc_kill",
 		"Dissolve a Bison Relay group chat (owner only). Requires a grant with Bison Relay group admin enabled.",
 		func(ctx context.Context, a *agent, in brGCKillInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBRAdmin, time.Now()); err != nil {
-				recordSpend(a, "br_gc_kill", 0, 0, in.GCID, "denied", err.Error())
-				return nil, err
-			}
-			gcid, err := rpc.ParseShortIDHex(in.GCID)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdGCKill(ctx, gcid, in.Reason); err != nil {
-				recordSpend(a, "br_gc_kill", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_gc_kill", 0, 0, in.GCID, "ok", "")
-			return map[string]any{"gcid": in.GCID, "killed": true}, nil
+			return gatedWrite(a, "br_gc_kill", scopeBRAdmin, &in.GCID, func() (any, string, error) {
+				gcid, err := rpc.ParseShortIDHex(in.GCID)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdGCKill(ctx, gcid, in.Reason); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"gcid": in.GCID, "killed": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_gc_block",
 		"Client-side block a member of a Bison Relay group chat. Requires a grant with Bison Relay group admin enabled.",
 		func(ctx context.Context, a *agent, in brGCMemberInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBRAdmin, time.Now()); err != nil {
-				recordSpend(a, "br_gc_block", 0, 0, in.GCID, "denied", err.Error())
-				return nil, err
-			}
-			gcid, err := rpc.ParseShortIDHex(in.GCID)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdGCBlock(ctx, gcid, in.UID); err != nil {
-				recordSpend(a, "br_gc_block", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_gc_block", 0, 0, in.GCID, "ok", in.UID)
-			return map[string]any{"gcid": in.GCID, "uid": in.UID, "blocked": true}, nil
+			return gatedWrite(a, "br_gc_block", scopeBRAdmin, &in.GCID, func() (any, string, error) {
+				gcid, err := rpc.ParseShortIDHex(in.GCID)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdGCBlock(ctx, gcid, in.UID); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"gcid": in.GCID, "uid": in.UID, "blocked": true}, in.UID, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_gc_unblock",
 		"Remove a member from a Bison Relay group chat's local block list. Requires a grant with Bison Relay group admin enabled.",
 		func(ctx context.Context, a *agent, in brGCMemberInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBRAdmin, time.Now()); err != nil {
-				recordSpend(a, "br_gc_unblock", 0, 0, in.GCID, "denied", err.Error())
-				return nil, err
-			}
-			gcid, err := rpc.ParseShortIDHex(in.GCID)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdGCUnblock(ctx, gcid, in.UID); err != nil {
-				recordSpend(a, "br_gc_unblock", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_gc_unblock", 0, 0, in.GCID, "ok", in.UID)
-			return map[string]any{"gcid": in.GCID, "uid": in.UID, "unblocked": true}, nil
+			return gatedWrite(a, "br_gc_unblock", scopeBRAdmin, &in.GCID, func() (any, string, error) {
+				gcid, err := rpc.ParseShortIDHex(in.GCID)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdGCUnblock(ctx, gcid, in.UID); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"gcid": in.GCID, "uid": in.UID, "unblocked": true}, in.UID, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_gc_admins",
 		"Replace the extra-admins list of a Bison Relay group chat (v1+ groups). Send the complete desired list; it overwrites the current one. Requires a grant with Bison Relay group admin enabled.",
 		func(ctx context.Context, a *agent, in brGCAdminsInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBRAdmin, time.Now()); err != nil {
-				recordSpend(a, "br_gc_admins", 0, 0, in.GCID, "denied", err.Error())
-				return nil, err
-			}
-			admins := in.ExtraAdmins
-			if admins == nil {
-				admins = []string{}
-			}
-			gcid, err := rpc.ParseShortIDHex(in.GCID)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdGCModifyAdmins(ctx, gcid, admins, in.Reason); err != nil {
-				recordSpend(a, "br_gc_admins", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_gc_admins", 0, 0, in.GCID, "ok", "")
-			return map[string]any{"gcid": in.GCID, "extraAdmins": admins, "ok": true}, nil
+			return gatedWrite(a, "br_gc_admins", scopeBRAdmin, &in.GCID, func() (any, string, error) {
+				admins := in.ExtraAdmins
+				if admins == nil {
+					admins = []string{}
+				}
+				gcid, err := rpc.ParseShortIDHex(in.GCID)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdGCModifyAdmins(ctx, gcid, admins, in.Reason); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"gcid": in.GCID, "extraAdmins": admins, "ok": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_gc_owner",
 		"Transfer ownership of a Bison Relay group chat to another member. Requires a grant with Bison Relay group admin enabled.",
 		func(ctx context.Context, a *agent, in brGCOwnerInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBRAdmin, time.Now()); err != nil {
-				recordSpend(a, "br_gc_owner", 0, 0, in.GCID, "denied", err.Error())
-				return nil, err
-			}
-			gcid, err := rpc.ParseShortIDHex(in.GCID)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdGCModifyOwner(ctx, gcid, in.NewOwner, in.Reason); err != nil {
-				recordSpend(a, "br_gc_owner", 0, 0, in.GCID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_gc_owner", 0, 0, in.GCID, "ok", in.NewOwner)
-			return map[string]any{"gcid": in.GCID, "newOwner": in.NewOwner, "ok": true}, nil
+			return gatedWrite(a, "br_gc_owner", scopeBRAdmin, &in.GCID, func() (any, string, error) {
+				gcid, err := rpc.ParseShortIDHex(in.GCID)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdGCModifyOwner(ctx, gcid, in.NewOwner, in.Reason); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"gcid": in.GCID, "newOwner": in.NewOwner, "ok": true}, in.NewOwner, nil
+			})
 		}),
 	agentTool("bisonrelay", "br_rtdt_kick",
 		"Kick a live peer from a Bison Relay realtime-voice session, optionally banning them for a number of seconds. Requires a grant with Bison Relay group admin enabled.",
 		func(ctx context.Context, a *agent, in brRTDTKickInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBRAdmin, time.Now()); err != nil {
-				recordSpend(a, "br_rtdt_kick", 0, 0, in.RV, "denied", err.Error())
-				return nil, err
-			}
-			rv, err := rpc.ParseShortIDHex(in.RV)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdRTDTKick(ctx, rv, in.PeerID, in.BanSeconds); err != nil {
-				recordSpend(a, "br_rtdt_kick", 0, 0, in.RV, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_rtdt_kick", 0, 0, in.RV, "ok", fmt.Sprintf("peer %d", in.PeerID))
-			return map[string]any{"rv": in.RV, "peerId": in.PeerID, "kicked": true}, nil
+			return gatedWrite(a, "br_rtdt_kick", scopeBRAdmin, &in.RV, func() (any, string, error) {
+				rv, err := rpc.ParseShortIDHex(in.RV)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdRTDTKick(ctx, rv, in.PeerID, in.BanSeconds); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"rv": in.RV, "peerId": in.PeerID, "kicked": true}, fmt.Sprintf("peer %d", in.PeerID), nil
+			})
 		}),
 	agentTool("bisonrelay", "br_rtdt_remove",
 		"Remove a member from a Bison Relay realtime-voice session's metadata. Requires a grant with Bison Relay group admin enabled.",
 		func(ctx context.Context, a *agent, in brRTDTRemoveInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBRAdmin, time.Now()); err != nil {
-				recordSpend(a, "br_rtdt_remove", 0, 0, in.RV, "denied", err.Error())
-				return nil, err
-			}
-			rv, err := rpc.ParseShortIDHex(in.RV)
-			if err != nil {
-				return nil, err
-			}
-			if err := rpc.BrclientdRTDTRemove(ctx, rv, in.UID, in.Reason); err != nil {
-				recordSpend(a, "br_rtdt_remove", 0, 0, in.RV, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_rtdt_remove", 0, 0, in.RV, "ok", in.UID)
-			return map[string]any{"rv": in.RV, "uid": in.UID, "removed": true}, nil
+			return gatedWrite(a, "br_rtdt_remove", scopeBRAdmin, &in.RV, func() (any, string, error) {
+				rv, err := rpc.ParseShortIDHex(in.RV)
+				if err != nil {
+					return nil, "", err
+				}
+				if err := rpc.BrclientdRTDTRemove(ctx, rv, in.UID, in.Reason); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"rv": in.RV, "uid": in.UID, "removed": true}, in.UID, nil
+			})
 		}),
 
 	// Remote pages + storefront (buyer side). Browsing is read-only; outward,
@@ -1650,101 +1445,81 @@ var bisonrelayTools = []toolDef{
 	agentTool("bisonrelay", "br_page_submit",
 		"Submit a form on a Bison Relay page hosted by a remote contact (the outward, state-changing counterpart of br_page_fetch), e.g. a storefront add-to-cart or place-order. Provide the form's action path and a JSON data payload matching its fields. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brPageSubmitInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_page_submit", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			var data json.RawMessage
-			if in.Data != nil {
-				b, err := json.Marshal(in.Data)
-				if err != nil {
-					return nil, fmt.Errorf("encode data: %w", err)
+			return gatedWrite(a, "br_page_submit", scopeBR, &in.UID, func() (any, string, error) {
+				var data json.RawMessage
+				if in.Data != nil {
+					b, err := json.Marshal(in.Data)
+					if err != nil {
+						return nil, "", fmt.Errorf("encode data: %w", err)
+					}
+					data = b
 				}
-				data = b
-			}
-			res, err := brPageFetch(ctx, in.UID, in.Path, in.SessionID, 0, data, in.FieldTypes)
-			if err != nil {
-				recordSpend(a, "br_page_submit", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_page_submit", 0, 0, in.UID, "ok", strings.Join(in.Path, "/"))
-			return res, nil
+				res, err := brPageFetch(ctx, in.UID, in.Path, in.SessionID, 0, data, in.FieldTypes)
+				if err != nil {
+					return nil, "", err
+				}
+				return res, strings.Join(in.Path, "/"), nil
+			})
 		}),
 	agentTool("bisonrelay", "br_shop_add_to_cart",
 		"Add a product to your cart at a remote Bison Relay simplestore merchant. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brShopAddToCartInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_shop_add_to_cart", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			qty := in.Quantity
-			if qty == 0 {
-				qty = 1
-			}
-			data, _ := json.Marshal(map[string]any{"sku": in.SKU, "qty": qty})
-			res, err := brPageFetch(ctx, in.UID, []string{"addToCart"}, 0, 0, data)
-			if err != nil {
-				recordSpend(a, "br_shop_add_to_cart", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_shop_add_to_cart", 0, 0, in.UID, "ok", fmt.Sprintf("%s x%d", in.SKU, qty))
-			return res, nil
+			return gatedWrite(a, "br_shop_add_to_cart", scopeBR, &in.UID, func() (any, string, error) {
+				qty := in.Quantity
+				if qty == 0 {
+					qty = 1
+				}
+				data, _ := json.Marshal(map[string]any{"sku": in.SKU, "qty": qty})
+				res, err := brPageFetch(ctx, in.UID, []string{"addToCart"}, 0, 0, data)
+				if err != nil {
+					return nil, "", err
+				}
+				return res, fmt.Sprintf("%s x%d", in.SKU, qty), nil
+			})
 		}),
 	agentTool("bisonrelay", "br_shop_clear_cart",
 		"Empty your cart at a remote Bison Relay simplestore merchant. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brShopUIDInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_shop_clear_cart", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			res, err := brPageFetch(ctx, in.UID, []string{"clearCart"}, 0, 0, nil)
-			if err != nil {
-				recordSpend(a, "br_shop_clear_cart", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_shop_clear_cart", 0, 0, in.UID, "ok", "")
-			return res, nil
+			return gatedWrite(a, "br_shop_clear_cart", scopeBR, &in.UID, func() (any, string, error) {
+				res, err := brPageFetch(ctx, in.UID, []string{"clearCart"}, 0, 0, nil)
+				if err != nil {
+					return nil, "", err
+				}
+				return res, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_shop_place_order",
 		"Place an order for the items in your cart at a remote Bison Relay simplestore merchant. Returns the order page and, when the merchant issued one, its Lightning invoice together with the invoice's decoded amount and destination. The invoice is the merchant's claim: check its amount against the order total before paying it with ln_pay. Provide a shipping address only if an ordered product requires shipping. This creates an order but does not itself move funds. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brShopPlaceOrderInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_shop_place_order", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			var data json.RawMessage
-			if in.Shipping != nil {
-				if b, err := json.Marshal(in.Shipping); err == nil {
-					data = b
+			return gatedWrite(a, "br_shop_place_order", scopeBR, &in.UID, func() (any, string, error) {
+				var data json.RawMessage
+				if in.Shipping != nil {
+					if b, err := json.Marshal(in.Shipping); err == nil {
+						data = b
+					}
 				}
-			}
-			res, err := brPageFetch(ctx, in.UID, []string{"placeOrder"}, 0, 0, data)
-			if err != nil {
-				recordSpend(a, "br_shop_place_order", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			if m, ok := res.(map[string]any); ok {
-				annotateOrderInvoice(ctx, m)
-			}
-			recordSpend(a, "br_shop_place_order", 0, 0, in.UID, "ok", "")
-			return res, nil
+				res, err := brPageFetch(ctx, in.UID, []string{"placeOrder"}, 0, 0, data)
+				if err != nil {
+					return nil, "", err
+				}
+				if m, ok := res.(map[string]any); ok {
+					annotateOrderInvoice(ctx, m)
+				}
+				return res, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_shop_order_comment",
 		"Add a comment to one of your orders at a remote Bison Relay simplestore merchant. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brShopOrderCommentInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_shop_order_comment", 0, 0, in.UID, "denied", err.Error())
-				return nil, err
-			}
-			// simplestore's orderaddcomment expects the comment as a bare JSON string.
-			data, _ := json.Marshal(in.Comment)
-			res, err := brPageFetch(ctx, in.UID, []string{"orderaddcomment", strconv.FormatUint(in.ID, 10)}, 0, 0, data)
-			if err != nil {
-				recordSpend(a, "br_shop_order_comment", 0, 0, in.UID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_shop_order_comment", 0, 0, in.UID, "ok", fmt.Sprintf("order %d", in.ID))
-			return res, nil
+			return gatedWrite(a, "br_shop_order_comment", scopeBR, &in.UID, func() (any, string, error) {
+				// simplestore's orderaddcomment expects the comment as a bare JSON string.
+				data, _ := json.Marshal(in.Comment)
+				res, err := brPageFetch(ctx, in.UID, []string{"orderaddcomment", strconv.FormatUint(in.ID, 10)}, 0, 0, data)
+				if err != nil {
+					return nil, "", err
+				}
+				return res, fmt.Sprintf("order %d", in.ID), nil
+			})
 		}),
 	agentTool("bisonrelay", "br_content_get",
 		"Start downloading a shared file advertised by a Bison Relay page download embed (e.g. a purchased digital product). maxCostAtoms defaults to 0 (free files only). A paid download spends over Lightning, so it additionally requires the Lightning scope and reserves the whole ceiling against the per-transaction and daily caps. Track progress with br_downloads. Requires a grant with Bison Relay write enabled.",
@@ -1790,58 +1565,42 @@ var bisonrelayTools = []toolDef{
 	agentTool("bisonrelay", "br_download_cancel",
 		"Cancel an in-flight Bison Relay file download by fid. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brFidInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_download_cancel", 0, 0, in.FID, "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdCancelDownload(ctx, in.FID); err != nil {
-				recordSpend(a, "br_download_cancel", 0, 0, in.FID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_download_cancel", 0, 0, in.FID, "ok", "")
-			return map[string]any{"fid": in.FID, "cancelled": true}, nil
+			return gatedWrite(a, "br_download_cancel", scopeBR, &in.FID, func() (any, string, error) {
+				if err := rpc.BrclientdCancelDownload(ctx, in.FID); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"fid": in.FID, "cancelled": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_download_delete",
 		"Delete a completed or failed Bison Relay download from disk by fid (optionally uid to disambiguate the same file from multiple peers). To fetch it again later, call br_content_get. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brDownloadDeleteInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_download_delete", 0, 0, in.FID, "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdDeleteDownload(ctx, in.FID, in.UID); err != nil {
-				recordSpend(a, "br_download_delete", 0, 0, in.FID, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_download_delete", 0, 0, in.FID, "ok", "")
-			return map[string]any{"fid": in.FID, "deleted": true}, nil
+			return gatedWrite(a, "br_download_delete", scopeBR, &in.FID, func() (any, string, error) {
+				if err := rpc.BrclientdDeleteDownload(ctx, in.FID, in.UID); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"fid": in.FID, "deleted": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_notification_delete",
 		"Delete a single Bison Relay notification-bell entry by id. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brNotificationDeleteInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_notification_delete", 0, 0, "", "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdDeleteNotification(ctx, in.ID); err != nil {
-				recordSpend(a, "br_notification_delete", 0, 0, "", "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_notification_delete", 0, 0, "", "ok", "")
-			return map[string]any{"id": in.ID, "deleted": true}, nil
+			return gatedWrite(a, "br_notification_delete", scopeBR, new(string), func() (any, string, error) {
+				if err := rpc.BrclientdDeleteNotification(ctx, in.ID); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"id": in.ID, "deleted": true}, "", nil
+			})
 		}),
 	agentTool("bisonrelay", "br_notifications_clear",
 		"Clear all Bison Relay notification-bell entries. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, _ emptyInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_notifications_clear", 0, 0, "", "denied", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdClearNotifications(ctx); err != nil {
-				recordSpend(a, "br_notifications_clear", 0, 0, "", "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_notifications_clear", 0, 0, "", "ok", "")
-			return map[string]any{"cleared": true}, nil
+			return gatedWrite(a, "br_notifications_clear", scopeBR, new(string), func() (any, string, error) {
+				if err := rpc.BrclientdClearNotifications(ctx); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"cleared": true}, "", nil
+			})
 		}),
 	readTool("bisonrelay", "br_store_files",
 		"List the media files in the Bison Relay storefront directory (images and other assets referenced by products and templates).",
@@ -1867,21 +1626,15 @@ var bisonrelayTools = []toolDef{
 	agentTool("bisonrelay", "br_store_file_delete",
 		"Delete a media file from the Bison Relay storefront directory by path. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brStorePathInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
-				recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "denied", err.Error())
-				return nil, err
-			}
-			if !utils.SafeStoreMediaPath(in.Path) {
-				err := fmt.Errorf("invalid path")
-				recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "error", err.Error())
-				return nil, err
-			}
-			if err := rpc.BrclientdDeleteStoreFile(ctx, in.Path); err != nil {
-				recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "ok", "")
-			return map[string]any{"path": in.Path, "deleted": true}, nil
+			return gatedWrite(a, "br_store_file_delete", scopeBR, &in.Path, func() (any, string, error) {
+				if !utils.SafeStoreMediaPath(in.Path) {
+					return nil, "", fmt.Errorf("invalid path")
+				}
+				if err := rpc.BrclientdDeleteStoreFile(ctx, in.Path); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"path": in.Path, "deleted": true}, "", nil
+			})
 		}),
 }
 

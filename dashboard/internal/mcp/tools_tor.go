@@ -112,15 +112,11 @@ var torTools = []toolDef{
 	agentTool("tor", "tor_new_identity",
 		"Signal Tor to build fresh circuits (NEWNYM), rotating the exit identity. Requires a grant with Tor write enabled.",
 		func(_ context.Context, a *agent, _ emptyInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeTor, time.Now()); err != nil {
-				recordSpend(a, "tor_new_identity", 0, 0, "", "denied", err.Error())
-				return nil, err
-			}
-			if err := services.TorNewIdentity(); err != nil {
-				recordSpend(a, "tor_new_identity", 0, 0, "", "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "tor_new_identity", 0, 0, "", "ok", "")
-			return map[string]any{"ok": true}, nil
+			return gatedWrite(a, "tor_new_identity", scopeTor, new(string), func() (any, string, error) {
+				if err := services.TorNewIdentity(); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"ok": true}, "", nil
+			})
 		}),
 }

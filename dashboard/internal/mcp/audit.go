@@ -5,6 +5,7 @@
 package mcp
 
 import (
+	"errors"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -117,4 +118,32 @@ func recordSpend(a *agent, tool string, account uint32, amountDCR float64, targe
 	// than spawned, or a burst of rows is a burst of parked goroutines.
 	auditNotify.signal()
 	notifySpend(e)
+}
+
+// denial marks an error from a gatedWrite body as a refusal by policy, such as a
+// recipient the agent may not address, so its audit row reads "denied".
+type denial struct{ error }
+
+func (d denial) Unwrap() error { return d.error }
+
+// gatedWrite runs do for an agent whose grant includes scope and records one audit
+// row: "denied" when the grant or a denial refuses, "error" when do fails, "ok" with
+// do's detail. *target is read when the row is written, so a body that resolves a
+// recipient records the resolved uid.
+func gatedWrite(a *agent, tool, scope string, target *string, do func() (out any, detail string, err error)) (any, error) {
+	if err := grants.authorizeAction(a.id, scope, time.Now()); err != nil {
+		recordSpend(a, tool, 0, 0, *target, "denied", err.Error())
+		return nil, err
+	}
+	out, detail, err := do()
+	if err != nil {
+		result := "error"
+		if errors.As(err, &denial{}) {
+			result = "denied"
+		}
+		recordSpend(a, tool, 0, 0, *target, result, err.Error())
+		return nil, err
+	}
+	recordSpend(a, tool, 0, 0, *target, "ok", detail)
+	return out, nil
 }

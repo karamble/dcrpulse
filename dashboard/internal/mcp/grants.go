@@ -290,17 +290,27 @@ func (s *grantStore) authorize(ctx context.Context, agentID string, account uint
 	if err != nil {
 		return nil, hold{}, err
 	}
-	h := hold{store: s, agentID: agentID, gen: gen}
 	action := fmt.Sprintf("spend %s", dcrAmountStr(amountAtoms))
 	if toAddr != "" {
 		action = fmt.Sprintf("send %s to %s", dcrAmountStr(amountAtoms), toAddr)
 	}
-	if err := gateApproval(ctx, agentID, action); err != nil {
-		h.refund(amountAtoms)
+	h, err := s.approveHold(ctx, agentID, gen, amountAtoms, action)
+	if err != nil {
 		utils.Zero(pass)
 		return nil, hold{}, err
 	}
 	return pass, h, nil
+}
+
+// approveHold returns the hold for a reservation once the operator approves action,
+// refunding the reservation when the approval is refused.
+func (s *grantStore) approveHold(ctx context.Context, agentID string, gen uint64, reserved int64, action string) (hold, error) {
+	h := hold{store: s, agentID: agentID, gen: gen}
+	if err := gateApproval(ctx, agentID, action); err != nil {
+		h.refund(reserved)
+		return hold{}, err
+	}
+	return h, nil
 }
 
 // reserveForSend performs the locked grant validation and reservation for a
@@ -428,12 +438,7 @@ func (s *grantStore) authorizeLightning(ctx context.Context, agentID string, amo
 	if err != nil {
 		return hold{}, err
 	}
-	h := hold{store: s, agentID: agentID, gen: gen}
-	if err := gateApproval(ctx, agentID, fmt.Sprintf("make a Lightning payment of %s", dcrAmountStr(amountAtoms))); err != nil {
-		h.refund(amountAtoms)
-		return hold{}, err
-	}
-	return h, nil
+	return s.approveHold(ctx, agentID, gen, amountAtoms, fmt.Sprintf("make a Lightning payment of %s", dcrAmountStr(amountAtoms)))
 }
 
 func (s *grantStore) reserveLightning(agentID string, amountAtoms int64, now time.Time) (uint64, error) {
@@ -463,9 +468,8 @@ func (s *grantStore) authorizeVSPFees(ctx context.Context, agentID string, accou
 	if err != nil {
 		return nil, hold{}, err
 	}
-	h := hold{store: s, agentID: agentID, gen: gen}
-	if err := gateApproval(ctx, agentID, action); err != nil {
-		h.refund(feeCeilingAtoms)
+	h, err := s.approveHold(ctx, agentID, gen, feeCeilingAtoms, action)
+	if err != nil {
 		utils.Zero(pass)
 		return nil, hold{}, err
 	}
@@ -520,12 +524,7 @@ func (s *grantStore) authorizeSpendScoped(ctx context.Context, agentID, scope st
 	if err != nil {
 		return hold{}, err
 	}
-	h := hold{store: s, agentID: agentID, gen: gen}
-	if err := gateApproval(ctx, agentID, action); err != nil {
-		h.refund(amountAtoms)
-		return hold{}, err
-	}
-	return h, nil
+	return s.approveHold(ctx, agentID, gen, amountAtoms, action)
 }
 
 func (s *grantStore) reserveSpendScoped(agentID, scope string, amountAtoms int64, now time.Time) (uint64, error) {

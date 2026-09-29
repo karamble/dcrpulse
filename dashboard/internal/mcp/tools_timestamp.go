@@ -219,126 +219,105 @@ var timestampTools = []toolDef{
 	agentTool("timestamp", "timestamp_retry",
 		"Re-submit a previously failed timestamp record to dcrtime, by digest. Requires a grant with timestamp write enabled.",
 		func(ctx context.Context, a *agent, in timestampDigestInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeTimestamp, time.Now()); err != nil {
-				recordSpend(a, "timestamp_retry", 0, 0, in.Digest, "denied", err.Error())
-				return nil, err
-			}
-			store, err := timestamp.Archive()
-			if err != nil {
-				recordSpend(a, "timestamp_retry", 0, 0, in.Digest, "error", err.Error())
-				return nil, err
-			}
 			digest := normDigest(in.Digest)
-			rec, err := store.Get(digest)
-			if err != nil {
-				recordSpend(a, "timestamp_retry", 0, 0, digest, "error", "record not found")
-				return nil, errors.New("record not found")
-			}
-			id := store.ClientID()
-			results, err := timestamp.Submit(ctx, id, []string{rec.Digest})
-			if err != nil {
-				_ = store.Update(digest, func(rr *timestamp.Record) error {
-					rr.Status = timestamp.StatusFailed
-					rr.FailReason = err.Error()
-					return nil
-				})
-			} else if code, found := results[rec.Digest]; found &&
-				code != timestamp.ResultOK && code != timestamp.ResultExistsError {
-				_ = store.Update(digest, func(rr *timestamp.Record) error {
-					rr.Status = timestamp.StatusFailed
-					rr.FailReason = "dcrtime: " + code.String()
-					return nil
-				})
-			} else {
-				_ = store.Update(digest, func(rr *timestamp.Record) error {
-					if rr.Status == timestamp.StatusFailed {
-						rr.Status = timestamp.StatusSubmitted
-						rr.FailReason = ""
-					}
-					return nil
-				})
-				if vr, verr := timestamp.Verify(ctx, id, []string{rec.Digest}); verr == nil {
-					if res, ok := vr[rec.Digest]; ok {
-						timestamp.ApplyResult(store, digest, res)
+			return gatedWrite(a, "timestamp_retry", scopeTimestamp, &digest, func() (any, string, error) {
+				store, err := timestamp.Archive()
+				if err != nil {
+					return nil, "", err
+				}
+				rec, err := store.Get(digest)
+				if err != nil {
+					return nil, "", errors.New("record not found")
+				}
+				id := store.ClientID()
+				results, err := timestamp.Submit(ctx, id, []string{rec.Digest})
+				if err != nil {
+					_ = store.Update(digest, func(rr *timestamp.Record) error {
+						rr.Status = timestamp.StatusFailed
+						rr.FailReason = err.Error()
+						return nil
+					})
+				} else if code, found := results[rec.Digest]; found &&
+					code != timestamp.ResultOK && code != timestamp.ResultExistsError {
+					_ = store.Update(digest, func(rr *timestamp.Record) error {
+						rr.Status = timestamp.StatusFailed
+						rr.FailReason = "dcrtime: " + code.String()
+						return nil
+					})
+				} else {
+					_ = store.Update(digest, func(rr *timestamp.Record) error {
+						if rr.Status == timestamp.StatusFailed {
+							rr.Status = timestamp.StatusSubmitted
+							rr.FailReason = ""
+						}
+						return nil
+					})
+					if vr, verr := timestamp.Verify(ctx, id, []string{rec.Digest}); verr == nil {
+						if res, ok := vr[rec.Digest]; ok {
+							timestamp.ApplyResult(store, digest, res)
+						}
 					}
 				}
-			}
-			final, _ := store.Get(digest)
-			recordSpend(a, "timestamp_retry", 0, 0, digest, "ok", string(final.Status))
-			return final, nil
+				final, _ := store.Get(digest)
+				return final, string(final.Status), nil
+			})
 		}),
 	agentTool("timestamp", "timestamp_delete",
 		"Delete a timestamp record and its proof from the archive, by digest. Requires a grant with timestamp write enabled.",
 		func(_ context.Context, a *agent, in timestampDigestInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeTimestamp, time.Now()); err != nil {
-				recordSpend(a, "timestamp_delete", 0, 0, in.Digest, "denied", err.Error())
-				return nil, err
-			}
-			store, err := timestamp.Archive()
-			if err != nil {
-				recordSpend(a, "timestamp_delete", 0, 0, in.Digest, "error", err.Error())
-				return nil, err
-			}
 			digest := normDigest(in.Digest)
-			if err := store.Delete(digest); err != nil {
-				if errors.Is(err, timestamp.ErrNotFound) {
-					recordSpend(a, "timestamp_delete", 0, 0, digest, "error", "record not found")
-					return nil, errors.New("record not found")
+			return gatedWrite(a, "timestamp_delete", scopeTimestamp, &digest, func() (any, string, error) {
+				store, err := timestamp.Archive()
+				if err != nil {
+					return nil, "", err
 				}
-				recordSpend(a, "timestamp_delete", 0, 0, digest, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "timestamp_delete", 0, 0, digest, "ok", "")
-			return map[string]any{"digest": digest, "deleted": true}, nil
+				if err := store.Delete(digest); err != nil {
+					if errors.Is(err, timestamp.ErrNotFound) {
+						return nil, "", errors.New("record not found")
+					}
+					return nil, "", err
+				}
+				return map[string]any{"digest": digest, "deleted": true}, "", nil
+			})
 		}),
 	agentTool("timestamp", "timestamp_update",
 		"Edit a timestamp record's user metadata (title, description, tags), by digest. Requires a grant with timestamp write enabled.",
 		func(_ context.Context, a *agent, in timestampUpdateInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeTimestamp, time.Now()); err != nil {
-				recordSpend(a, "timestamp_update", 0, 0, in.Digest, "denied", err.Error())
-				return nil, err
-			}
-			store, err := timestamp.Archive()
-			if err != nil {
-				recordSpend(a, "timestamp_update", 0, 0, in.Digest, "error", err.Error())
-				return nil, err
-			}
 			digest := normDigest(in.Digest)
-			err = store.Update(digest, func(rr *timestamp.Record) error {
-				rr.Title = in.Title
-				rr.Description = in.Description
-				rr.Tags = in.Tags
-				return nil
+			return gatedWrite(a, "timestamp_update", scopeTimestamp, &digest, func() (any, string, error) {
+				store, err := timestamp.Archive()
+				if err != nil {
+					return nil, "", err
+				}
+				err = store.Update(digest, func(rr *timestamp.Record) error {
+					rr.Title = in.Title
+					rr.Description = in.Description
+					rr.Tags = in.Tags
+					return nil
+				})
+				if errors.Is(err, timestamp.ErrNotFound) {
+					return nil, "", errors.New("record not found")
+				}
+				if err != nil {
+					return nil, "", err
+				}
+				rec, _ := store.Get(digest)
+				return rec, "", nil
 			})
-			if errors.Is(err, timestamp.ErrNotFound) {
-				recordSpend(a, "timestamp_update", 0, 0, digest, "error", "record not found")
-				return nil, errors.New("record not found")
-			}
-			if err != nil {
-				recordSpend(a, "timestamp_update", 0, 0, digest, "error", err.Error())
-				return nil, err
-			}
-			rec, _ := store.Get(digest)
-			recordSpend(a, "timestamp_update", 0, 0, digest, "ok", "")
-			return rec, nil
 		}),
 	agentTool("timestamp", "timestamp_refresh",
 		"Trigger an immediate dcrtime anchor poll, advancing not-yet-anchored records, then return the refreshed archive. Requires a grant with timestamp write enabled. One poll per 30 seconds, shared with the dashboard.",
 		func(ctx context.Context, a *agent, _ emptyInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeTimestamp, time.Now()); err != nil {
-				recordSpend(a, "timestamp_refresh", 0, 0, "", "denied", err.Error())
-				return nil, err
-			}
-			if err := allow(middleware.TimestampRefresh); err != nil {
-				return nil, err
-			}
-			timestamp.RefreshAnchors(ctx)
-			store, err := timestamp.Archive()
-			if err != nil {
-				recordSpend(a, "timestamp_refresh", 0, 0, "", "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "timestamp_refresh", 0, 0, "", "ok", "")
-			return store.List(timestamp.Query{}), nil
+			return gatedWrite(a, "timestamp_refresh", scopeTimestamp, new(string), func() (any, string, error) {
+				if err := allow(middleware.TimestampRefresh); err != nil {
+					return nil, "", denial{err}
+				}
+				timestamp.RefreshAnchors(ctx)
+				store, err := timestamp.Archive()
+				if err != nil {
+					return nil, "", err
+				}
+				return store.List(timestamp.Query{}), "", nil
+			})
 		}),
 }

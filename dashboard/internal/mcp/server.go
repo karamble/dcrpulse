@@ -632,22 +632,18 @@ var peerContentTools = map[string]bool{
 	"br_shop_place_order": true, "br_shop_order_comment": true, "br_content_get": true,
 }
 
-// ok adapts a `(value, error)` service return into a tool result. The value is
-// returned as `any` (see toolResult) so no output schema is generated.
-func ok(v any, err error) (*mcp.CallToolResult, any, error) {
+// okFrom adapts a named tool's `(value, error)` return into a tool result,
+// marking peer-authored results as such. The value is returned as `any` (see
+// toolResult) so no output schema is generated.
+func okFrom(name string, v any, err error) (*mcp.CallToolResult, any, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return nil, toolResult{Data: v}, nil
-}
-
-// okFrom is ok for a named tool, marking peer-authored results as such.
-func okFrom(name string, v any, err error) (*mcp.CallToolResult, any, error) {
-	res, out, err := ok(v, err)
-	if err == nil && peerContentTools[name] {
-		out = toolResult{Data: v, Untrusted: peerContentNotice}
+	tr := toolResult{Data: v}
+	if peerContentTools[name] {
+		tr.Untrusted = peerContentNotice
 	}
-	return res, out, err
+	return nil, tr, nil
 }
 
 // toolDef tags each tool with its capability domain so the per-agent server can
@@ -684,35 +680,37 @@ var (
 	writeAnnotations = &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(true)}
 )
 
-// readTool builds a read-only tool: a thin adapter that calls fn and wraps its
-// (value, error) result for MCP. In is the tool's argument type (emptyInput for
-// tools that take no parameters); its exported fields become the input schema.
-func readTool[In any](domain, name, description string, fn func(context.Context, In) (any, error)) toolDef {
-	return toolDef{domain: domain, name: name, readOnly: true, register: func(s *mcp.Server, a *agent) {
-		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: readAnnotations},
+// newTool builds a tool whose handler re-checks the agent's domain, calls fn and
+// wraps its (value, error) result for MCP. In is the tool's argument type
+// (emptyInput for tools that take no parameters); its exported fields become the
+// input schema. describe runs once per agent, when the tool is registered.
+func newTool[In any](domain, name string, readOnly bool, describe func(*agent) string, fn func(context.Context, *agent, In) (any, error)) toolDef {
+	annotations := writeAnnotations
+	if readOnly {
+		annotations = readAnnotations
+	}
+	return toolDef{domain: domain, name: name, readOnly: readOnly, register: func(s *mcp.Server, a *agent) {
+		mcp.AddTool(s, &mcp.Tool{Name: name, Description: describe(a), Annotations: annotations},
 			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 				if err := requireDomain(a, domain); err != nil {
-					return ok(nil, err)
-				}
-				v, err := fn(ctx, in)
-				return okFrom(name, v, err)
-			})
-	}}
-}
-
-// agentTool builds a grant-gated write tool whose handler also receives the
-// calling agent's identity.
-func agentTool[In any](domain, name, description string, fn func(context.Context, *agent, In) (any, error)) toolDef {
-	return toolDef{domain: domain, name: name, readOnly: false, register: func(s *mcp.Server, a *agent) {
-		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: writeAnnotations},
-			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
-				if err := requireDomain(a, domain); err != nil {
-					return ok(nil, err)
+					return nil, nil, err
 				}
 				v, err := fn(ctx, a, in)
 				return okFrom(name, v, err)
 			})
 	}}
+}
+
+// readTool builds a read-only tool: a thin adapter that calls fn.
+func readTool[In any](domain, name, description string, fn func(context.Context, In) (any, error)) toolDef {
+	return newTool(domain, name, true, func(*agent) string { return description },
+		func(ctx context.Context, _ *agent, in In) (any, error) { return fn(ctx, in) })
+}
+
+// agentTool builds a grant-gated write tool whose handler also receives the
+// calling agent's identity.
+func agentTool[In any](domain, name, description string, fn func(context.Context, *agent, In) (any, error)) toolDef {
+	return newTool(domain, name, false, func(*agent) string { return description }, fn)
 }
 
 // agentToolDesc is agentTool with a description computed per agent at
@@ -720,32 +718,14 @@ func agentTool[In any](domain, name, description string, fn func(context.Context
 // uses instead of describing its fields in the abstract. The text is a hint: the
 // grant checks inside the handler remain the authority.
 func agentToolDesc[In any](domain, name string, describe func(*agent) string, fn func(context.Context, *agent, In) (any, error)) toolDef {
-	return toolDef{domain: domain, name: name, readOnly: false, register: func(s *mcp.Server, a *agent) {
-		mcp.AddTool(s, &mcp.Tool{Name: name, Description: describe(a), Annotations: writeAnnotations},
-			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
-				if err := requireDomain(a, domain); err != nil {
-					return ok(nil, err)
-				}
-				v, err := fn(ctx, a, in)
-				return okFrom(name, v, err)
-			})
-	}}
+	return newTool(domain, name, false, describe, fn)
 }
 
 // agentReadTool is an agent-aware but read-only tool (introspection like
 // capabilities): it receives the agent yet moves nothing, so it carries the
 // read-only hint and is exempt from the spend-gating test.
 func agentReadTool[In any](domain, name, description string, fn func(context.Context, *agent, In) (any, error)) toolDef {
-	return toolDef{domain: domain, name: name, readOnly: true, register: func(s *mcp.Server, a *agent) {
-		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: readAnnotations},
-			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
-				if err := requireDomain(a, domain); err != nil {
-					return ok(nil, err)
-				}
-				v, err := fn(ctx, a, in)
-				return okFrom(name, v, err)
-			})
-	}}
+	return newTool(domain, name, true, func(*agent) string { return description }, fn)
 }
 
 // catalogDomains returns the distinct capability domains in the catalog, in

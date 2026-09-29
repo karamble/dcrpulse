@@ -186,26 +186,21 @@ var lightningTools = []toolDef{
 			// An invoice asks for money in, so it is recorded with no amount:
 			// the audit and the operator's notification both read a positive
 			// amount as something the agent sent. The figure stays in the detail.
-			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
-				recordSpend(a, "ln_add_invoice", 0, 0, "", "denied", err.Error())
-				return nil, err
-			}
-			var atoms int64
-			if in.AmountDCR > 0 {
-				amt, err := dcrutil.NewAmount(in.AmountDCR)
-				if err != nil {
-					return nil, fmt.Errorf("invalid amount: %w", err)
+			return gatedWrite(a, "ln_add_invoice", scopeLightning, new(string), func() (any, string, error) {
+				var atoms int64
+				if in.AmountDCR > 0 {
+					amt, err := dcrutil.NewAmount(in.AmountDCR)
+					if err != nil {
+						return nil, "", fmt.Errorf("invalid amount: %w", err)
+					}
+					atoms = int64(amt)
 				}
-				atoms = int64(amt)
-			}
-			inv, err := services.AddLightningInvoice(ctx, &types.LightningAddInvoiceRequest{Memo: in.Memo, ValueAtoms: atoms})
-			if err != nil {
-				recordSpend(a, "ln_add_invoice", 0, 0, "", "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "ln_add_invoice", 0, 0, "", "ok",
-				fmt.Sprintf("requested %s rhash=%s", dcrAmountStr(atoms), inv.RHashHex))
-			return inv, nil
+				inv, err := services.AddLightningInvoice(ctx, &types.LightningAddInvoiceRequest{Memo: in.Memo, ValueAtoms: atoms})
+				if err != nil {
+					return nil, "", err
+				}
+				return inv, fmt.Sprintf("requested %s rhash=%s", dcrAmountStr(atoms), inv.RHashHex), nil
+			})
 		}),
 	agentTool("lightning", "ln_open_channel",
 		"Open a Lightning channel, funding it from the Lightning wallet. Requires a spend grant with Lightning enabled; the funding amount counts against the daily cap.",
@@ -316,17 +311,13 @@ var lightningTools = []toolDef{
 			if in.ChannelPoint == "" {
 				return nil, fmt.Errorf("channelPoint required")
 			}
-			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
-				recordSpend(a, "ln_close_channel", 0, 0, in.ChannelPoint, "denied", err.Error())
-				return nil, err
-			}
-			resp, err := services.CloseLightningChannel(ctx, in.ChannelPoint, in.Force)
-			if err != nil {
-				recordSpend(a, "ln_close_channel", 0, 0, in.ChannelPoint, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "ln_close_channel", 0, 0, in.ChannelPoint, "ok", resp.ClosingTxid)
-			return resp, nil
+			return gatedWrite(a, "ln_close_channel", scopeLightning, &in.ChannelPoint, func() (any, string, error) {
+				resp, err := services.CloseLightningChannel(ctx, in.ChannelPoint, in.Force)
+				if err != nil {
+					return nil, "", err
+				}
+				return resp, resp.ClosingTxid, nil
+			})
 		}),
 	agentTool("lightning", "ln_cancel_invoice",
 		"Cancel an open Lightning invoice by its payment hash. Requires a spend grant with Lightning enabled.",
@@ -334,16 +325,12 @@ var lightningTools = []toolDef{
 			if in.PaymentHash == "" {
 				return nil, fmt.Errorf("paymentHash required")
 			}
-			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
-				recordSpend(a, "ln_cancel_invoice", 0, 0, in.PaymentHash, "denied", err.Error())
-				return nil, err
-			}
-			if err := services.CancelLightningInvoice(ctx, in.PaymentHash); err != nil {
-				recordSpend(a, "ln_cancel_invoice", 0, 0, in.PaymentHash, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "ln_cancel_invoice", 0, 0, in.PaymentHash, "ok", "")
-			return map[string]any{"canceled": true}, nil
+			return gatedWrite(a, "ln_cancel_invoice", scopeLightning, &in.PaymentHash, func() (any, string, error) {
+				if err := services.CancelLightningInvoice(ctx, in.PaymentHash); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"canceled": true}, "", nil
+			})
 		}),
 	agentTool("lightning", "ln_watchtower_add",
 		"Register a watchtower with this Lightning node. Requires a spend grant with Lightning enabled.",
@@ -351,16 +338,12 @@ var lightningTools = []toolDef{
 			if in.PubKey == "" || in.Address == "" {
 				return nil, fmt.Errorf("pubKey and address required")
 			}
-			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
-				recordSpend(a, "ln_watchtower_add", 0, 0, in.PubKey, "denied", err.Error())
-				return nil, err
-			}
-			if err := services.AddLightningWatchtower(ctx, in.PubKey, in.Address); err != nil {
-				recordSpend(a, "ln_watchtower_add", 0, 0, in.PubKey, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "ln_watchtower_add", 0, 0, in.PubKey, "ok", in.Address)
-			return map[string]any{"added": true}, nil
+			return gatedWrite(a, "ln_watchtower_add", scopeLightning, &in.PubKey, func() (any, string, error) {
+				if err := services.AddLightningWatchtower(ctx, in.PubKey, in.Address); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"added": true}, in.Address, nil
+			})
 		}),
 	agentTool("lightning", "ln_watchtower_remove",
 		"Deregister a watchtower from this Lightning node. Requires a spend grant with Lightning enabled.",
@@ -368,16 +351,12 @@ var lightningTools = []toolDef{
 			if in.PubKey == "" {
 				return nil, fmt.Errorf("pubKey required")
 			}
-			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
-				recordSpend(a, "ln_watchtower_remove", 0, 0, in.PubKey, "denied", err.Error())
-				return nil, err
-			}
-			if err := services.RemoveLightningWatchtower(ctx, in.PubKey); err != nil {
-				recordSpend(a, "ln_watchtower_remove", 0, 0, in.PubKey, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "ln_watchtower_remove", 0, 0, in.PubKey, "ok", "")
-			return map[string]any{"removed": true}, nil
+			return gatedWrite(a, "ln_watchtower_remove", scopeLightning, &in.PubKey, func() (any, string, error) {
+				if err := services.RemoveLightningWatchtower(ctx, in.PubKey); err != nil {
+					return nil, "", err
+				}
+				return map[string]any{"removed": true}, "", nil
+			})
 		}),
 	agentTool("lightning", "ln_autopilot_set",
 		"Enable or disable Lightning autopilot (automatic channel management). Requires a spend grant with Lightning enabled; enabling also needs the user's approval when Bison Relay oversight is on.",

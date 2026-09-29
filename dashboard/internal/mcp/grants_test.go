@@ -439,3 +439,50 @@ func TestDisablingMCPZeroesHeldPassphrases(t *testing.T) {
 		t.Fatal("the grant survived the surface being turned off")
 	}
 }
+
+// A reservation the operator never approved was never spent, so every reserving
+// check hands it back when the approval fails, here because it cannot be sent.
+func TestRefusedApprovalRefundsTheReservation(t *testing.T) {
+	prevCfg, prevSend := oversightSettings, sendApprovalPM
+	oversightSettings = func() (bool, string, bool) { return true, overseer, true }
+	sendApprovalPM = func(context.Context, string, string) error { return errApprovalUnreachable }
+	t.Cleanup(func() { oversightSettings, sendApprovalPM = prevCfg, prevSend })
+
+	ctx := context.Background()
+	for name, authorize := range map[string]func(s *grantStore, now time.Time) error{
+		"send": func(s *grantStore, now time.Time) error {
+			_, _, err := s.authorize(ctx, "a", 0, 50, "", now)
+			return err
+		},
+		"lightning": func(s *grantStore, now time.Time) error {
+			_, err := s.authorizeLightning(ctx, "a", 50, now)
+			return err
+		},
+		"vsp fees": func(s *grantStore, now time.Time) error {
+			_, _, err := s.authorizeVSPFees(ctx, "a", 0, 0, 50, "pay VSP fees", now)
+			return err
+		},
+		"scoped": func(s *grantStore, now time.Time) error {
+			_, err := s.authorizeSpendScoped(ctx, "a", scopeDexSpend, 50, "post a bond", now)
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newGrantStore()
+			now := time.Now()
+			s.set("a", GrantSpec{
+				Accounts:    []uint32{0},
+				PerTxAtoms:  100,
+				DailyAtoms:  100,
+				Passphrase:  []byte("pass"),
+				WriteScopes: []string{scopeLightning, scopeStaking, scopeDexSpend},
+			}, now)
+			if err := authorize(s, now); err == nil {
+				t.Fatal("authorized without the operator's approval")
+			}
+			if info, _ := s.info("a"); info.SpentAtoms != 0 {
+				t.Errorf("%d atoms stay reserved after the approval failed", info.SpentAtoms)
+			}
+		})
+	}
+}
