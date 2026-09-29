@@ -11,13 +11,14 @@ services:
     # Each directory is committed in the app, so umbrelOS seeds it; Docker
     # still creates it root-owned when an update adds one, which is what this
     # repairs. Mounted one by one because ${APP_DATA_DIR} itself may not be.
-    command: ["sh", "-c", "chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor"]
+    command: ["sh", "-c", "chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor /host/control"]
     volumes:
       - ${APP_DATA_DIR}/data/dashboard:/host/dashboard
       - ${APP_DATA_DIR}/data/dcrlnd:/host/dcrlnd
       - ${APP_DATA_DIR}/data/brclientd:/host/brclientd
       - ${APP_DATA_DIR}/data/dcrdex:/host/dcrdex
       - ${APP_DATA_DIR}/data/tor:/host/tor
+      - ${APP_DATA_DIR}/data/control:/host/control
 
   dcrd:
     image: ghcr.io/karamble/dcrpulse-dcrd:2.1.5@sha256:7f3227bf99a6be2d173daf43aacb7bf405d81fd4ba78f8f35a37ba2116ef5138
@@ -25,7 +26,9 @@ services:
     restart: on-failure
     stop_grace_period: 5m
     volumes:
-      - ${APP_DATA_DIR}/data:/app-data
+      - ${APP_DATA_DIR}/data/dcrd:/app-data/dcrd
+      - ${APP_DATA_DIR}/data/control:/app-data/control:ro
+      - ${APP_DATA_DIR}/data/tor:/app-data/tor:ro
     environment:
       DCRD_RPC_USER: ${APP_SEED}
       DCRD_RPC_PASS: ${APP_SEED}
@@ -56,7 +59,9 @@ services:
     restart: on-failure
     stop_grace_period: 1m
     volumes:
-      - ${APP_DATA_DIR}/data:/app-data
+      - ${APP_DATA_DIR}/data/dcrwallet:/app-data/dcrwallet
+      - ${APP_DATA_DIR}/data/dcrd:/app-data/dcrd:ro
+      - ${APP_DATA_DIR}/data/control:/app-data/control:ro
     environment:
       DCRWALLET_RPC_USER: ${APP_SEED}
       DCRWALLET_RPC_PASS: ${APP_SEED}
@@ -82,8 +87,10 @@ services:
     restart: on-failure
     stop_grace_period: 1m
     volumes:
-      - ${APP_DATA_DIR}/data:/app-data:ro
       - ${APP_DATA_DIR}/data/dcrlnd:/app-data/dcrlnd
+      - ${APP_DATA_DIR}/data/dcrd:/app-data/dcrd:ro
+      - ${APP_DATA_DIR}/data/control:/app-data/control:ro
+      - ${APP_DATA_DIR}/data/tor:/app-data/tor:ro
     environment:
       DCRWALLET_HOST: dcrwallet
       DCRWALLET_GRPC_PORT: 9111
@@ -115,8 +122,9 @@ services:
       TOR_PROXY_IP: tor
       TOR_PROXY_PORT: 9050
     volumes:
-      - ${APP_DATA_DIR}/data:/app-data:ro
       - ${APP_DATA_DIR}/data/brclientd:/app-data/brclientd
+      - ${APP_DATA_DIR}/data/dcrlnd:/app-data/dcrlnd:ro
+      - ${APP_DATA_DIR}/data/control:/app-data/control:ro
     depends_on:
       init:
         condition: service_completed_successfully
@@ -136,7 +144,8 @@ services:
       TOR_PROXY_PORT: 9050
     volumes:
       - ${APP_DATA_DIR}/data/dcrdex:/dex/.dexc
-      - ${APP_DATA_DIR}/data:/app-data:ro
+      - ${APP_DATA_DIR}/data/dcrd:/app-data/dcrd:ro
+      - ${APP_DATA_DIR}/data/control:/app-data/control:ro
     depends_on:
       init:
         condition: service_completed_successfully
@@ -222,7 +231,7 @@ services:
       DCRD_RPC_PASS: ${APP_SEED}
       DCRD_RPC_CERT: /app-data/dcrd/rpc.cert
     volumes:
-      - ${APP_DATA_DIR}/data:/app-data:ro
+      - ${APP_DATA_DIR}/data/dcrd:/app-data/dcrd:ro
     depends_on:
       dcrd:
         condition: service_healthy
