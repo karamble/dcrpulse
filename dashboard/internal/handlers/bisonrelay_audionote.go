@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -23,8 +22,7 @@ func BisonrelayAudioNoteHandler(w http.ResponseWriter, r *http.Request) {
 		User       string `json:"user"`
 		PacketsB64 string `json:"packets_b64"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+	if !decodeBody(w, r, &req) {
 		return
 	}
 	user, ok := brID(w, req.User, "user")

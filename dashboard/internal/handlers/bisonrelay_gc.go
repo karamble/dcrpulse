@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -15,18 +14,11 @@ import (
 	"github.com/gorilla/mux"
 
 	"dcrpulse/internal/rpc"
-	"dcrpulse/internal/services"
 )
 
 // BisonrelayGCListHandler proxies brclientd's GET /gc.
 func BisonrelayGCListHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdGCList(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdGCList(r.Context()) })
 }
 
 // BisonrelayGCCreateHandler creates a new GC.
@@ -34,32 +26,19 @@ func BisonrelayGCCreateHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+	if !decodeBody(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
-	body, err := rpc.BrclientdGCCreate(r.Context(), req.Name)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdGCCreate(r.Context(), req.Name) })
 }
 
 // BisonrelayGCInvitesListHandler lists pending GC invites for the local user.
 func BisonrelayGCInvitesListHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdGCInvitesList(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdGCInvitesList(r.Context()) })
 }
 
 // BisonrelayGCInvitesAcceptHandler accepts an invite by IID.
@@ -67,8 +46,7 @@ func BisonrelayGCInvitesAcceptHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IID uint64 `json:"iid"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+	if !decodeBody(w, r, &req) {
 		return
 	}
 	if req.IID == 0 {
@@ -84,13 +62,7 @@ func BisonrelayGCDetailHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, err := rpc.BrclientdGCDetail(r.Context(), gcid)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdGCDetail(r.Context(), gcid) })
 }
 
 // BisonrelayGCInviteHandler invites a contact to a GC.
@@ -109,16 +81,11 @@ func BisonrelayGCMessageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Msg   string `json:"msg"`
-		Mode  int    `json:"mode"`
-		Embed *struct {
-			Name    string `json:"name"`
-			Mime    string `json:"mime"`
-			DataB64 string `json:"data_b64"`
-		} `json:"embed,omitempty"`
+		Msg   string   `json:"msg"`
+		Mode  int      `json:"mode"`
+		Embed *brEmbed `json:"embed,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+	if !decodeBody(w, r, &req) {
 		return
 	}
 	req.Msg = strings.TrimSpace(req.Msg)
@@ -126,26 +93,10 @@ func BisonrelayGCMessageHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "msg or embed is required", http.StatusBadRequest)
 		return
 	}
-
-	body := req.Msg
-	if req.Embed != nil {
-		decoded, err := base64.StdEncoding.DecodeString(req.Embed.DataB64)
-		if err != nil {
-			http.Error(w, "embed data_b64: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		if len(decoded) > services.MaxInlineEmbedBytes {
-			http.Error(w, "embed exceeds inline size cap", http.StatusRequestEntityTooLarge)
-			return
-		}
-		tag := services.BuildEmbedTag(req.Embed.Name, req.Embed.Mime, req.Embed.DataB64)
-		if body == "" {
-			body = tag
-		} else {
-			body = body + "\n" + tag
-		}
+	body, ok := brMessageBody(w, req.Msg, req.Embed)
+	if !ok {
+		return
 	}
-
 	if err := rpc.BrclientdGCMessage(r.Context(), gcid, body, req.Mode); err != nil {
 		brWriteErr(w, err)
 		return
@@ -161,24 +112,14 @@ func BisonrelayGCHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	body, err := rpc.BrclientdGCHistory(r.Context(), gcid, page, pageSize)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdGCHistory(r.Context(), gcid, page, pageSize) })
 }
 
 // BisonrelayGCClearHistoryHandler wipes the locally stored scrollback for a GC.
 // Local-only and irreversible: the group and its members are untouched and the
 // other members keep their own copies.
 func BisonrelayGCClearHistoryHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdGCClearHistory(r.Context(), gcid) })
+	brPathAction(w, r, "gcid", rpc.BrclientdGCClearHistory)
 }
 
 // BisonrelayGCPartHandler leaves a GC (non-owner action).
@@ -207,35 +148,21 @@ func BisonrelayGCKillHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCKickHandler kicks a member (admin action).
 func BisonrelayGCKickHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	var req struct {
-		UID    string `json:"uid"`
-		Reason string `json:"reason"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdGCKick(r.Context(), gcid, req.UID, req.Reason) })
+	brPathJSONAction(w, r, "gcid", func(ctx context.Context, gcid rpc.ShortIDHex, req struct {
+		UID    brHexID `json:"uid"`
+		Reason string  `json:"reason"`
+	}) error {
+		return rpc.BrclientdGCKick(ctx, gcid, string(req.UID), req.Reason)
+	})
 }
 
 // gcMemberAction decodes {uid} and runs one member-scoped GC action.
 func gcMemberAction(w http.ResponseWriter, r *http.Request, action func(ctx context.Context, gcid rpc.ShortIDHex, uid string) error) {
-	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	var req struct {
-		UID string `json:"uid"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return action(r.Context(), gcid, req.UID) })
+	brPathJSONAction(w, r, "gcid", func(ctx context.Context, gcid rpc.ShortIDHex, req struct {
+		UID brHexID `json:"uid"`
+	}) error {
+		return action(ctx, gcid, string(req.UID))
+	})
 }
 
 // BisonrelayGCBlockHandler client-side blocks a member.
@@ -250,82 +177,43 @@ func BisonrelayGCUnblockHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCAdminsHandler replaces the ExtraAdmins list (v1+ only).
 func BisonrelayGCAdminsHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	var req struct {
-		ExtraAdmins []string `json:"extra_admins"`
+	brPathJSONAction(w, r, "gcid", func(ctx context.Context, gcid rpc.ShortIDHex, req struct {
+		ExtraAdmins brHexIDs `json:"extra_admins"`
 		Reason      string   `json:"reason"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdGCModifyAdmins(r.Context(), gcid, req.ExtraAdmins, req.Reason) })
+	}) error {
+		return rpc.BrclientdGCModifyAdmins(ctx, gcid, req.ExtraAdmins, req.Reason)
+	})
 }
 
 // BisonrelayGCOwnerHandler swaps the GC owner (Members[0]).
 func BisonrelayGCOwnerHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	var req struct {
-		NewOwner string `json:"new_owner"`
-		Reason   string `json:"reason"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdGCModifyOwner(r.Context(), gcid, req.NewOwner, req.Reason) })
+	brPathJSONAction(w, r, "gcid", func(ctx context.Context, gcid rpc.ShortIDHex, req struct {
+		NewOwner brHexID `json:"new_owner"`
+		Reason   string  `json:"reason"`
+	}) error {
+		return rpc.BrclientdGCModifyOwner(ctx, gcid, string(req.NewOwner), req.Reason)
+	})
 }
 
 // BisonrelayGCUpgradeHandler bumps the GC protocol version (one-way).
 func BisonrelayGCUpgradeHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	var req struct {
+	brPathJSONAction(w, r, "gcid", func(ctx context.Context, gcid rpc.ShortIDHex, req struct {
 		NewVersion uint8 `json:"new_version"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdGCUpgrade(r.Context(), gcid, req.NewVersion) })
+	}) error {
+		return rpc.BrclientdGCUpgrade(ctx, gcid, req.NewVersion)
+	})
 }
 
 // BisonrelayGCAliasHandler sets the local alias for a GC (DB-only).
 func BisonrelayGCAliasHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	var req struct {
+	brPathJSONAction(w, r, "gcid", func(ctx context.Context, gcid rpc.ShortIDHex, req struct {
 		Alias string `json:"alias"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdGCAlias(r.Context(), gcid, req.Alias) })
+	}) error {
+		return rpc.BrclientdGCAlias(ctx, gcid, req.Alias)
+	})
 }
 
 // BisonrelayGCResendListHandler resends the GC member list to one or all members.
 func BisonrelayGCResendListHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	var req struct {
-		UID string `json:"uid"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdGCResendList(r.Context(), gcid, req.UID) })
+	gcMemberAction(w, r, rpc.BrclientdGCResendList)
 }

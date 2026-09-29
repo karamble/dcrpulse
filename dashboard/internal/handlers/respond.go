@@ -38,6 +38,16 @@ func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	writeJSONStatus(w, status, map[string]any{"success": false, "message": msg})
 }
 
+// decodeBody decodes the JSON request body into v, answering 400 and reporting
+// false when it does not parse.
+func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
 // msgWalletUnavailable is the single wording for "the wallet is not wired up
 // yet", which the routes used to phrase four different ways for one condition.
 const msgWalletUnavailable = "wallet is not available yet"

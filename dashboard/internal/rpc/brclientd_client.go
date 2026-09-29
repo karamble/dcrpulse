@@ -149,33 +149,7 @@ func BrclientdSetAvatar(ctx context.Context, avatarB64 string) error {
 // at /create-identity (the same port as clientrpc, served only while the
 // daemon is in the needs-identity stage). Returns nil on HTTP 204.
 func BrclientdCreateIdentity(ctx context.Context, nick, name string) error {
-	cli, err := brclientdClient()
-	if err != nil {
-		return err
-	}
-	url, err := brclientdEndpoint(setupPort, "/create-identity", nil)
-	if err != nil {
-		return err
-	}
-	payload, err := json.Marshal(map[string]string{"nick": nick, "name": name})
-	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := cli.Do(req)
-	if err != nil {
-		return fmt.Errorf("brclientd /create-identity: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return fmt.Errorf("brclientd /create-identity: HTTP %d: %s", resp.StatusCode, body)
-	}
-	return nil
+	return brclientdPostJSONOn(ctx, setupPort, "/create-identity", map[string]string{"nick": nick, "name": name})
 }
 
 // BrclientdSendFileResult is the JSON shape brclientd returns from
@@ -703,19 +677,7 @@ func BrclientdContentFile(ctx context.Context, uidHex, fidHex string) (*http.Res
 	if uidHex != "" {
 		q["uid"] = uidHex
 	}
-	endpoint, err := brclientdEndpoint(statusPort, "/content/file", q)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd /content/file: %w", err)
-	}
-	return resp, nil
+	return brclientdOpenGET(ctx, cli, "/content/file", q)
 }
 
 // BrclientdPostEmbedData opens a streaming GET against brclientd's
@@ -726,23 +688,11 @@ func BrclientdPostEmbedData(ctx context.Context, uidHex, pidHex string, index in
 	if err != nil {
 		return nil, err
 	}
-	endpoint, err := brclientdEndpoint(statusPort, "/posts/embed-data", map[string]string{
+	return brclientdOpenGET(ctx, cli, "/posts/embed-data", map[string]string{
 		"uid":   uidHex,
 		"pid":   pidHex,
 		"index": strconv.Itoa(index),
 	})
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd /posts/embed-data: %w", err)
-	}
-	return resp, nil
 }
 
 // BrclientdBackup opens a streaming GET against brclientd's /backup status
@@ -754,19 +704,7 @@ func BrclientdBackup(ctx context.Context) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	url, err := brclientdEndpoint(statusPort, "/backup", nil)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd /backup: %w", err)
-	}
-	return resp, nil
+	return brclientdOpenGET(ctx, cli, "/backup", nil)
 }
 
 // BrclientdRestoreBackup streams a backup tarball to brclientd's pre-setup
@@ -872,17 +810,9 @@ func BrclientdGetStoreFile(ctx context.Context, path string) ([]byte, string, er
 	if err != nil {
 		return nil, "", err
 	}
-	u, err := brclientdEndpoint(statusPort, "/store/files/get", map[string]string{"path": path})
+	resp, err := brclientdOpenGET(ctx, cli, "/store/files/get", map[string]string{"path": path})
 	if err != nil {
 		return nil, "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, "", fmt.Errorf("build get-file request: %w", err)
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, "", fmt.Errorf("brclientd /store/files/get: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := readBrclientdBody(resp, "/store/files/get", 256<<20)
@@ -1270,17 +1200,9 @@ func brclientdGetRawLimit(ctx context.Context, path brPath, query map[string]str
 	if err != nil {
 		return nil, err
 	}
-	endpoint, err := brclientdEndpoint(statusPort, path, query)
+	resp, err := brclientdOpenGET(ctx, cli, path, query)
 	if err != nil {
 		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -1382,15 +1304,38 @@ func BrclientdStreamNotifications(ctx context.Context, onEvent func(BrclientdNot
 	}
 }
 
+// brclientdOpenGET opens a GET on brclientd's status server. The caller owns
+// resp.Body and must close it.
+func brclientdOpenGET(ctx context.Context, cli *http.Client, path brPath, query map[string]string) (*http.Response, error) {
+	endpoint, err := brclientdEndpoint(statusPort, path, query)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd %s: %w", path, err)
+	}
+	return resp, nil
+}
+
 // brclientdPostJSON issues a POST with a JSON body to brclientd's status
 // server and expects a 204 No Content reply. Used by per-contact action
 // endpoints that share the same fire-and-forget shape.
 func brclientdPostJSON(ctx context.Context, path brPath, body any) error {
+	return brclientdPostJSONOn(ctx, statusPort, path, body)
+}
+
+// brclientdPostJSONOn is brclientdPostJSON against the given port.
+func brclientdPostJSONOn(ctx context.Context, port brclientdPort, path brPath, body any) error {
 	cli, err := brclientdClient()
 	if err != nil {
 		return err
 	}
-	url, err := brclientdEndpoint(statusPort, path, nil)
+	url, err := brclientdEndpoint(port, path, nil)
 	if err != nil {
 		return err
 	}

@@ -71,8 +71,7 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, redactBridgeToken(view))
 	case http.MethodPost:
 		var view types.BRMCPSettings
-		if err := json.NewDecoder(r.Body).Decode(&view); err != nil {
-			http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		if !decodeBody(w, r, &view) {
 			return
 		}
 		perCall, err := dcrutil.NewAmount(view.PerCallCapDcr)
@@ -151,8 +150,7 @@ func BisonrelayMCPResolvePendingHandler(w http.ResponseWriter, r *http.Request) 
 		ID      string `json:"id"`
 		Approve bool   `json:"approve"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+	if !decodeBody(w, r, &req) {
 		return
 	}
 	if req.ID == "" {
