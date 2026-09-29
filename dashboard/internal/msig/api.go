@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"decred.org/dcrwallet/v5/wallet/udb"
 )
 
 // ListForActiveWallet returns the active wallet's shared-wallet records,
@@ -147,6 +149,11 @@ func ImportBackupCard(ctx context.Context, card *BackupCard, passphrase []byte) 
 	if !ownIn {
 		return nil, fmt.Errorf("the backup key is not part of the shared wallet's roster")
 	}
+	if err := validateCardRecord(rec); err != nil {
+		return nil, fmt.Errorf("the backup file is malformed: %v", err)
+	}
+	// In-flight state belongs to the wallet the card was taken from.
+	rec.Proposals, rec.BroadcastHints, rec.HintAdmissions = nil, nil, nil
 	// Recompute the wallet id rather than trusting the card.
 	derived, err := WalletIDForRoster(rec.M, rec.Xpubs, params)
 	if err != nil {
@@ -185,7 +192,6 @@ func ImportBackupCard(ctx context.Context, card *BackupCard, passphrase []byte) 
 	}
 
 	restored := cloneRecord(rec)
-	restored.Proposals = nil
 	restored.Status = StatusActive
 	restored.FailReason = ""
 	restored.OwnHD.Account = account
@@ -197,11 +203,16 @@ func ImportBackupCard(ctx context.Context, card *BackupCard, passphrase []byte) 
 	if restored.Int != nil {
 		restored.Int.ImportedThrough = 0
 	}
+	// Import before saving, so a restore that fails or is cancelled part way
+	// leaves no record behind to repeat it on the next start.
+	if _, err := importLadder(ctx, restored, func(branch, through uint32) error {
+		cursorFor(restored, branch).ImportedThrough = through
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("the wallet could not import the ladder: %v", err)
+	}
 	if err := store.PutWallet(restored); err != nil {
 		return nil, err
-	}
-	if _, err := ensureWindowImported(ctx, store, restored.TempID); err != nil {
-		return nil, fmt.Errorf("the wallet could not import the ladder: %v", err)
 	}
 	scanFrom := restored.CreatedHeight - 1
 	if scanFrom < 0 {
@@ -210,6 +221,39 @@ func ImportBackupCard(ctx context.Context, card *BackupCard, passphrase []byte) 
 	rescanSeam(scanFrom)
 	out, _ := store.Wallet(restored.TempID)
 	return out, nil
+}
+
+// validateCardRecord checks the parts of a backup card the restore keeps, so a
+// malformed card is refused before anything is written.
+func validateCardRecord(rec *WalletRecord) error {
+	if !validTempID(rec.TempID) {
+		return fmt.Errorf("bad wallet id")
+	}
+	if len(rec.Label) > MaxLabelLen {
+		return fmt.Errorf("label exceeds %d characters", MaxLabelLen)
+	}
+	if rec.Role != RoleInitiator && rec.Role != RoleCosigner {
+		return fmt.Errorf("unknown role %q", rec.Role)
+	}
+	for _, p := range rec.Peers {
+		if p == nil {
+			return fmt.Errorf("empty peer entry")
+		}
+	}
+	// dcrwallet derives no index past MaxAddressesPerAccount, and no member
+	// hands out a receive address past the last used one plus the gap.
+	for _, b := range []struct {
+		c   *CursorState
+		gap uint32
+	}{{rec.Ext, GapExt}, {rec.Int, GapInt}} {
+		if b.c != nil && (b.c.Next > udb.MaxAddressesPerAccount-b.gap || b.c.LastUsed > udb.MaxAddressesPerAccount-b.gap) {
+			return fmt.Errorf("address cursor out of range")
+		}
+	}
+	if c := rec.Ext; c != nil && c.Next > c.LastUsed+GapExt {
+		return fmt.Errorf("receive cursor is past the gap")
+	}
+	return nil
 }
 
 // locateAccountByXpub scans every account for the one whose extended

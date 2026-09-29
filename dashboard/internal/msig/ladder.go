@@ -187,7 +187,7 @@ type LadderEntry struct {
 // stepping over skipped indices. Cursors count raw indices, holes
 // included, so every participant's window covers the same rungs.
 func DeriveWindow(m int, xpubs []string, branch, from, to uint32, params *chaincfg.Params) ([]LadderEntry, error) {
-	entries := make([]LadderEntry, 0, int(to-from))
+	entries := make([]LadderEntry, 0, min(int(to-from), ladderImportChunk))
 	for i := from; i < to; i++ {
 		script, _, err := ScriptAt(m, xpubs, branch, i, params)
 		if errors.Is(err, ErrSkipIndex) {

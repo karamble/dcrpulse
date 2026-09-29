@@ -11,6 +11,8 @@ import (
 	"sync"
 
 	"dcrpulse/internal/services"
+
+	"decred.org/dcrwallet/v5/wallet/udb"
 )
 
 // HD wallet seams, mirroring the handshake ones.
@@ -114,18 +116,15 @@ func ladderFor(rec *WalletRecord) (*ladderView, error) {
 	return view, nil
 }
 
+// windowEnd is one past the last rung a branch needs, never past the last
+// index dcrwallet can derive.
 func windowEnd(c *CursorState, gap uint32) uint32 {
 	if c == nil {
 		return gap
 	}
-	end := c.Next + gap
-	if c.LastUsed+gap > end {
-		end = c.LastUsed + gap
-	}
-	if c.ImportedThrough > end {
-		end = c.ImportedThrough
-	}
-	return end
+	end := max(uint64(c.Next), uint64(c.LastUsed)) + uint64(gap)
+	end = max(end, uint64(c.ImportedThrough))
+	return uint32(min(end, uint64(udb.MaxAddressesPerAccount)))
 }
 
 // entryAt derives a single rung without touching the memo.
@@ -173,6 +172,33 @@ func ensureWindowImported(ctx context.Context, store *Store, tempID string) (boo
 	if !ok || !rec.HD {
 		return false, fmt.Errorf("unknown HD shared wallet %s", tempID)
 	}
+	imported, err := importLadder(ctx, rec, func(branch, through uint32) error {
+		return store.UpdateWallet(tempID, func(r *WalletRecord) error {
+			c := cursorFor(r, branch)
+			if c.ImportedThrough < through {
+				c.ImportedThrough = through
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		return false, err
+	}
+	if imported {
+		msigLog.Infof("%q ladder imported through ext %d / int %d", rec.Label,
+			windowEnd(rec.Ext, GapExt), windowEnd(rec.Int, GapInt))
+	}
+	return imported, nil
+}
+
+// ladderImportChunk is how many rungs are derived and imported at a time, so
+// a wide window is never held in memory whole.
+const ladderImportChunk = 256
+
+// importLadder imports the scripts rec's windows still need, a chunk at a
+// time, stopping when ctx ends, and syncs the wallet's own branch indices.
+// done runs once a branch is complete, with its new imported edge.
+func importLadder(ctx context.Context, rec *WalletRecord, done func(branch, through uint32) error) (bool, error) {
 	params, err := paramsForNetwork(rec.Network)
 	if err != nil {
 		return false, err
@@ -192,14 +218,24 @@ func ensureWindowImported(ctx context.Context, store *Store, tempID string) (boo
 		if p.from >= p.through {
 			continue
 		}
-		entries, err := DeriveWindow(rec.M, rec.Xpubs, p.branch, p.from, p.through, params)
-		if err != nil {
-			return false, err
-		}
-		for _, e := range entries {
-			if err := importScriptSeam(ctx, fmt.Sprintf("%x", e.Script), false, 0); err != nil {
-				return false, fmt.Errorf("import ladder script %d/%d: %v", e.Branch, e.Index, err)
+		for from := p.from; from < p.through; {
+			if err := ctx.Err(); err != nil {
+				return false, err
 			}
+			to := p.through
+			if to-from > ladderImportChunk {
+				to = from + ladderImportChunk
+			}
+			entries, err := DeriveWindow(rec.M, rec.Xpubs, p.branch, from, to, params)
+			if err != nil {
+				return false, err
+			}
+			for _, e := range entries {
+				if err := importScriptSeam(ctx, fmt.Sprintf("%x", e.Script), false, 0); err != nil {
+					return false, fmt.Errorf("import ladder script %d/%d: %v", e.Branch, e.Index, err)
+				}
+			}
+			from = to
 		}
 		if acctName == "" && rec.OwnHD != nil {
 			if acctName, err = accountNameByNumber(ctx, rec.OwnHD.Account); err != nil {
@@ -212,21 +248,9 @@ func ensureWindowImported(ctx context.Context, store *Store, tempID string) (boo
 			}
 		}
 		imported = true
-		branch := p.branch
-		through := p.through
-		if err := store.UpdateWallet(tempID, func(r *WalletRecord) error {
-			c := cursorFor(r, branch)
-			if c.ImportedThrough < through {
-				c.ImportedThrough = through
-			}
-			return nil
-		}); err != nil {
+		if err := done(p.branch, p.through); err != nil {
 			return false, err
 		}
-	}
-	if imported {
-		msigLog.Infof("%q ladder imported through ext %d / int %d", rec.Label,
-			windowEnd(rec.Ext, GapExt), windowEnd(rec.Int, GapInt))
 	}
 	return imported, nil
 }
