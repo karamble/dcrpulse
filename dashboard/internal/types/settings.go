@@ -12,14 +12,15 @@ type WalletSettings struct {
 }
 
 // ExternalRequestSettings is the global allowlist for outbound HTTP
-// calls the dashboard makes.
+// calls the dashboard makes. On save, a switch the request omits keeps its
+// stored value.
 type ExternalRequestSettings struct {
-	VSPListing bool `json:"vspListing"`
-	Politeia   bool `json:"politeia"`
-	Brseeder   bool `json:"brseeder"`
+	VSPListing *bool `json:"vspListing,omitempty"`
+	Politeia   *bool `json:"politeia,omitempty"`
+	Brseeder   *bool `json:"brseeder,omitempty"`
 	// ExchangeRates covers dcrpulse's own price lookups and those of the
 	// brclientd and bisonw it runs.
-	ExchangeRates bool `json:"exchangeRates"`
+	ExchangeRates *bool `json:"exchangeRates,omitempty"`
 }
 
 // SaveSettingsResult names the daemons a saved exchange-rates change could

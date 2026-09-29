@@ -31,10 +31,10 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	walletOut := types.WalletSettings{GapLimit: 20}
 	globalOut := types.GlobalSettings{
 		ExternalRequests: types.ExternalRequestSettings{
-			VSPListing:    services.ExternalRequestAllowed(config.ExternalRequestVSPListing),
-			Politeia:      services.ExternalRequestAllowed(config.ExternalRequestPoliteia),
-			Brseeder:      services.ExternalRequestAllowed(config.ExternalRequestBrseeder),
-			ExchangeRates: services.ExternalRequestAllowed(config.ExternalRequestExchangeRates),
+			VSPListing:    new(services.ExternalRequestAllowed(config.ExternalRequestVSPListing)),
+			Politeia:      new(services.ExternalRequestAllowed(config.ExternalRequestPoliteia)),
+			Brseeder:      new(services.ExternalRequestAllowed(config.ExternalRequestBrseeder)),
+			ExchangeRates: new(services.ExternalRequestAllowed(config.ExternalRequestExchangeRates)),
 		},
 		DecredPulseBotURL: services.DefaultDecredPulseBotURL,
 	}
@@ -122,10 +122,8 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		if allowed == nil {
 			allowed = map[string]bool{}
 		}
-		allowed[config.ExternalRequestVSPListing] = req.Global.ExternalRequests.VSPListing
-		allowed[config.ExternalRequestPoliteia] = req.Global.ExternalRequests.Politeia
-		allowed[config.ExternalRequestBrseeder] = req.Global.ExternalRequests.Brseeder
-		allowed[config.ExternalRequestExchangeRates] = req.Global.ExternalRequests.ExchangeRates
+		ext := req.Global.ExternalRequests
+		mergeExternalRequests(allowed, ext)
 		if err := gc.SetAllowedExternalRequests(allowed); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -157,7 +155,7 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to save global settings", http.StatusInternalServerError)
 			return
 		}
-		if req.Global.ExternalRequests.ExchangeRates != ratesWere {
+		if ext.ExchangeRates != nil && *ext.ExchangeRates != ratesWere {
 			applyCtx, applyCancel := context.WithTimeout(r.Context(), 30*time.Second)
 			result.NotApplied = services.ApplyExchangeRates(applyCtx)
 			applyCancel()
@@ -165,6 +163,21 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, result)
+}
+
+// mergeExternalRequests writes the switches a save names into allowed; an
+// omitted switch keeps its stored value.
+func mergeExternalRequests(allowed map[string]bool, ext types.ExternalRequestSettings) {
+	for key, v := range map[string]*bool{
+		config.ExternalRequestVSPListing:    ext.VSPListing,
+		config.ExternalRequestPoliteia:      ext.Politeia,
+		config.ExternalRequestBrseeder:      ext.Brseeder,
+		config.ExternalRequestExchangeRates: ext.ExchangeRates,
+	} {
+		if v != nil {
+			allowed[key] = *v
+		}
+	}
 }
 
 // lnSetUp and armMacaroonReset are the Lightning follow-up of a passphrase
