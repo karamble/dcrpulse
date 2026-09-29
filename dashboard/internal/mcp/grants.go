@@ -287,17 +287,14 @@ func (s *grantStore) reserveLocked(g *spendGrant, amountAtoms, feeAtoms int64, n
 }
 
 // authorize validates a proposed wallet send against the agent's grant, reserves
-// the amount, and (when BR oversight is on) blocks for the operator's approval.
+// the amount, and (when BR oversight is on) blocks for the operator's approval
+// of action.
 // On success it returns a private copy of the passphrase for immediate use and
 // the hold to refund with if the spend subsequently fails.
-func (s *grantStore) authorize(ctx context.Context, agentID string, account uint32, amountAtoms int64, toAddr string, now time.Time) ([]byte, hold, error) {
+func (s *grantStore) authorize(ctx context.Context, agentID string, account uint32, amountAtoms int64, toAddr, action string, now time.Time) ([]byte, hold, error) {
 	pass, gen, err := s.reserveForSend(agentID, account, amountAtoms, toAddr, now)
 	if err != nil {
 		return nil, hold{}, err
-	}
-	action := fmt.Sprintf("spend %s", dcrAmountStr(amountAtoms))
-	if toAddr != "" {
-		action = fmt.Sprintf("send %s to %s", dcrAmountStr(amountAtoms), toAddr)
 	}
 	h, err := s.approveHold(ctx, agentID, gen, amountAtoms, action)
 	if err != nil {
@@ -436,15 +433,15 @@ func (s *grantStore) authorizeActionGated(ctx context.Context, agentID, scope, a
 
 // authorizeLightning checks the lightning scope, reserves amountAtoms plus its
 // routing fee ceiling feeAtoms against the caps, and (when BR oversight is on)
-// blocks for the operator's approval. No passphrase is returned: dcrlnd is
+// blocks for the operator's approval of action. No passphrase is returned: dcrlnd is
 // unlocked separately. It returns the hold to refund with if the payment then
 // fails.
-func (s *grantStore) authorizeLightning(ctx context.Context, agentID string, amountAtoms, feeAtoms int64, now time.Time) (hold, error) {
+func (s *grantStore) authorizeLightning(ctx context.Context, agentID string, amountAtoms, feeAtoms int64, action string, now time.Time) (hold, error) {
 	gen, err := s.reserveLightning(agentID, amountAtoms, feeAtoms, now)
 	if err != nil {
 		return hold{}, err
 	}
-	return s.approveHold(ctx, agentID, gen, amountAtoms+feeAtoms, fmt.Sprintf("make a Lightning payment of %s", dcrAmountStr(amountAtoms)))
+	return s.approveHold(ctx, agentID, gen, amountAtoms+feeAtoms, action)
 }
 
 func (s *grantStore) reserveLightning(agentID string, amountAtoms, feeAtoms int64, now time.Time) (uint64, error) {

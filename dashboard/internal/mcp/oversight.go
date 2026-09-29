@@ -371,8 +371,10 @@ func gateApproval(ctx context.Context, agentID, action string) error {
 		name = agentID
 	}
 	mins := int(approvalTimeout / time.Minute)
+	// The action carries agent- and payee-supplied strings; escaped, they can
+	// neither break the line nor reorder what the operator reads.
 	msg := fmt.Sprintf(approvalPromptPrefix+"%s]: agent %q wants to %s. Reply \"yes %s\" to approve, \"no %s\" to deny, or \"no %s freeze\" to deny and block this agent. Expires in %d min.",
-		id, name, action, id, id, id, mins)
+		id, name, sanitizeLogField(action), id, id, id, mins)
 
 	sctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	sendErr := sendApprovalPM(sctx, contact, msg)

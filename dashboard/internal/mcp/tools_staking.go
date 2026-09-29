@@ -260,7 +260,8 @@ var stakingTools = []toolDef{
 			costDCR := info.TicketPrice * float64(in.NumTickets)
 			totalAtoms := perTicketAtoms * int64(in.NumTickets)
 			// Ticket purchases have no recipient address; the allowlist is skipped.
-			pass, h, err := grants.authorize(ctx, a.id, accts.Source, totalAtoms, "", time.Now())
+			pass, h, err := grants.authorize(ctx, a.id, accts.Source, totalAtoms, "",
+				fmt.Sprintf("buy %d ticket(s) for %s from account %d via %s", in.NumTickets, dcrAmountStr(totalAtoms), accts.Source, in.VSPHost), time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "staking_purchase", accts.Source, costDCR, in.VSPHost, "blocked", "spend-limit violation: grant revoked and token blocked")

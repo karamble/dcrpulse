@@ -21,6 +21,16 @@ type lnPayInput struct {
 	AmountDCR float64 `json:"amountDcr,omitempty" jsonschema:"amount in DCR, required only for zero-amount invoices"`
 }
 
+// lnPayAction describes an invoice payment in the operator's approval message:
+// the amount, the paying node and the invoice's own description.
+func lnPayAction(amtAtoms int64, destination, description string) string {
+	action := fmt.Sprintf("pay %s over Lightning to node %s", dcrAmountStr(amtAtoms), destination)
+	if description != "" {
+		action += fmt.Sprintf(" for %q", description)
+	}
+	return action
+}
+
 type lnInvoiceInput struct {
 	AmountDCR float64 `json:"amountDcr,omitempty" jsonschema:"invoice amount in DCR (0 = any)"`
 	Memo      string  `json:"memo,omitempty" jsonschema:"optional memo"`
@@ -129,7 +139,7 @@ var lightningTools = []toolDef{
 			feeCeiling := services.RoutingFeeCeilingAtoms(amtAtoms)
 			reserved := amtAtoms + feeCeiling
 			amtDCR := dcrutil.Amount(amtAtoms).ToCoin()
-			h, err := grants.authorizeLightning(ctx, a.id, amtAtoms, feeCeiling, time.Now())
+			h, err := grants.authorizeLightning(ctx, a.id, amtAtoms, feeCeiling, lnPayAction(amtAtoms, dec.Destination, dec.Description), time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "blocked", "spend-limit violation: grant revoked and token blocked")
@@ -216,7 +226,11 @@ var lightningTools = []toolDef{
 				}
 				pushAtoms = int64(p)
 			}
-			h, err := grants.authorizeLightning(ctx, a.id, localAtoms, 0, time.Now())
+			action := fmt.Sprintf("open a Lightning channel of %s to %s", dcrAmountStr(localAtoms), in.PeerURI)
+			if pushAtoms > 0 {
+				action += fmt.Sprintf(", pushing %s to the peer", dcrAmountStr(pushAtoms))
+			}
+			h, err := grants.authorizeLightning(ctx, a.id, localAtoms, 0, action, time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "blocked", "spend-limit violation: grant revoked and token blocked")
@@ -402,7 +416,12 @@ var lightningTools = []toolDef{
 			if d, derr := services.GetLiquidityDefaults(ctx); derr == nil && d != nil {
 				provider = d.Server
 			}
-			h, err := grants.authorizeLightning(ctx, a.id, feeAtoms, routingFee, time.Now())
+			to := provider
+			if to == "" {
+				to = "the configured provider"
+			}
+			h, err := grants.authorizeLightning(ctx, a.id, feeAtoms, routingFee,
+				fmt.Sprintf("pay a Lightning liquidity fee of %s to %s", dcrAmountStr(feeAtoms), to), time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "blocked", "spend-limit violation: grant revoked and token blocked")

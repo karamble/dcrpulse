@@ -834,7 +834,8 @@ var bisonrelayTools = []toolDef{
 			// and the reservation covers that same curve instead.
 			feeCeiling := services.RoutingFeeCeilingAtoms(atoms)
 			reserved := atoms + feeCeiling
-			h, err := grants.authorizeLightning(ctx, a.id, atoms, feeCeiling, time.Now())
+			h, err := grants.authorizeLightning(ctx, a.id, atoms, feeCeiling,
+				fmt.Sprintf("tip %s %s over Lightning", in.UID, dcrAmountStr(atoms)), time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "br_tip_user", 0, in.AmountDCR, in.UID, "blocked", "spend-limit violation: grant revoked and token blocked")

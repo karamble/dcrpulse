@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,12 +77,60 @@ func dexAtomsToInt64(v uint64) (int64, error) {
 	return int64(v), nil
 }
 
-// dexSpendAction describes a dex.spend move in the operator's approval message.
-func dexSpendAction(amountAtoms int64) string {
-	if amountAtoms > 0 {
-		return fmt.Sprintf("make a DEX spend of %s", dcrAmountStr(amountAtoms))
+// dexOrderAction describes an order in the operator's approval message: host,
+// side, amounts and, for a limit order, the conventional rate.
+func dexOrderAction(in dexPlaceOrderInput, outlay int64) string {
+	base, quote := dexSymbol(in.Base), dexSymbol(in.Quote)
+	kind := "market"
+	if in.IsLimit {
+		kind = "limit"
 	}
-	return "make a DEX spend"
+	var trade string
+	switch {
+	case in.Sell:
+		trade = fmt.Sprintf("sell %s %s for %s", dexAmount(in.Qty, in.Base), base, quote)
+	case in.IsLimit:
+		trade = fmt.Sprintf("buy %s %s with %s", dexAmount(in.Qty, in.Base), base, quote)
+	default:
+		// A market buy is sized in the quote asset.
+		trade = fmt.Sprintf("buy %s with %s %s", base, dexAmount(in.Qty, in.Quote), quote)
+	}
+	action := fmt.Sprintf("place a %s order on %s: %s", kind, in.Host, trade)
+	if in.IsLimit {
+		action += fmt.Sprintf(" at %s %s/%s", strconv.FormatFloat(dexConvRate(in.Rate, in.Base, in.Quote), 'f', -1, 64), quote, base)
+	}
+	if outlay > 0 {
+		action += ", committing " + dcrAmountStr(outlay)
+	}
+	return action
+}
+
+// dexSymbol is an asset's display symbol, or its id when the catalogue does not
+// know it.
+func dexSymbol(assetID uint32) string {
+	if s := dexassets.Symbol(assetID); s != "" {
+		return strings.ToUpper(s)
+	}
+	return fmt.Sprintf("asset %d", assetID)
+}
+
+// dexAmount renders atomic units of an asset in conventional units.
+func dexAmount(atoms uint64, assetID uint32) string {
+	return strconv.FormatFloat(float64(atoms)/dexConvFactor(assetID), 'f', -1, 64)
+}
+
+// dexConvFactor is an asset's conversion factor, DCR's when the catalogue does
+// not know the asset.
+func dexConvFactor(assetID uint32) float64 {
+	if cf := dexassets.ConvFactor(assetID); cf != 0 {
+		return float64(cf)
+	}
+	return float64(dcrutil.AtomsPerCoin)
+}
+
+// dexConvRate converts a message-rate to a conventional rate (quote per base).
+func dexConvRate(msgRate uint64, baseID, quoteID uint32) float64 {
+	return float64(msgRate) / dexRateEncodingFactor * dexConvFactor(baseID) / dexConvFactor(quoteID)
 }
 
 type dexHostInput struct {
@@ -343,17 +392,10 @@ func dexRecentMatches(book json.RawMessage, baseID, quoteID uint32) []dexTrade {
 	if len(book) == 0 || json.Unmarshal(book, &mob) != nil {
 		return out
 	}
-	baseCF := float64(dexassets.ConvFactor(baseID))
-	quoteCF := float64(dexassets.ConvFactor(quoteID))
-	if baseCF == 0 {
-		baseCF = float64(dcrutil.AtomsPerCoin)
-	}
-	if quoteCF == 0 {
-		quoteCF = float64(dcrutil.AtomsPerCoin)
-	}
+	baseCF := dexConvFactor(baseID)
 	for _, m := range mob.Book.RecentMatches {
 		out = append(out, dexTrade{
-			Rate:      float64(m.Rate) / dexRateEncodingFactor * baseCF / quoteCF,
+			Rate:      dexConvRate(m.Rate, baseID, quoteID),
 			MsgRate:   m.Rate,
 			Qty:       float64(m.Qty) / baseCF,
 			QtyAtomic: m.Qty,
@@ -442,16 +484,8 @@ func dexMarketSummaries(exch, rates json.RawMessage, host string, baseID, quoteI
 			if (baseID != 0 || quoteID != 0) && (m.BaseID != baseID || m.QuoteID != quoteID) {
 				continue
 			}
-			baseCF := float64(dexassets.ConvFactor(m.BaseID))
-			quoteCF := float64(dexassets.ConvFactor(m.QuoteID))
-			if baseCF == 0 {
-				baseCF = float64(dcrutil.AtomsPerCoin)
-			}
-			if quoteCF == 0 {
-				quoteCF = float64(dcrutil.AtomsPerCoin)
-			}
 			conv := func(msgRate uint64) float64 {
-				return float64(msgRate) / dexRateEncodingFactor * baseCF / quoteCF
+				return dexConvRate(msgRate, m.BaseID, m.QuoteID)
 			}
 			s := dexMarketSummary{
 				Host:        h,
@@ -464,7 +498,7 @@ func dexMarketSummaries(exch, rates json.RawMessage, host string, baseID, quoteI
 				Change24:    m.Spot.Change24,
 				High24:      conv(m.Spot.High24),
 				Low24:       conv(m.Spot.Low24),
-				Vol24Base:   float64(m.Spot.Vol24) / baseCF,
+				Vol24Base:   float64(m.Spot.Vol24) / dexConvFactor(m.BaseID),
 				Stamp:       m.Spot.Stamp,
 			}
 			if qUSD, ok := dexQuoteUSD(m.QuoteSymbol, r.DcrUSD, r.BtcUSD); ok {
@@ -853,7 +887,7 @@ var dexTools = []toolDef{
 				return nil, err
 			}
 			amountDCR := dcrutil.Amount(outlay).ToCoin()
-			h, err := grants.authorizeSpendScoped(ctx, a.id, scopeDex, outlay, 0, dexSpendAction(outlay), time.Now())
+			h, err := grants.authorizeSpendScoped(ctx, a.id, scopeDex, outlay, 0, dexOrderAction(in, outlay), time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "blocked", "spend-limit violation: grant revoked and token blocked")
@@ -1155,7 +1189,7 @@ var dexTools = []toolDef{
 			}
 			capAtoms := int64(in.Bond)
 			amountDCR := dcrutil.Amount(capAtoms).ToCoin()
-			h, err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, 0, dexSpendAction(capAtoms), time.Now())
+			h, err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, 0, fmt.Sprintf("post a DEX bond of %s on %s", dcrAmountStr(capAtoms), in.Host), time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "blocked", "spend-limit violation: grant revoked and token blocked")

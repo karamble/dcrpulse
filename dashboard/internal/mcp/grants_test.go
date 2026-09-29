@@ -35,20 +35,20 @@ func TestGrantEditKeepsSpentWindow(t *testing.T) {
 	now := time.Now()
 	spec := GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms}
 	s.set("a", spec, now)
-	if _, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "", now); err != nil {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "", "", now); err != nil {
 		t.Fatalf("spend to the cap: %v", err)
 	}
 	// Re-grant with an extra allowlist entry - an edit that touches nothing
 	// about the caps.
 	spec.Allowlist = []string{"Dsomething"}
 	s.set("a", spec, now)
-	if _, _, err := s.authorize(context.Background(), "a", 0, dcrAtoms, "Dsomething", now); err != errDailyExceeded {
+	if _, _, err := s.authorize(context.Background(), "a", 0, dcrAtoms, "Dsomething", "", now); err != errDailyExceeded {
 		t.Fatalf("after an edit the day should still be spent: want errDailyExceeded, got %v", err)
 	}
 	// A fresh window after 24h still resets.
 	later := now.Add(grantWindow + time.Minute)
 	s.set("a", spec, later)
-	if _, _, err := s.authorize(context.Background(), "a", 0, dcrAtoms, "Dsomething", later); err != nil {
+	if _, _, err := s.authorize(context.Background(), "a", 0, dcrAtoms, "Dsomething", "", later); err != nil {
 		t.Fatalf("new window: want ok, got %v", err)
 	}
 }
@@ -60,7 +60,7 @@ func TestGrantRefundIgnoresNonPositive(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms}, now)
-	_, h, err := s.authorize(context.Background(), "a", 0, 4*dcrAtoms, "", now)
+	_, h, err := s.authorize(context.Background(), "a", 0, 4*dcrAtoms, "", "", now)
 	if err != nil {
 		t.Fatalf("spend within cap: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestGrantRefundIgnoresNonPositive(t *testing.T) {
 		t.Fatalf("non-positive refund changed the spend counter: got %d, want %d", got, 4*dcrAtoms)
 	}
 	// The remaining headroom is still only 1 DCR.
-	if _, _, err := s.authorize(context.Background(), "a", 0, 2*dcrAtoms, "", now); err != errDailyExceeded {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 2*dcrAtoms, "", "", now); err != errDailyExceeded {
 		t.Fatalf("after bogus refunds: want errDailyExceeded, got %v", err)
 	}
 }
@@ -85,13 +85,13 @@ func TestGrantAuthorizeScopeAndCaps(t *testing.T) {
 		Passphrase: []byte("secret"),
 	}, now)
 
-	if _, _, err := s.authorize(context.Background(), "a", 1, dcrAtoms, "Dsaddr", now); err != errAccountNotGranted {
+	if _, _, err := s.authorize(context.Background(), "a", 1, dcrAtoms, "Dsaddr", "", now); err != errAccountNotGranted {
 		t.Fatalf("account out of scope: want errAccountNotGranted, got %v", err)
 	}
-	if _, _, err := s.authorize(context.Background(), "a", 0, 6*dcrAtoms, "Dsaddr", now); err != errPerTxExceeded {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 6*dcrAtoms, "Dsaddr", "", now); err != errPerTxExceeded {
 		t.Fatalf("over per-tx: want errPerTxExceeded, got %v", err)
 	}
-	pass, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "Dsaddr", now)
+	pass, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "Dsaddr", "", now)
 	if err != nil {
 		t.Fatalf("within caps: want ok, got %v", err)
 	}
@@ -99,11 +99,11 @@ func TestGrantAuthorizeScopeAndCaps(t *testing.T) {
 		t.Fatalf("authorize returned wrong passphrase copy: %q", pass)
 	}
 	// 5 already spent today; another 5 would total 10 > 8 daily cap.
-	if _, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "Dsaddr", now); err != errDailyExceeded {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "Dsaddr", "", now); err != errDailyExceeded {
 		t.Fatalf("over daily: want errDailyExceeded, got %v", err)
 	}
 	// 3 remaining is allowed.
-	if _, _, err := s.authorize(context.Background(), "a", 2, 3*dcrAtoms, "Dsaddr", now); err != nil {
+	if _, _, err := s.authorize(context.Background(), "a", 2, 3*dcrAtoms, "Dsaddr", "", now); err != nil {
 		t.Fatalf("within remaining daily: want ok, got %v", err)
 	}
 }
@@ -112,14 +112,14 @@ func TestGrantDailyWindowResets(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
-	if _, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "addr", now); err != nil {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "addr", "", now); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.authorize(context.Background(), "a", 0, dcrAtoms, "addr", now); err != errDailyExceeded {
+	if _, _, err := s.authorize(context.Background(), "a", 0, dcrAtoms, "addr", "", now); err != errDailyExceeded {
 		t.Fatalf("want daily exceeded, got %v", err)
 	}
 	// After the 24h window elapses, the daily allowance resets.
-	if _, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "addr", now.Add(grantWindow+time.Minute)); err != nil {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "addr", "", now.Add(grantWindow+time.Minute)); err != nil {
 		t.Fatalf("after window reset: want ok, got %v", err)
 	}
 }
@@ -128,12 +128,12 @@ func TestGrantRefund(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
-	_, h, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "addr", now)
+	_, h, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "addr", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	h.refund(5 * dcrAtoms) // a failed spend frees its reserved headroom
-	if _, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "addr", now); err != nil {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "addr", "", now); err != nil {
 		t.Fatalf("after refund: want ok, got %v", err)
 	}
 }
@@ -148,14 +148,14 @@ func TestRefundCannotCreditAReissuedGrant(t *testing.T) {
 	now := time.Now()
 	spec := GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms}
 	s.set("a", spec, now)
-	_, h, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "", now)
+	_, h, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "", "", now)
 	if err != nil {
 		t.Fatalf("reserve against the first grant: %v", err)
 	}
 	s.revoke("a")
 	spec.PerTxAtoms, spec.DailyAtoms = 2*dcrAtoms, 2*dcrAtoms
 	s.set("a", spec, now)
-	if _, _, err := s.authorize(context.Background(), "a", 0, 2*dcrAtoms, "", now); err != nil {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 2*dcrAtoms, "", "", now); err != nil {
 		t.Fatalf("spend the new grant's day: %v", err)
 	}
 	// The in-flight spend fails and refunds what the old grant was charged.
@@ -163,7 +163,7 @@ func TestRefundCannotCreditAReissuedGrant(t *testing.T) {
 	if got := s.byAgent["a"].spentAtoms; got != 2*dcrAtoms {
 		t.Fatalf("a stale refund credited the re-issued grant: spentAtoms = %d, want %d", got, 2*dcrAtoms)
 	}
-	if _, _, err := s.authorize(context.Background(), "a", 0, dcrAtoms, "", now); err != errDailyExceeded {
+	if _, _, err := s.authorize(context.Background(), "a", 0, dcrAtoms, "", "", now); err != errDailyExceeded {
 		t.Fatalf("the new daily cap was refilled by a spend it never made: got %v, want errDailyExceeded", err)
 	}
 }
@@ -176,7 +176,7 @@ func TestRefundSurvivesAGrantEdit(t *testing.T) {
 	now := time.Now()
 	spec := GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms}
 	s.set("a", spec, now)
-	_, h, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "", now)
+	_, h, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "", "", now)
 	if err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
@@ -195,12 +195,12 @@ func TestRefundCannotCreditANewWindow(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms}, now)
-	_, h, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "", now)
+	_, h, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "", "", now)
 	if err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
 	later := now.Add(grantWindow + time.Minute)
-	if _, _, err := s.authorize(context.Background(), "a", 0, 4*dcrAtoms, "", later); err != nil {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 4*dcrAtoms, "", "", later); err != nil {
 		t.Fatalf("spend in the new window: %v", err)
 	}
 	h.refund(5 * dcrAtoms)
@@ -213,10 +213,10 @@ func TestGrantAllowlist(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: dcrAtoms, DailyAtoms: dcrAtoms, Allowlist: []string{"Dsgood"}, Passphrase: []byte("p")}, now)
-	if _, _, err := s.authorize(context.Background(), "a", 0, 1, "Dsbad", now); err != errAddrNotAllowed {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 1, "Dsbad", "", now); err != errAddrNotAllowed {
 		t.Fatalf("want addr not allowed, got %v", err)
 	}
-	if _, _, err := s.authorize(context.Background(), "a", 0, 1, "Dsgood", now); err != nil {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 1, "Dsgood", "", now); err != nil {
 		t.Fatalf("allowlisted addr: want ok, got %v", err)
 	}
 }
@@ -226,7 +226,7 @@ func TestGrantZeroCapDeniesSpend(t *testing.T) {
 	now := time.Now()
 	// A 0 cap is a literal limit (no unlimited): nothing is spendable.
 	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 0, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
-	if _, _, err := s.authorize(context.Background(), "a", 0, 1, "addr", now); err != errPerTxExceeded {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 1, "addr", "", now); err != errPerTxExceeded {
 		t.Fatalf("0 per-tx cap must deny any spend, got %v", err)
 	}
 }
@@ -236,7 +236,7 @@ func TestGrantExpiryZeroesPassphrase(t *testing.T) {
 	now := time.Now()
 	s.set("a", GrantSpec{Accounts: []uint32{0}, Expiry: now.Add(-time.Minute), Passphrase: []byte("zerome")}, now)
 	g := s.byAgent["a"]
-	if _, _, err := s.authorize(context.Background(), "a", 0, 1, "addr", now); err != errGrantExpired {
+	if _, _, err := s.authorize(context.Background(), "a", 0, 1, "addr", "", now); err != errGrantExpired {
 		t.Fatalf("want expired, got %v", err)
 	}
 	for _, b := range g.passphrase {
@@ -268,7 +268,7 @@ func TestGrantRevokeZeroesPassphrase(t *testing.T) {
 
 func TestGrantNoGrantDenied(t *testing.T) {
 	s := newGrantStore()
-	if _, _, err := s.authorize(context.Background(), "nope", 0, 1, "addr", time.Now()); err != errNoGrant {
+	if _, _, err := s.authorize(context.Background(), "nope", 0, 1, "addr", "", time.Now()); err != errNoGrant {
 		t.Fatalf("want no-grant, got %v", err)
 	}
 }
@@ -291,14 +291,14 @@ func TestGrantLightningRequiresScopeAndCap(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
-	if _, err := s.authorizeLightning(context.Background(), "a", dcrAtoms, 0, now); err == nil {
+	if _, err := s.authorizeLightning(context.Background(), "a", dcrAtoms, 0, "", now); err == nil {
 		t.Fatal("LN without scope: want denial, got nil")
 	}
 	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p"), WriteScopes: []string{scopeLightning}}, now)
-	if _, err := s.authorizeLightning(context.Background(), "a", 4*dcrAtoms, 0, now); err != nil {
+	if _, err := s.authorizeLightning(context.Background(), "a", 4*dcrAtoms, 0, "", now); err != nil {
 		t.Fatalf("LN within cap: want ok, got %v", err)
 	}
-	if _, err := s.authorizeLightning(context.Background(), "a", 2*dcrAtoms, 0, now); err != errDailyExceeded {
+	if _, err := s.authorizeLightning(context.Background(), "a", 2*dcrAtoms, 0, "", now); err != errDailyExceeded {
 		t.Fatalf("LN over shared daily cap: want errDailyExceeded, got %v", err)
 	}
 	if err := s.authorizeAction("a", scopeLightning, now); err != nil {
@@ -432,11 +432,11 @@ func TestRefusedApprovalRefundsTheReservation(t *testing.T) {
 	ctx := context.Background()
 	for name, authorize := range map[string]func(s *grantStore, now time.Time) error{
 		"send": func(s *grantStore, now time.Time) error {
-			_, _, err := s.authorize(ctx, "a", 0, 50, "", now)
+			_, _, err := s.authorize(ctx, "a", 0, 50, "", "", now)
 			return err
 		},
 		"lightning": func(s *grantStore, now time.Time) error {
-			_, err := s.authorizeLightning(ctx, "a", 50, 0, now)
+			_, err := s.authorizeLightning(ctx, "a", 50, 0, "", now)
 			return err
 		},
 		"scoped": func(s *grantStore, now time.Time) error {
