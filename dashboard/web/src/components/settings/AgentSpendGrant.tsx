@@ -82,7 +82,13 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
     setPerTx(grant ? String(grant.perTxDcr) : '');
     setDaily(grant ? String(grant.dailyDcr) : '');
     setAllowlist((grant?.allowlist ?? []).join('\n'));
-    setExpiryHours('');
+    // An edit replaces the whole grant and an empty field means no expiry, so
+    // start from the time the grant has left rather than dropping its deadline.
+    setExpiryHours(
+      grant?.expiry
+        ? String(Math.max(0.01, Math.ceil((Date.parse(grant.expiry) - Date.now()) / 36e3) / 100))
+        : '',
+    );
     setPassphrase('');
     setScopeKeys(new Set(grant?.writeScopes ?? []));
     setError(null);
