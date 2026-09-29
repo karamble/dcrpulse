@@ -284,6 +284,32 @@ func serveBRBytesHeaders(w http.ResponseWriter, declared string) {
 	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
 }
 
+// proxyBRBytes streams a brclientd byte reply: a non-200 reply is passed on
+// with its (bounded) text, the type is clamped by serveBRBytesHeaders, the
+// named headers are forwarded, and at most limit bytes are copied (0 = no cap).
+func proxyBRBytes(w http.ResponseWriter, resp *http.Response, limit int64, forward ...string) {
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		http.Error(w, string(body), resp.StatusCode)
+		return
+	}
+	if limit > 0 && resp.ContentLength > limit {
+		http.Error(w, fmt.Sprintf("file exceeds %d bytes", limit), http.StatusBadGateway)
+		return
+	}
+	serveBRBytesHeaders(w, resp.Header.Get("Content-Type"))
+	for _, h := range forward {
+		if v := resp.Header.Get(h); v != "" {
+			w.Header().Set(h, v)
+		}
+	}
+	var body io.Reader = resp.Body
+	if limit > 0 {
+		body = io.LimitReader(resp.Body, limit)
+	}
+	_, _ = io.Copy(w, body)
+}
+
 // BisonrelayEmbedHandler serves an inline embed file that BR's clientdb has
 // already extracted from a PM body and persisted at
 // <brclientd-data>/<network>/db/embeds/<contact_short>/<filename>. The
@@ -1660,18 +1686,9 @@ func BisonrelayContentFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		http.Error(w, string(body), resp.StatusCode)
-		return
-	}
 	// brclientd derives both the type and an "inline" disposition from the
 	// sending peer's filename, so neither is forwarded; only the length is.
-	serveBRBytesHeaders(w, resp.Header.Get("Content-Type"))
-	if v := resp.Header.Get("Content-Length"); v != "" {
-		w.Header().Set("Content-Length", v)
-	}
-	_, _ = io.Copy(w, resp.Body)
+	proxyBRBytes(w, resp, 0, "Content-Length")
 }
 
 // maxEmbedServeBytes mirrors brclientd's per-embed ceiling: bound the proxied
@@ -1708,20 +1725,9 @@ func BisonrelayPostsEmbedDataHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		http.Error(w, string(body), resp.StatusCode)
-		return
-	}
 	// The type brclientd reports is the post author's own "type=" field, so it
 	// picks how the browser treats the bytes only if it names a known image.
-	serveBRBytesHeaders(w, resp.Header.Get("Content-Type"))
-	for _, h := range []string{"Content-Length", "Cache-Control"} {
-		if v := resp.Header.Get(h); v != "" {
-			w.Header().Set(h, v)
-		}
-	}
-	_, _ = io.Copy(w, io.LimitReader(resp.Body, maxEmbedServeBytes))
+	proxyBRBytes(w, resp, maxEmbedServeBytes, "Content-Length", "Cache-Control")
 }
 
 // Single-slot prepared-backup state. brclientd builds the entire backup
@@ -2072,14 +2078,18 @@ func BisonrelayStoreFileGetHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
-	data, ctype, err := rpc.BrclientdGetStoreFile(r.Context(), path)
+	resp, err := rpc.BrclientdOpenStoreFile(r.Context(), path)
 	if err != nil {
 		brWriteErr(w, err)
 		return
 	}
-	serveBRBytesHeaders(w, ctype)
-	_, _ = w.Write(data)
+	defer resp.Body.Close()
+	proxyBRBytes(w, resp, maxStoreFileServeBytes, "Content-Length")
 }
+
+// maxStoreFileServeBytes bounds one proxied store file; uploads are capped at
+// 200 MiB, so this only stops a runaway reply.
+const maxStoreFileServeBytes = 256 << 20
 
 // BisonrelayStoreFileDeleteHandler removes one media file under the store dir.
 // Body: {path}.

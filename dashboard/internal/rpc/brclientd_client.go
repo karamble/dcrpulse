@@ -803,14 +803,20 @@ func BrclientdDeleteStoreFile(ctx context.Context, path string) error {
 	return brclientdPostJSON(ctx, "/store/files/delete", map[string]string{"path": path})
 }
 
-// BrclientdGetStoreFile fetches one store file's bytes (for preview/download),
-// returning the body and its Content-Type.
-func BrclientdGetStoreFile(ctx context.Context, path string) ([]byte, string, error) {
+// BrclientdOpenStoreFile opens a streaming GET for one store file (preview or
+// download). The caller owns resp.Body and must close it.
+func BrclientdOpenStoreFile(ctx context.Context, path string) (*http.Response, error) {
 	cli, err := brclientdClient()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	resp, err := brclientdOpenGET(ctx, cli, "/store/files/get", map[string]string{"path": path})
+	return brclientdOpenGET(ctx, cli, "/store/files/get", map[string]string{"path": path})
+}
+
+// BrclientdGetStoreFile fetches one store file's bytes, returning the body and
+// its Content-Type, for callers that need it whole.
+func BrclientdGetStoreFile(ctx context.Context, path string) ([]byte, string, error) {
+	resp, err := BrclientdOpenStoreFile(ctx, path)
 	if err != nil {
 		return nil, "", err
 	}
