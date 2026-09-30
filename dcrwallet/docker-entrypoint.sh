@@ -17,6 +17,9 @@ mkdir -p "${WALLET_DIR}"
 # and upgrades where new containers add nested mounts.
 mkdir -p /app-data/dcrlnd /app-data/brclientd /app-data/dcrdex
 
+# Nothing runs yet, so a stop during the certificate wait just exits.
+trap 'exit 0' INT TERM
+
 if [ ! -f "${RPC_CERT}" ] || [ ! -f "${RPC_KEY}" ]; then
     echo "Waiting for dcrd to generate certificates..."
     
@@ -119,19 +122,22 @@ start_wallet() {
     CHILD_PID=$!
 }
 
-stop_wallet() {
+stop_child() {
     [ -z "${CHILD_PID}" ] && return
+    # Decrediton's stop: interrupt, interrupt again after two seconds, then wait
+    # as long as the daemon needs; docker's stop_grace_period is the only limit.
     kill -INT "${CHILD_PID}" 2>/dev/null
     i=0
-    while kill -0 "${CHILD_PID}" 2>/dev/null; do
+    while [ "${i}" -lt 2 ] && kill -0 "${CHILD_PID}" 2>/dev/null; do
         i=$((i + 1))
-        if [ "${i}" -ge 30 ]; then
-            kill -KILL "${CHILD_PID}" 2>/dev/null
-            break
-        fi
-        sleep 1
+        sleep 1 & wait $!
     done
-    wait "${CHILD_PID}" 2>/dev/null
+    kill -INT "${CHILD_PID}" 2>/dev/null
+    while :; do
+        wait "${CHILD_PID}" 2>/dev/null
+        CHILD_STATUS=$?
+        kill -0 "${CHILD_PID}" 2>/dev/null || break
+    done
     CHILD_PID=""
 }
 
@@ -146,8 +152,9 @@ EOF
 }
 
 shutdown() {
-    stop_wallet
-    exit 0
+    CHILD_STATUS=0
+    stop_child
+    exit "${CHILD_STATUS:-0}"
 }
 trap shutdown INT TERM
 
@@ -167,11 +174,11 @@ while true; do
 
     # Empty name means the user closed the wallet: idle with no child running.
     if [ -z "${DESIRED_NAME}" ]; then
-        [ -n "${CHILD_PID}" ] && stop_wallet
+        [ -n "${CHILD_PID}" ] && stop_child
         RUNNING_NAME=""
         RUNNING_APPDATA=""
         write_state "${EPOCH}"
-        sleep 2
+        sleep 2 & wait $!
         continue
     fi
 
@@ -186,7 +193,7 @@ while true; do
     if [ "${DESIRED_APPDATA}" != "${RUNNING_APPDATA}" ] || [ "${TOR_REV}" != "${RUNNING_TOR_REV}" ] || [ -z "${CHILD_PID}" ]; then
         if [ -n "${CHILD_PID}" ]; then
             echo "Restarting dcrwallet ('${RUNNING_NAME}' -> '${DESIRED_NAME}', tor rev ${TOR_REV})"
-            stop_wallet
+            stop_child
         fi
         echo "Starting dcrwallet for wallet '${DESIRED_NAME}' (appdata ${DESIRED_APPDATA})"
         start_wallet "${DESIRED_APPDATA}"
@@ -196,5 +203,5 @@ while true; do
     fi
 
     write_state "${EPOCH}"
-    sleep 2
+    sleep 2 & wait $!
 done

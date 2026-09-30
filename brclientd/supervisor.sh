@@ -78,17 +78,20 @@ purge_deleted() {
 
 stop_child() {
     [ -z "${CHILD_PID}" ] && return
+    # Decrediton's stop: interrupt, interrupt again after two seconds, then wait
+    # as long as the daemon needs; docker's stop_grace_period is the only limit.
     kill -INT "${CHILD_PID}" 2>/dev/null
     i=0
-    while kill -0 "${CHILD_PID}" 2>/dev/null; do
+    while [ "${i}" -lt 2 ] && kill -0 "${CHILD_PID}" 2>/dev/null; do
         i=$((i + 1))
-        if [ "${i}" -ge 30 ]; then
-            kill -KILL "${CHILD_PID}" 2>/dev/null
-            break
-        fi
-        sleep 1
+        sleep 1 & wait $!
     done
-    wait "${CHILD_PID}" 2>/dev/null
+    kill -INT "${CHILD_PID}" 2>/dev/null
+    while :; do
+        wait "${CHILD_PID}" 2>/dev/null
+        CHILD_STATUS=$?
+        kill -0 "${CHILD_PID}" 2>/dev/null || break
+    done
     CHILD_PID=""
 }
 
@@ -119,8 +122,9 @@ launch() {
 }
 
 shutdown() {
+    CHILD_STATUS=0
     stop_child
-    exit 0
+    exit "${CHILD_STATUS:-0}"
 }
 trap shutdown INT TERM
 
@@ -132,7 +136,7 @@ while true; do
         [ -n "${CHILD_PID}" ] && stop_child
         RUNNING_DIR="__none__"
         write_state "" ""
-        sleep 3
+        sleep 3 & wait $!
         continue
     fi
 
@@ -151,7 +155,7 @@ while true; do
         [ -n "${CHILD_PID}" ] && stop_child
         RUNNING_DIR="__none__"
         write_state "${NAME}" ""
-        sleep 3
+        sleep 3 & wait $!
         continue
     fi
 
@@ -176,5 +180,5 @@ while true; do
     fi
 
     write_state "${NAME}" "${APPDATA}"
-    sleep 3
+    sleep 3 & wait $!
 done

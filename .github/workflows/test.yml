@@ -85,3 +85,6 @@ jobs:
 
       - name: Test the daemon wrappers' Tor setting reader
         run: sh tests/tor_field_test.sh
+
+      - name: Test how the daemon wrappers stop their daemon
+        run: sh tests/wrapper_stop_test.sh
