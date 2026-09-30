@@ -20,6 +20,7 @@ import (
 // net/http's Shutdown leaves hijacked connections alone, so an open socket is
 // told the server is going away and its handler returns.
 func TestShutdownClosesOpenWebSockets(t *testing.T) {
+	t.Cleanup(func() { socketsClosing.Store(false) })
 	returned := make(chan struct{})
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, ok := upgradeWS(w, r, slog.Disabled, "test", wsBrowserMsgLimit)
@@ -70,5 +71,24 @@ func TestShutdownClosesOpenWebSockets(t *testing.T) {
 			t.Fatalf("%d closed socket(s) still registered", n)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A socket whose upgrade completes after the sweep began is not in the registry
+// the sweep read, and must still be told the server is going away.
+func TestSocketUpgradedDuringShutdownIsClosed(t *testing.T) {
+	t.Cleanup(func() { socketsClosing.Store(false) })
+	srv, wsURL := wsTestServer(t, wsBrowserMsgLimit)
+	CloseWebSockets()
+
+	c, _, err := dialWS(t, srv, wsURL)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	_, _, err = c.ReadMessage()
+	var ce *websocket.CloseError
+	if !errors.As(err, &ce) || ce.Code != websocket.CloseGoingAway {
+		t.Fatalf("socket read %v, want a 1001 going-away close", err)
 	}
 }

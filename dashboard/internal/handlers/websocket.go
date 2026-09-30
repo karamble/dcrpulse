@@ -8,6 +8,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"dcrpulse/internal/middleware"
@@ -48,22 +49,33 @@ func upgradeWS(w http.ResponseWriter, r *http.Request, log slog.Logger, label st
 	openSockets.Store(conn, struct{}{})
 	// The request context ends when the handler returns, hijacked or not.
 	context.AfterFunc(r.Context(), func() { openSockets.Delete(conn) })
+	// A socket that upgrades while CloseWebSockets sweeps may be missed by it.
+	if socketsClosing.Load() {
+		closeGoingAway(conn)
+	}
 	return conn, true
 }
 
 // openSockets holds every browser socket still being served; net/http's
 // Shutdown does not track hijacked connections.
-var openSockets sync.Map
+var (
+	openSockets    sync.Map
+	socketsClosing atomic.Bool
+)
 
 // CloseWebSockets tells every open browser socket that the server is going
 // away and closes it, so their handlers return. Registered with the server's
 // RegisterOnShutdown.
 func CloseWebSockets() {
-	msg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "dashboard shutting down")
+	socketsClosing.Store(true)
 	openSockets.Range(func(k, _ any) bool {
-		conn := k.(*websocket.Conn)
-		_ = conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
-		_ = conn.Close()
+		closeGoingAway(k.(*websocket.Conn))
 		return true
 	})
+}
+
+func closeGoingAway(conn *websocket.Conn) {
+	msg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "dashboard shutting down")
+	_ = conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
+	_ = conn.Close()
 }
