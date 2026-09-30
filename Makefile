@@ -101,7 +101,7 @@ deploy: ## Rebuild + recreate ONE service without touching deps (usage: make dep
 	docker compose build $(SVC)
 	docker compose up -d --no-deps $(SVC)
 
-deploy-dashboard: ## Rebuild + recreate only the dashboard (no daemon restart / no wallet relock)
+deploy-dashboard: ## Rebuild + recreate only the dashboard (daemons keep running)
 	@$(MAKE) deploy SVC=dashboard
 
 login: ## Login to GitHub Container Registry (ghcr.io)

@@ -572,6 +572,9 @@ func ensureAllAccountsEncrypted(ctx context.Context, passphrase []byte) error {
 // Lazily migrates to per-account encryption if needed (the default account on a
 // fresh wallet isn't encrypted yet).
 func unlockAccountForSpend(ctx context.Context, accountNumber uint32, passphrase []byte) (bool, error) {
+	if ShuttingDown() {
+		return false, ErrShuttingDown
+	}
 	if rpc.WalletGrpcClient == nil {
 		return false, fmt.Errorf("wallet gRPC client not initialized")
 	}

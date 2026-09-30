@@ -63,21 +63,22 @@ type catalogEntry struct {
 // produce; producers pass codes only, so kind/severity/debounce/title
 // cannot drift between watchers.
 var catalog = map[string]catalogEntry{
-	"dcrd_unreachable":        {CategoryNode, KindCondition, SeverityCritical, 5 * time.Minute, "Decred node unreachable"},
-	"dcrd_no_peers":           {CategoryNode, KindCondition, SeverityCritical, 5 * time.Minute, "Decred node has no peers"},
-	"chain_sync_stalled":      {CategoryNode, KindCondition, SeverityWarning, 0, "Chain sync stalled"},
-	"wallet_tx_received":      {CategoryWallet, KindEvent, SeverityInfo, 0, "Payment received"},
-	"ticket_purchased":        {CategoryStaking, KindEvent, SeverityInfo, 0, "Ticket purchased"},
-	"ticket_voted":            {CategoryStaking, KindEvent, SeverityInfo, 0, "Ticket voted"},
-	"ticket_expired":          {CategoryStaking, KindEvent, SeverityWarning, 0, "Ticket expired"},
-	"ticket_missed":           {CategoryStaking, KindEvent, SeverityWarning, 0, "Ticket missed vote"},
-	"ticket_revoked":          {CategoryStaking, KindEvent, SeverityWarning, 0, "Ticket revoked"},
-	"ln_channel_force_closed": {CategoryLightning, KindEvent, SeverityCritical, 0, "Lightning channel force-closed"},
-	"ln_no_peers":             {CategoryLightning, KindCondition, SeverityWarning, 5 * time.Minute, "Lightning node has no peers"},
-	"dex_order_filled":        {CategoryDex, KindEvent, SeverityInfo, 0, "DEX order filled"},
-	"dex_unreachable":         {CategoryDex, KindCondition, SeverityWarning, 5 * time.Minute, "DEX client unreachable"},
-	"br_disconnected":         {CategoryBisonrelay, KindCondition, SeverityWarning, 5 * time.Minute, "Bison Relay disconnected"},
-	"disk_high":               {CategorySystem, KindCondition, SeverityWarning, 0, "Disk space low"},
+	"dcrd_unreachable":            {CategoryNode, KindCondition, SeverityCritical, 5 * time.Minute, "Decred node unreachable"},
+	"dcrd_no_peers":               {CategoryNode, KindCondition, SeverityCritical, 5 * time.Minute, "Decred node has no peers"},
+	"chain_sync_stalled":          {CategoryNode, KindCondition, SeverityWarning, 0, "Chain sync stalled"},
+	"wallet_tx_received":          {CategoryWallet, KindEvent, SeverityInfo, 0, "Payment received"},
+	"ticket_purchased":            {CategoryStaking, KindEvent, SeverityInfo, 0, "Ticket purchased"},
+	"ticket_voted":                {CategoryStaking, KindEvent, SeverityInfo, 0, "Ticket voted"},
+	"ticket_expired":              {CategoryStaking, KindEvent, SeverityWarning, 0, "Ticket expired"},
+	"ticket_missed":               {CategoryStaking, KindEvent, SeverityWarning, 0, "Ticket missed vote"},
+	"ticket_revoked":              {CategoryStaking, KindEvent, SeverityWarning, 0, "Ticket revoked"},
+	"ticket_purchase_interrupted": {CategoryStaking, KindEvent, SeverityWarning, 0, "Ticket purchase interrupted"},
+	"ln_channel_force_closed":     {CategoryLightning, KindEvent, SeverityCritical, 0, "Lightning channel force-closed"},
+	"ln_no_peers":                 {CategoryLightning, KindCondition, SeverityWarning, 5 * time.Minute, "Lightning node has no peers"},
+	"dex_order_filled":            {CategoryDex, KindEvent, SeverityInfo, 0, "DEX order filled"},
+	"dex_unreachable":             {CategoryDex, KindCondition, SeverityWarning, 5 * time.Minute, "DEX client unreachable"},
+	"br_disconnected":             {CategoryBisonrelay, KindCondition, SeverityWarning, 5 * time.Minute, "Bison Relay disconnected"},
+	"disk_high":                   {CategorySystem, KindCondition, SeverityWarning, 0, "Disk space low"},
 }
 
 // Entry is one alert in the ring. For conditions, duration is derived

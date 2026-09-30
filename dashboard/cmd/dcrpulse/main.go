@@ -13,8 +13,10 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/signal"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -56,6 +58,11 @@ func main() {
 	// lands in the file.
 	dcrlog.RedirectStdLog(dcrlog.DCRP)
 
+	// The background loops run until the shutdown below has relocked the
+	// wallet; the signal only starts that shutdown.
+	rootCtx, cancelRoot := context.WithCancel(context.Background())
+	defer cancelRoot()
+
 	// Alerts fanout: nudge every open session over the BR event bus so the
 	// pill refetches without a socket of its own. The payload is deliberately
 	// empty (the bus reaches all sessions); clients refetch over
@@ -63,7 +70,7 @@ func main() {
 	alerts.SetNotify(func() {
 		services.PublishBisonrelayEvent("alerts", json.RawMessage("{}"))
 	})
-	services.StartDiskAlerts(context.Background())
+	services.StartDiskAlerts(rootCtx)
 
 	// Load dcrd configuration from environment variables
 	dcrdConfig := rpc.Config{
@@ -85,7 +92,7 @@ func main() {
 		// even when the initial connect failed: its safety ticker keeps
 		// evaluating the node alert conditions (dcrd_unreachable) while dcrd
 		// is down, and RefreshNodeSync tolerates a nil client.
-		services.StartNodeSync(context.Background())
+		services.StartNodeSync(rootCtx)
 		// The client dials with retry, but it cannot be built at all until dcrd
 		// has written its RPC cert, so keep trying to create it.
 		go func() {
@@ -95,7 +102,11 @@ func main() {
 					return
 				}
 				dcrpLog.Warnf("dcrd notification client unavailable (progress falls back to timer): %v", err)
-				time.Sleep(30 * time.Second)
+				select {
+				case <-rootCtx.Done():
+					return
+				case <-time.After(30 * time.Second):
+				}
 			}
 		}()
 	} else {
@@ -142,12 +153,12 @@ func main() {
 		//
 		// Supervise RpcSync from dcrd. Resumes automatically when the
 		// wallet is loaded, reconnects with backoff if the stream dies.
-		go superviseRpcSync(context.Background())
+		go superviseRpcSync(rootCtx)
 		// Re-lock accounts left unlocked by a subsystem that is no longer
 		// running, which a restart would otherwise leave open indefinitely.
-		services.StartAccountLockMonitor(context.Background())
-		services.StartTransactionWatcher(context.Background())
-		services.StartTicketWatcher(context.Background())
+		services.StartAccountLockMonitor(rootCtx)
+		services.StartTransactionWatcher(rootCtx)
+		services.StartTicketWatcher(rootCtx)
 	} else {
 		dcrpLog.Info("No gRPC certificate provided. Streaming features disabled.")
 	}
@@ -167,7 +178,7 @@ func main() {
 	if err := rpc.InitDcrlndClient(dcrlndCfg); err != nil {
 		dcrpLog.Warnf("dcrlnd init: %v", err)
 	}
-	services.StartLightningWatcher(context.Background())
+	services.StartLightningWatcher(rootCtx)
 
 	// brclientd clientrpc config. The cert pair is owned by brclientd and
 	// mounted read-only into this container; lazy init means the dashboard
@@ -194,7 +205,7 @@ func main() {
 		WSPort:     getEnv("DCRDEX_WS_PORT", "5758"),
 		WSCertPath: config.DcrdexWSCert(activeWallet),
 	})
-	services.StartDexWatcher(context.Background())
+	services.StartDexWatcher(rootCtx)
 
 	// Tail dcrwallet's log file for mixer-relevant entries; pushes them into
 	// the same ring buffer the /wallet/privacy/events WebSocket reads from.
@@ -205,18 +216,18 @@ func main() {
 	services.StartBrseederRefresh()
 
 	// Persistent WS subscriptions to brclientd for chat / KX / GC events.
-	services.StartBisonrelayStreams(context.Background())
-	services.StartBrclientdNotifs(context.Background())
+	services.StartBisonrelayStreams(rootCtx)
+	services.StartBrclientdNotifs(rootCtx)
 
 	// Shared-wallet coordination frames arrive as typed "msig" events on
 	// the same notification pipeline. The ladder's deferred rescans ride
 	// the handlers' gRPC rescan starter.
 	msig.SetRescanner(handlers.StartWalletRescan)
-	msig.StartEngine(context.Background())
+	msig.StartEngine(rootCtx)
 
 	// Background poller that advances dcrtime timestamp records to "anchored" as
 	// the public dcrtime server commits their digests to the chain.
-	timestamp.StartWorker(context.Background())
+	timestamp.StartWorker(rootCtx)
 
 	// Load the optional dashboard app-password gate (off unless configured). An
 	// unreadable config locks the API rather than leaving it open.
@@ -825,12 +836,46 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 		ErrorLog:          dcrlog.StdErrorLogger(dcrlog.HTTP),
 	}
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	srv.RegisterOnShutdown(handlers.CloseWebSockets)
+
+	sigCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.ListenAndServe() }()
+	select {
+	case err := <-serveErr:
 		dcrpLog.Errorf("HTTP server: %v", err)
 		// os.Exit skips deferred calls, so the rotator is closed by hand.
 		dcrlog.CloseRotator()
 		os.Exit(1)
+	case <-sigCtx.Done():
 	}
+	// Signals stay caught, so a second one cannot cut the relock short.
+	shutdown(srv, cancelRoot)
+	dcrlog.CloseRotator()
+}
+
+// shutdownTimeout keeps the whole stop, the final relock's own 15s included,
+// inside the compose stop_grace_period of 90s.
+const shutdownTimeout = 70 * time.Second
+
+// shutdown stops the dashboard in the order of Decrediton's finalCloseWallet:
+// no new work, open requests and sockets finish, the wallet work it runs stops
+// and relocks, and only then the background loops and the wallet sync end.
+func shutdown(srv *http.Server, cancelRoot context.CancelFunc) {
+	dcrpLog.Info("Shutting down")
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	services.BeginShutdown()
+	mcp.Stop()
+	httpDone := make(chan error, 1)
+	go func() { httpDone <- srv.Shutdown(ctx) }()
+	services.StopWalletWork(ctx)
+	if err := <-httpDone; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		dcrpLog.Warnf("HTTP server stopped with requests still in flight: %v", err)
+	}
+	cancelRoot()
+	dcrpLog.Info("Shutdown complete")
 }
 
 func getEnv(key, defaultValue string) string {

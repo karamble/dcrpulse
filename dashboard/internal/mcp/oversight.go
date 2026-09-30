@@ -516,6 +516,9 @@ func spendNotice(e AuditEntry) string {
 	return ""
 }
 
+// spendNotices counts the notices still being sent, which Stop waits for.
+var spendNotices sync.WaitGroup
+
 // notifySpend reports a spend outcome to the configured contact when oversight is
 // on. Only fund movements (result "ok" with a positive amount) and tripwire
 // blocks are reported; routine denials are not, since the operator already saw
@@ -529,7 +532,9 @@ func notifySpend(e AuditEntry) {
 	if msg == "" {
 		return
 	}
+	spendNotices.Add(1)
 	go func(to, body string) {
+		defer spendNotices.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_ = rpc.BrclientdSendPM(sctx, to, body)

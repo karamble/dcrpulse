@@ -202,6 +202,13 @@ func StartVoteTrickle(ctx context.Context, token, voteOption string, duration ti
 		cancel:       cancel,
 	}
 	vtMu.Lock()
+	// The signing above can outlast the start of a shutdown, which waits on
+	// vtStarting and then must not see a new run appear.
+	if ShuttingDown() {
+		vtMu.Unlock()
+		cancel()
+		return ErrShuttingDown
+	}
 	vtRuns[token] = st // replaces any finished-not-dismissed run for this token
 	vtMu.Unlock()
 

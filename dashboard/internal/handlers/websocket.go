@@ -5,7 +5,10 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
+	"sync"
+	"time"
 
 	"dcrpulse/internal/middleware"
 
@@ -42,5 +45,25 @@ func upgradeWS(w http.ResponseWriter, r *http.Request, log slog.Logger, label st
 		return nil, false
 	}
 	conn.SetReadLimit(limit)
+	openSockets.Store(conn, struct{}{})
+	// The request context ends when the handler returns, hijacked or not.
+	context.AfterFunc(r.Context(), func() { openSockets.Delete(conn) })
 	return conn, true
+}
+
+// openSockets holds every browser socket still being served; net/http's
+// Shutdown does not track hijacked connections.
+var openSockets sync.Map
+
+// CloseWebSockets tells every open browser socket that the server is going
+// away and closes it, so their handlers return. Registered with the server's
+// RegisterOnShutdown.
+func CloseWebSockets() {
+	msg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "dashboard shutting down")
+	openSockets.Range(func(k, _ any) bool {
+		conn := k.(*websocket.Conn)
+		_ = conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
+		_ = conn.Close()
+		return true
+	})
 }

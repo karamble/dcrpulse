@@ -366,9 +366,32 @@ func startListenerLocked() error {
 	return nil
 }
 
+// Stop takes the agent surface down for a dashboard shutdown, leaving the saved
+// on/off state as it is, zeroes the passphrases the grants hold and lets the
+// spend notices already on their way reach the operator.
+func Stop() {
+	srvMu.Lock()
+	var srv *http.Server
+	if httpSrv != nil {
+		srv = detachListenerLocked()
+	}
+	srvMu.Unlock()
+	if srv != nil {
+		shutdownServer(srv)
+	}
+	if n := grants.revokeAll(); n > 0 {
+		mcpLog.Infof("shutdown: revoked %d spend grant(s) and zeroed the held passphrase(s)", n)
+	}
+	spendNotices.Wait()
+}
+
 // stopListenerLocked takes the surface down. The caller holds srvMu and has
 // checked that httpSrv is non-nil.
 func stopListenerLocked() {
+	go shutdownServer(detachListenerLocked())
+}
+
+func detachListenerLocked() *http.Server {
 	srv := httpSrv
 	httpSrv = nil
 	// Ends the open listen streams and refuses new ones; the listener's own
@@ -378,7 +401,7 @@ func stopListenerLocked() {
 	// A spend parked on the operator's approval is denied here rather than left
 	// waiting for a reply that can no longer reach it.
 	approvals.cancelAll()
-	go shutdownServer(srv)
+	return srv
 }
 
 func shutdownServer(s *http.Server) {
