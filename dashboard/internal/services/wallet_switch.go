@@ -289,21 +289,21 @@ func leftoverWalletData(name string) []string {
 	return left
 }
 
-// removeWalletServiceData removes the local trees of a deleted wallet and
-// leaves a marker for the supervisors that own the others.
+// removeWalletServiceData leaves a marker for the supervisors that own a
+// deleted wallet's other trees, then removes its local ones.
 func removeWalletServiceData(name string) error {
+	if err := os.MkdirAll(walletPurgeDir(), 0o755); err != nil {
+		return fmt.Errorf("mark wallet for removal: %w", err)
+	}
+	if err := os.WriteFile(walletPurgeMarker(name), nil, 0o644); err != nil {
+		return fmt.Errorf("mark wallet for removal: %w", err)
+	}
 	for _, d := range walletServiceDirs(name) {
 		if d.local {
 			if err := os.RemoveAll(d.dir); err != nil {
 				return fmt.Errorf("remove %s data: %w", d.label, err)
 			}
 		}
-	}
-	if err := os.MkdirAll(walletPurgeDir(), 0o755); err != nil {
-		return fmt.Errorf("mark wallet for removal: %w", err)
-	}
-	if err := os.WriteFile(walletPurgeMarker(name), nil, 0o644); err != nil {
-		return fmt.Errorf("mark wallet for removal: %w", err)
 	}
 	return nil
 }
@@ -373,17 +373,25 @@ func DeleteWallet(ctx context.Context, name string) error {
 		return fmt.Errorf("wallet %q not found", name)
 	}
 
-	// Permanently remove the wallet's appdata (wallet.db and all data).
+	return removeWalletFiles(name, dataDir, config.WalletDir(network, name))
+}
+
+// removeWalletFiles removes a wallet's appdata (wallet.db and all data) last:
+// until then the wallet is still listed, so a delete cut short, by a shutdown
+// or a failure, can simply be repeated.
+func removeWalletFiles(name, dataDir, cfgDir string) error {
+	if err := removeWalletServiceData(name); err != nil {
+		return err
+	}
+	// The dashboard-side config directory holds metadata only.
+	if err := os.RemoveAll(cfgDir); err != nil {
+		wlltLog.Warnf("Delete wallet: remove config dir: %v", err)
+	}
 	if err := os.RemoveAll(dataDir); err != nil {
 		return fmt.Errorf("remove wallet data: %w", err)
 	}
 	wlltLog.Infof("Permanently deleted wallet %q (%s)", name, dataDir)
-
-	// Remove the dashboard-side config directory (metadata only).
-	if err := os.RemoveAll(config.WalletDir(network, name)); err != nil {
-		wlltLog.Warnf("Delete wallet: remove config dir: %v", err)
-	}
-	return removeWalletServiceData(name)
+	return nil
 }
 
 // waitForSupervisor blocks until the dcrwallet entrypoint supervisor reports it

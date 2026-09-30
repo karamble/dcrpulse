@@ -115,3 +115,29 @@ func TestLeftoverWalletData(t *testing.T) {
 		t.Errorf("default wallet reported %v", got)
 	}
 }
+
+// A delete cut short must leave the wallet listed, so it can be deleted again,
+// with its removal already marked.
+func TestDeleteRemovesTheWalletLast(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the permission this test relies on")
+	}
+	root := fakeWalletServiceDirs(t)
+	lnParent := filepath.Join(root, "dcrlnd", "wallets")
+	walletData := filepath.Join(root, "dcrwallet", "wallets", "erin")
+	mkdirs(t, filepath.Join(lnParent, "erin"), walletData)
+	if err := os.Chmod(lnParent, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lnParent, 0o755) })
+
+	if err := removeWalletFiles("erin", walletData, filepath.Join(root, "config", "erin")); err == nil {
+		t.Fatal("the Lightning tree could not be removed, yet the delete reported success")
+	}
+	if _, err := os.Stat(walletData); err != nil {
+		t.Errorf("wallet data removed before the rest, the wallet can no longer be deleted again: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "control", "purge", "erin")); err != nil {
+		t.Errorf("no removal marker: %v", err)
+	}
+}
