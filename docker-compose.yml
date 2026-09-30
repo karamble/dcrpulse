@@ -23,6 +23,7 @@ services:
       --rpccert=/app-data/dcrd/rpc.cert
       --rpckey=/app-data/dcrd/rpc.key
     restart: unless-stopped
+    stop_grace_period: 5m
     networks:
       - decred-network
     healthcheck:
@@ -72,6 +73,7 @@ services:
       dcrd:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 1m
     networks:
       - decred-network
     healthcheck:
@@ -109,6 +111,7 @@ services:
       dcrwallet:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 1m
     networks:
       - decred-network
     deploy:
@@ -140,6 +143,7 @@ services:
       dcrlnd:
         condition: service_started
     restart: unless-stopped
+    stop_grace_period: 1m
     networks:
       - decred-network
     deploy:
@@ -168,7 +172,11 @@ services:
       - ${DCRDEX_DATA_DIR:-dcrdex-data}:/dex/.dexc
       - ${APP_DATA_DIR:-app-data}:/app-data:ro
       - ./dcrdex/supervisor.sh:/supervisor.sh:ro
+    depends_on:
+      dcrwallet:
+        condition: service_started
     restart: unless-stopped
+    stop_grace_period: 1m
     networks:
       - decred-network
     deploy:
@@ -232,7 +240,16 @@ services:
         condition: service_healthy
       dcrwallet:
         condition: service_healthy
+      # Listed so compose stops the dashboard, and with it the wallet work it
+      # runs, before these daemons.
+      dcrlnd:
+        condition: service_started
+      brclientd:
+        condition: service_started
+      dcrdex:
+        condition: service_started
     restart: unless-stopped
+    stop_grace_period: 90s
     networks:
       - decred-network
     deploy:

@@ -107,6 +107,7 @@
 {% do dcrdex.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
 {% do dcrdex.healthcheck.disable() %}
 {% do dcrdex.set_grace_period(60) %}
+{% do dcrdex.depends.add_dependency(values.consts.dcrwallet_container_name, "service_started") %}
 {% do dcrdex.environment.add_env("DCRDEX_RPC_USER", values.decred.rpc_user) %}
 {% do dcrdex.environment.add_env("DCRDEX_RPC_PASS", values.decred.rpc_password) %}
 {% do dcrdex.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
@@ -118,6 +119,7 @@
 {# ============================== dashboard (web UI) ============================== #}
 {% set dashboard = tpl.add_container(values.consts.dashboard_container_name, "dashboard_image") %}
 {% do dashboard.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
+{% do dashboard.set_grace_period(90) %}
 {% do dashboard.healthcheck.disable() %}
 {% do dashboard.environment.add_env("PORT", values.consts.dashboard_port) %}
 {% do dashboard.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
@@ -158,6 +160,10 @@
 {% do dashboard.add_port(values.network.web_port, {"container_port": values.consts.dashboard_port}) %}
 {% do dashboard.depends.add_dependency(values.consts.dcrd_container_name, "service_healthy") %}
 {% do dashboard.depends.add_dependency(values.consts.dcrwallet_container_name, "service_healthy") %}
+{# Listed so compose stops the dashboard, and with it the wallet work it runs, before these daemons. #}
+{% do dashboard.depends.add_dependency(values.consts.dcrlnd_container_name, "service_started") %}
+{% do dashboard.depends.add_dependency(values.consts.brclientd_container_name, "service_started") %}
+{% do dashboard.depends.add_dependency(values.consts.dcrdex_container_name, "service_started") %}
 {% do perms.add_or_skip_action("dashboard", values.storage.dashboard, perms_config) %}
 
 {# ============================== Permissions / dependencies ============================== #}

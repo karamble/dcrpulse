@@ -149,11 +149,14 @@ services:
     depends_on:
       init:
         condition: service_completed_successfully
+      dcrwallet:
+        condition: service_started
 
   dashboard:
     image: ghcr.io/karamble/dcrpulse-dashboard:latest@sha256:97314478fcef4a67dd4070eb4faab28902546ee23ab6ac630eea8b766f8a3b3a
     user: "1000:1000"
     restart: on-failure
+    stop_grace_period: 90s
     volumes:
       - ${APP_DATA_DIR}/data:/app-data
       - ${APP_DATA_DIR}/data/dashboard:/dashboard-data
@@ -202,6 +205,14 @@ services:
         condition: service_healthy
       dcrwallet:
         condition: service_healthy
+      # Listed so compose stops the dashboard, and with it the wallet work it
+      # runs, before these daemons.
+      dcrlnd:
+        condition: service_started
+      brclientd:
+        condition: service_started
+      dcrdex:
+        condition: service_started
 
   tor:
     image: ghcr.io/karamble/dcrpulse-tor:0.4.7.8@sha256:2188228c3f09866d1ea704c3424651788b36d155872915685def7d17e8921ec8
