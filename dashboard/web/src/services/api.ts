@@ -492,7 +492,6 @@ export interface SignedTxPreview {
 
 export interface BroadcastSignedTxResponse {
   txHash: string;
-  alreadyBroadcast?: boolean;
 }
 
 // SignedTxInput carries a signed transaction as either base64 of a hardware-wallet

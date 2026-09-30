@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -17,11 +16,6 @@ import (
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 )
-
-// reDuplicateTx matches dcrwallet/dcrd errors meaning the transaction is already
-// known (already broadcast / in the mempool). That is a benign "already done"
-// outcome, not a failure.
-var reDuplicateTx = regexp.MustCompile(`(?i)already have|already exists|duplicate|in mempool|transaction already`)
 
 // decodeSignedTxInput resolves the request's signed-transaction bytes. A
 // hardware-wallet file is uploaded base64-encoded (binary-safe, since the Passport
@@ -89,12 +83,11 @@ func BroadcastSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	txBytes, tx, err := services.ParseSignedTransaction(data)
+	txBytes, _, err := services.ParseSignedTransaction(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	txid := tx.TxHash().String()
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -105,9 +98,6 @@ func BroadcastSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case services.IsDaemonUnreachable(err):
 			respondDaemonError(w, r, services.LogComponentDcrwallet, err)
-		case reDuplicateTx.MatchString(low):
-			// Already broadcast: report success with the known txid.
-			writeJSON(w, types.BroadcastSignedTxResponse{TxHash: txid, AlreadyBroadcast: true})
 		case strings.Contains(low, "missing") || strings.Contains(low, "orphan") || strings.Contains(low, "spent"):
 			http.Error(w, err.Error(), http.StatusConflict)
 		default:

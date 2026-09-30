@@ -194,8 +194,7 @@ type BroadcastSignedTxRequest struct {
 }
 
 type BroadcastSignedTxResponse struct {
-	TxHash           string `json:"txHash"`
-	AlreadyBroadcast bool   `json:"alreadyBroadcast,omitempty"`
+	TxHash string `json:"txHash"`
 }
 
 // SignRequestExport carries the base64 CBOR SignRequest for an air-gapped hardware

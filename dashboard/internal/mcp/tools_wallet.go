@@ -88,13 +88,6 @@ func signedTxBytes(b64, text string) ([]byte, error) {
 // txAlreadyKnown reports whether a broadcast error means the transaction was
 // already accepted (already broadcast or in the mempool), a benign "already done"
 // outcome rather than a failure.
-func txAlreadyKnown(err error) bool {
-	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "already have") || strings.Contains(s, "already exists") ||
-		strings.Contains(s, "duplicate") || strings.Contains(s, "in mempool") ||
-		strings.Contains(s, "transaction already")
-}
-
 // walletTools are the read-only "wallet" domain tools. They report on the
 // active wallet only; spend tools (gated on a user grant) come in a later phase.
 var walletTools = []toolDef{
@@ -212,7 +205,7 @@ var walletTools = []toolDef{
 			return services.PreviewSignedTransaction(ctx, data)
 		}),
 	agentTool("wallet", "wallet_broadcast_signed_transaction",
-		"Broadcast an already-signed transaction (base64 raw bytes or hex/text export) to the network. The transaction must have been signed by a human on a hardware wallet; the agent only relays it. Requires a grant with the wallet.broadcast scope. Returns the txid; an already-broadcast transaction is reported as success.",
+		"Broadcast an already-signed transaction (base64 raw bytes or hex/text export) to the network. The transaction must have been signed by a human on a hardware wallet; the agent only relays it. Requires a grant with the wallet.broadcast scope. Returns the txid.",
 		func(ctx context.Context, a *agent, in signedTxInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeWalletBroadcast, time.Now()); err != nil {
 				recordSpend(a, "wallet_broadcast_signed_transaction", 0, 0, "", "denied", err.Error())
@@ -231,14 +224,10 @@ var walletTools = []toolDef{
 			txid := tx.TxHash().String()
 			txHash, err := services.BroadcastSignedTransaction(ctx, txBytes)
 			if err != nil {
-				if txAlreadyKnown(err) {
-					recordSpend(a, "wallet_broadcast_signed_transaction", 0, 0, txid, "ok", "already broadcast")
-					return map[string]any{"txHash": txid, "alreadyBroadcast": true}, nil
-				}
 				recordSpend(a, "wallet_broadcast_signed_transaction", 0, 0, txid, "error", err.Error())
 				return nil, err
 			}
 			recordSpend(a, "wallet_broadcast_signed_transaction", 0, 0, txHash, "ok", txHash)
-			return map[string]any{"txHash": txHash, "alreadyBroadcast": false}, nil
+			return map[string]any{"txHash": txHash}, nil
 		}),
 }

@@ -346,7 +346,7 @@ const ImportSignedPanel = () => {
   const [preview, setPreview] = useState<SignedTxPreview | null>(null);
   const [broadcasting, setBroadcasting] = useState(false);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ txHash: string; alreadyBroadcast: boolean } | null>(null);
+  const [result, setResult] = useState<{ txHash: string } | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -411,7 +411,7 @@ const ImportSignedPanel = () => {
     setBroadcastError(null);
     try {
       const resp = await broadcastSignedTransaction({ signedTx: preview.txHex });
-      setResult({ txHash: resp.txHash, alreadyBroadcast: !!resp.alreadyBroadcast });
+      setResult({ txHash: resp.txHash });
     } catch (err: any) {
       setBroadcastError(apiError(err, 'Broadcast failed'));
     } finally {
@@ -426,12 +426,10 @@ const ImportSignedPanel = () => {
           <Check className="h-8 w-8 text-success" />
         </div>
         <h2 className="text-2xl font-semibold">
-          {result.alreadyBroadcast ? 'Already broadcast' : 'Transaction broadcast'}
+          Transaction broadcast
         </h2>
         <p className="text-muted-foreground">
-          {result.alreadyBroadcast
-            ? 'This transaction was already known to the network.'
-            : 'The signed transaction has been sent to the Decred network.'}
+          The signed transaction has been sent to the Decred network.
         </p>
         <div className="p-3 rounded-lg bg-background border border-border break-all">
           <p className="text-xs text-muted-foreground mb-1">Transaction ID</p>
