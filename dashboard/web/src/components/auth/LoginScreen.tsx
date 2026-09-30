@@ -8,7 +8,7 @@ import { login } from '../../services/auth';
 import { apiError } from '../../utils/apiError';
 import { secretFieldProps } from '../../utils/secretField';
 
-export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
+export function LoginScreen({ onSuccess, notice }: { onSuccess: () => void; notice?: string }) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -54,6 +54,7 @@ export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
             </p>
           </div>
         </div>
+        {notice && <p className="text-xs text-muted-foreground">{notice}</p>}
         <input
           {...secretFieldProps}
           type="password"

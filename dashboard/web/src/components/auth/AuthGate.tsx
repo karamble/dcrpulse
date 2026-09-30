@@ -19,14 +19,11 @@ import { AppPasswordFirstRun } from './AppPasswordFirstRun';
 
 interface AuthContextValue {
   status: AuthStatus | null;
-  // False while the status could not be read and the gate failed open.
-  known: boolean;
   refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   status: null,
-  known: false,
   refresh: async () => {},
 });
 
@@ -39,23 +36,15 @@ export const useAuth = () => useContext(AuthContext);
 export function AuthGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [known, setKnown] = useState(false);
+  // A status that cannot be read counts as signed out until it can.
+  const [unreadable, setUnreadable] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       setStatus(await getAuthStatus());
-      setKnown(true);
+      setUnreadable(false);
     } catch {
-      setKnown(false);
-      // If status is unreachable, fail open (treat as disabled) so a backend
-      // hiccup never hard-locks the dashboard.
-      setStatus({
-        enabled: false,
-        configured: false,
-        authenticated: false,
-        setupDismissed: true,
-        locked: false,
-      });
+      setUnreadable(true);
     } finally {
       setLoading(false);
     }
@@ -66,8 +55,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   useEffect(() => {
+    if (!unreadable) return;
+    const t = window.setInterval(refresh, 5000);
+    return () => window.clearInterval(t);
+  }, [unreadable, refresh]);
+
+  // A 401 tagged by the app-password gate proves the gate is on.
+  useEffect(() => {
     setUnauthorizedHandler(() =>
-      setStatus((s) => (s ? { ...s, authenticated: false } : s)),
+      setStatus((s) => (s ? { ...s, enabled: true, authenticated: false } : s)),
     );
     return () => setUnauthorizedHandler(null);
   }, []);
@@ -77,6 +73,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
+    );
+  }
+
+  if (unreadable) {
+    return (
+      <LoginScreen
+        onSuccess={refresh}
+        notice="Couldn't check whether you're signed in; the login stays up until the dashboard answers."
+      />
     );
   }
 
@@ -90,7 +95,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   const showFirstRun = !!status && !status.configured && !status.setupDismissed;
   return (
-    <AuthContext.Provider value={{ status, known, refresh }}>
+    <AuthContext.Provider value={{ status, refresh }}>
       {children}
       {showFirstRun && <AppPasswordFirstRun onDone={refresh} />}
     </AuthContext.Provider>

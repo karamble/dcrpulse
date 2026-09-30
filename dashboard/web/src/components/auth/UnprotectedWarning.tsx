@@ -45,8 +45,8 @@ export function UnprotectedWarning({
 // UnprotectedBanner stays on every page while no app password is set, so the
 // one-time first-run choice is not the last reminder.
 export function UnprotectedBanner() {
-  const { status, known } = useAuth();
-  if (!known || !status || status.enabled || status.locked) return null;
+  const { status } = useAuth();
+  if (!status || status.enabled || status.locked) return null;
   return (
     <div
       role="alert"

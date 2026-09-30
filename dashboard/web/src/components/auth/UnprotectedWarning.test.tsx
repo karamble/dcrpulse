@@ -54,7 +54,8 @@ describe('UnprotectedBanner', () => {
       throw new Error('down');
     });
     withGate(<><UnprotectedBanner /><span>app</span></>);
-    await screen.findByText('app');
+    await screen.findByText(/Couldn't check whether you're signed in/);
+    expect(screen.queryByText('app')).toBeNull();
     expect(screen.queryByText(/this dashboard is unprotected/)).toBeNull();
   });
 });
