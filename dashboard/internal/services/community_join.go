@@ -191,6 +191,12 @@ func (m *communityJoinManager) begin(ctx context.Context, restart bool) (*Commun
 		}
 		return old, nil
 	}
+	// A member needs no invite; nothing is sent to the bot.
+	if old != nil && old.URL == base {
+		if v, err := m.sharedMembership(ctx, old, uid); err != nil || v != nil {
+			return v, err
+		}
+	}
 	invite, err := m.invite(ctx, base, uid)
 	if err != nil {
 		return nil, err
@@ -236,16 +242,35 @@ func (m *communityJoinManager) status(ctx context.Context) (*CommunityJoin, erro
 	if err != nil || j == nil {
 		return j, err
 	}
-	if err := m.current(ctx, j); err != nil {
-		if errors.Is(err, errCommunityJoinChanged) {
-			return nil, nil
-		}
+	uid, err := m.localIdentity(ctx)
+	if err != nil {
 		return nil, err
+	}
+	if j.URL != m.url() {
+		return nil, nil
+	}
+	if j.LocalUID != uid {
+		return m.sharedMembership(ctx, j, uid)
 	}
 	if err := m.membership(ctx, j); err != nil {
 		return nil, err
 	}
 	return j, nil
+}
+
+// sharedMembership reports whether uid is in the group of a join made with the
+// same bot, possibly by another wallet. That join is not uid's to resume or
+// accept, so the view carries no ID; a join over an unauthenticated URL is not
+// trusted at all.
+func (m *communityJoinManager) sharedMembership(ctx context.Context, j *CommunityJoin, uid string) (*CommunityJoin, error) {
+	if j.Insecure || j.GCID == "" {
+		return nil, nil
+	}
+	v := &CommunityJoin{BotUID: j.BotUID, GCID: j.GCID, Status: "joined", URL: j.URL, LocalUID: uid}
+	if err := m.membership(ctx, v); err != nil || !v.Joined {
+		return nil, err
+	}
+	return v, nil
 }
 func (m *communityJoinManager) acceptMatching(ctx context.Context, id string) error {
 	m.mu.Lock()

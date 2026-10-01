@@ -347,3 +347,86 @@ func TestCommunityJoinOverAnUnauthenticatedURLStaysManualWhenRedeemFails(t *test
 		t.Fatalf("saved join %+v, %v; want manual and insecure", j, err)
 	}
 }
+
+// Another wallet's join with the same bot says which group to look in, so a
+// member is recognised without asking the bot; its pending join stays its own.
+func TestCommunityJoinRecognisesMembersOfAnotherWalletsJoin(t *testing.T) {
+	m, accepted := joinFixture(t)
+	ctx := t.Context()
+	j, err := m.begin(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(m.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := "7878787878787878787878787878787878787878787878787878787878787878"
+	m.identity = func(context.Context) (json.RawMessage, error) {
+		return json.RawMessage(`{"identity":"` + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", 32))) + `"}`), nil
+	}
+	member := func(uid string) {
+		m.groups = func(context.Context) (json.RawMessage, error) {
+			return json.RawMessage(fmt.Sprintf(`{"gcs":[{"id":%q,"local_is_member":true,"members":[%q]}]}`, testGCID, uid)), nil
+		}
+	}
+	invites := 0
+	m.invite = func(context.Context, string, string) (DecredPulseInvite, error) {
+		invites++
+		return DecredPulseInvite{InviteKey: "key", BotUID: testBotUID, GCID: testGCID}, nil
+	}
+	m.redeem = func(context.Context, string) error { t.Fatal("redeemed an invite for a member"); return nil }
+
+	member(other)
+	got, err := m.status(ctx)
+	if err != nil || got == nil || !got.Joined || got.ID != "" {
+		t.Fatalf("member of the saved group: %+v %v", got, err)
+	}
+	if err := m.acceptMatching(ctx, j.ID); err == nil || len(*accepted) != 0 {
+		t.Fatal("accepted another wallet's join")
+	}
+	for _, restart := range []bool{false, true} {
+		if got, err := m.begin(ctx, restart); err != nil || got == nil || !got.Joined || invites != 0 {
+			t.Fatalf("join as a member (restart %v): %+v %v, %d invites", restart, got, err, invites)
+		}
+	}
+	if now, _ := os.ReadFile(m.path); string(now) != string(saved) {
+		t.Fatal("a member's join rewrote the saved join")
+	}
+
+	m.url = func() string { return "https://different.example" }
+	if got, err := m.status(ctx); err != nil || got != nil {
+		t.Fatalf("join for another bot URL: %+v %v", got, err)
+	}
+	m.url = func() string { return "https://custom.example" }
+
+	member(testLocalUID)
+	if got, err := m.status(ctx); err != nil || got != nil {
+		t.Fatalf("not a member: %+v %v", got, err)
+	}
+	m.redeem = func(context.Context, string) error { return nil }
+	if _, err := m.begin(ctx, false); err != nil || invites != 1 {
+		t.Fatalf("a non-member's join sent %d invite requests: %v", invites, err)
+	}
+}
+
+// A join over an unauthenticated URL could carry any group, so it never stands
+// in for another wallet's membership.
+func TestCommunityJoinIgnoresAnInsecureJoinForOtherWallets(t *testing.T) {
+	m, _ := joinFixture(t)
+	m.url = func() string { return "http://bot.example" }
+	ctx := t.Context()
+	if _, err := m.begin(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	other := "7878787878787878787878787878787878787878787878787878787878787878"
+	m.identity = func(context.Context) (json.RawMessage, error) {
+		return json.RawMessage(`{"identity":"` + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", 32))) + `"}`), nil
+	}
+	m.groups = func(context.Context) (json.RawMessage, error) {
+		return json.RawMessage(fmt.Sprintf(`{"gcs":[{"id":%q,"local_is_member":true,"members":[%q]}]}`, testGCID, other)), nil
+	}
+	if got, err := m.status(ctx); err != nil || got != nil {
+		t.Fatalf("insecure join stood in for membership: %+v %v", got, err)
+	}
+}
