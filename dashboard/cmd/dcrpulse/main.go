@@ -594,6 +594,7 @@ func main() {
 	api.HandleFunc("/br/gc/create", handlers.BisonrelayGCCreateHandler).Methods("POST")
 	api.HandleFunc("/br/gc/invites", handlers.BisonrelayGCInvitesListHandler).Methods("GET")
 	api.HandleFunc("/br/gc/invites/accept", handlers.BisonrelayGCInvitesAcceptHandler).Methods("POST")
+	api.HandleFunc("/br/gc/invites/blocked/dismiss", handlers.BisonrelayGCBlockedReinviteDismissHandler).Methods("POST")
 	api.HandleFunc("/br/gc/{gcid}", handlers.BisonrelayGCDetailHandler).Methods("GET")
 	api.HandleFunc("/br/gc/{gcid}/invite", handlers.BisonrelayGCInviteHandler).Methods("POST")
 	api.HandleFunc("/br/gc/{gcid}/message", handlers.BisonrelayGCMessageHandler).Methods("POST")

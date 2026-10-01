@@ -1732,6 +1732,10 @@ export const acceptBisonrelayGCInvite = async (iid: number): Promise<void> => {
   await api.post('/br/gc/invites/accept', { iid });
 };
 
+export const dismissBisonrelayBlockedReinvite = async (gcid: string): Promise<void> => {
+  await api.post('/br/gc/invites/blocked/dismiss', { gcid });
+};
+
 export const getBisonrelayGCDetail = async (gcid: string): Promise<BisonrelayGC> => {
   const { data } = await api.get<BisonrelayGC>(`/br/gc/${gcid}`);
   return data;

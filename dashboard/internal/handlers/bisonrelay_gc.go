@@ -56,6 +56,23 @@ func BisonrelayGCInvitesAcceptHandler(w http.ResponseWriter, r *http.Request) {
 	brDo204(w, func() error { return rpc.BrclientdGCInvitesAccept(r.Context(), req.IID) })
 }
 
+// BisonrelayGCBlockedReinviteDismissHandler forgets a blocked re-invite until
+// the next one arrives.
+func BisonrelayGCBlockedReinviteDismissHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		GCID string `json:"gcid"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	gcid, err := rpc.ParseShortIDHex(req.GCID)
+	if err != nil {
+		http.Error(w, "invalid gcid", http.StatusBadRequest)
+		return
+	}
+	brDo204(w, func() error { return rpc.BrclientdGCDismissBlockedReinvite(r.Context(), gcid) })
+}
+
 // BisonrelayGCDetailHandler returns the full GC record including members + blocklist.
 func BisonrelayGCDetailHandler(w http.ResponseWriter, r *http.Request) {
 	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")

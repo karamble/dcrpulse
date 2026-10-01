@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Info, Loader2, LogOut, MessageSquare, Users, X } from 'lucide-react';
 import {
   acceptBisonrelayGCInvite,
+  dismissBisonrelayBlockedReinvite,
   listBisonrelayGCInvites,
   partBisonrelayGC,
   BlockedGCReinvite,
@@ -119,9 +120,17 @@ export const IncomingGCInvitesBanner = ({
     setPending((prev) => prev.filter((x) => x.iid !== iid));
   }, []);
 
-  const dismissBlocked = useCallback((gcid: string) => {
+  const hideBlocked = useCallback((gcid: string) => {
     setBlocked((prev) => prev.filter((x) => x.gcid !== gcid));
   }, []);
+
+  // Hidden at once; brclientd then forgets it until the next blocked attempt.
+  const dismissBlocked = useCallback((gcid: string) => {
+    hideBlocked(gcid);
+    dismissBisonrelayBlockedReinvite(gcid).catch((e: any) => {
+      setErr(apiError(e, 'Could not dismiss the blocked re-invite'));
+    });
+  }, [hideBlocked]);
 
   const dismissHint = useCallback((gcid: string) => {
     setLeftHints((prev) => prev.filter((x) => x.gcid !== gcid));
@@ -148,7 +157,7 @@ export const IncomingGCInvitesBanner = ({
     setErr(null);
     try {
       await partBisonrelayGC(b.gcid);
-      dismissBlocked(b.gcid);
+      hideBlocked(b.gcid);
       setLeftHints((prev) => [...prev.filter((x) => x.gcid !== b.gcid), b]);
       onAccepted();
     } catch (e: any) {

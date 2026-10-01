@@ -1013,6 +1013,10 @@ func BrclientdGCInvitesAccept(ctx context.Context, iid uint64) error {
 	return brclientdPostJSON(ctx, "/gc/invites/accept", map[string]any{"iid": iid})
 }
 
+func BrclientdGCDismissBlockedReinvite(ctx context.Context, gcid ShortIDHex) error {
+	return brclientdPostJSON(ctx, "/gc/invites/blocked/dismiss", map[string]any{"gcid": gcid.String()})
+}
+
 func BrclientdGCDetail(ctx context.Context, gcid ShortIDHex) (json.RawMessage, error) {
 	return brclientdGetRawID(ctx, "/gc", gcid, "", nil)
 }
