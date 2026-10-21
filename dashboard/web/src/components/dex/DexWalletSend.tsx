@@ -4,7 +4,15 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, AlertTriangle } from 'lucide-react';
-import { sendDexWallet, estimateDexSendFee, type DexWalletState, type DexAssetInfo, type DexSendFee } from '../../services/dcrdexApi';
+import {
+  sendDexWallet,
+  estimateDexSendFee,
+  hasTrait,
+  WalletTrait,
+  type DexWalletState,
+  type DexAssetInfo,
+  type DexSendFee,
+} from '../../services/dcrdexApi';
 import { fmtAmt } from './dexFormat';
 import { apiError } from '../../utils/apiError';
 import { secretFieldProps } from '../../utils/secretField';
@@ -26,6 +34,10 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
   const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
   const [fee, setFee] = useState<DexSendFee | null>(null);
+  // Only a withdrawer wallet can take the fee out of the amount, as in bisonw.
+  const canSubtract = hasTrait(wallet.traits, WalletTrait.Withdrawer);
+  const [subtractBox, setSubtractBox] = useState(false);
+  const subtract = canSubtract && subtractBox;
 
   // Display precision from the asset's conversion factor (e.g. DCR 1e8 -> 8,
   // POL 1e9 -> 9). The actual atom conversion happens in the backend per-asset.
@@ -49,7 +61,7 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
     }
     let cancelled = false;
     const t = window.setTimeout(() => {
-      estimateDexSendFee(wallet.assetID, value, addr)
+      estimateDexSendFee(wallet.assetID, value, addr, subtract)
         .then((f) => !cancelled && setFee(f))
         .catch(() => !cancelled && setFee(null));
     }, 500);
@@ -58,17 +70,18 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
       window.clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, amount, wallet.assetID]);
+  }, [address, amount, subtract, wallet.assetID]);
 
   const send = async () => {
     setBusy(true);
     setErr(null);
     try {
-      const coin = await sendDexWallet(wallet.assetID, value, address.trim(), appPass);
+      const coin = await sendDexWallet(wallet.assetID, value, address.trim(), appPass, subtract);
       setSent(coin);
       setAddress('');
       setAmount('');
       setAppPass('');
+      setSubtractBox(false);
       setConfirming(false);
       onSent();
     } catch (e: any) {
@@ -96,7 +109,14 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
       <div>
         <label className="flex items-center justify-between text-xs text-muted-foreground mb-1">
           <span>Amount ({wallet.symbol})</span>
-          <button type="button" className="hover:text-foreground" onClick={() => setAmount(String(wallet.available))}>
+          <button
+            type="button"
+            className="hover:text-foreground"
+            onClick={() => {
+              setAmount(String(wallet.available));
+              setSubtractBox(canSubtract);
+            }}
+          >
             max {fmtAmt(wallet.available, decimals)}
           </button>
         </label>
@@ -112,6 +132,12 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
         />
       </div>
 
+      {canSubtract && (
+        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none">
+          <input type="checkbox" checked={subtract} onChange={(e) => setSubtractBox(e.target.checked)} className="accent-primary" />
+          Subtract fees from amount sent.
+        </label>
+      )}
       {feeNote && <p className="text-[11px] text-muted-foreground">{feeNote}</p>}
       {fee && (
         <p className="text-[11px] text-muted-foreground">
@@ -146,7 +172,12 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
           <div className="p-2.5 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
             <span>
-              Send {fmtAmt(value, decimals)} {wallet.symbol} to {address.slice(0, 12)}... This spends real funds and cannot be undone.
+              Send {fmtAmt(value, decimals)} {wallet.symbol} to {address.slice(0, 12)}...
+              {fee &&
+                (subtract
+                  ? ` The network fee (~${fmtAmt(fee.fee, 8)} ${fee.feeSymbol}) comes out of this amount.`
+                  : ` plus the network fee (~${fmtAmt(fee.fee, 8)} ${fee.feeSymbol}).`)}{' '}
+              This spends real funds and cannot be undone.
             </span>
           </div>
           <input

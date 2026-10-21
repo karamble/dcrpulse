@@ -250,7 +250,7 @@ For the selected wallet:
 - **Status** and **actions** gated on the wallet's capabilities: **Unlock**/**Lock** (encrypted wallets), **Rescan** (rescannable wallets), and **Enable**/**Disable**.
 - **Balance** breakdown: spendable (with approximate USD), plus Locked, Immature, In orders, In bonds, and Total.
 - **Deposit address** with a copy button and a QR code. For UTXO chains (DCR, BTC, LTC) you can **Generate new address**, and the panel warns if the current address has already been used (to avoid address reuse). Account-based chains reuse one static address.
-- **Send** (withdraw): enter a recipient address and an amount (the **max** shortcut fills the spendable balance). A debounced estimate shows the network fee and flags an invalid address. For account-based chains, gas fees are paid from the parent asset's balance separately from the amount. Sending is behind a two-step confirmation and reports the resulting coin id. Spending real funds cannot be undone.
+- **Send** (withdraw): enter a recipient address and an amount (the **max** shortcut fills the spendable balance). Wallets that can withdraw (the Bitcoin family and Decred) offer **Subtract fees from amount sent.**, which bisonw applies by taking the network fee out of the amount; **max** ticks it. A debounced estimate shows the network fee and flags an invalid address. For account-based chains, gas fees are paid from the parent asset's balance separately from the amount. Sending is behind a two-step confirmation and reports the resulting coin id. Spending real funds cannot be undone.
 - **Peers** (for wallets that manage peers): view connected peers and add or remove peer addresses.
 - **Transactions**: the wallet's transaction history (for wallets that report it).
 

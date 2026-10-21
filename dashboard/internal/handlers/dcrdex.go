@@ -2273,16 +2273,27 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(out)
 }
 
+// dexSendSession and sendDexWalletTx are the two calls a test cannot make for
+// real: the session gate reads rpc's logged-in web client, and Send spends.
+var (
+	dexSendSession  = dexWebSession
+	sendDexWalletTx = func(ctx context.Context, web *bisonw.WebClient, appPass string, assetID uint32, atoms uint64, address string, subtract bool) (string, error) {
+		return web.Send(ctx, appPass, assetID, atoms, address, subtract)
+	}
+)
+
 // SendDcrdexWalletHandler sends a conventional amount of an asset to an address.
 // The amount is converted to atoms in the backend. Spends real funds; bisonw's
 // send route refuses the session password cache, so the app password is
-// re-entered in the request body for this action.
+// re-entered in the request body for this action. Subtract has bisonw take the
+// network fee out of the amount.
 func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AssetID uint32  `json:"assetID"`
-		Value   float64 `json:"value"`
-		Address string  `json:"address"`
-		AppPass string  `json:"appPass"`
+		AssetID  uint32  `json:"assetID"`
+		Value    float64 `json:"value"`
+		Address  string  `json:"address"`
+		AppPass  string  `json:"appPass"`
+		Subtract bool    `json:"subtract"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Address == "" || req.Value <= 0 {
 		http.Error(w, "assetID, value and address are required", http.StatusBadRequest)
@@ -2297,8 +2308,8 @@ func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	dexCall(w, r, dexWebSession, 60*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
-		coin, err := client.Send(ctx, req.AppPass, req.AssetID, atoms, req.Address, false)
+	dexCall(w, r, dexSendSession, 60*time.Second, func(ctx context.Context, client *bisonw.WebClient) (any, error) {
+		coin, err := sendDexWalletTx(ctx, client, req.AppPass, req.AssetID, atoms, req.Address, req.Subtract)
 		if err != nil {
 			return nil, err
 		}
