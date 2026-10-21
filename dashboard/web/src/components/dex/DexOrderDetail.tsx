@@ -275,7 +275,10 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
   // matches adapted to the rich shape until the fetch resolves.
   const matches: DexFullMatch[] =
     full?.matches ?? (order.matches || []).map((m) => richFromDexMatch(m, order.sell, order.baseID, order.quoteID));
-  const swaps = matches.filter((m) => !m.isCancel);
+  // Oldest first, then matchID: bisonw returns matches in random order.
+  const swaps = matches
+    .filter((m) => !m.isCancel)
+    .sort((a, b) => a.stamp - b.stamp || a.matchID.localeCompare(b.matchID));
 
   return (
     <div className="px-3 lg:px-4 space-y-4">
