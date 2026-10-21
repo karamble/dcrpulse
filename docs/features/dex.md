@@ -285,7 +285,7 @@ A section for centralized-exchange API keys, used by arbitrage bot types. Each s
 
 Lists your configured bots. For each bot:
 
-- The market (with coin icons) and the bot kind: **Basic market maker**, **Arb market maker**, or **Simple arb** (and the CEX it uses, if any).
+- The market (with coin icons) and the bot kind: **Basic Market Maker**, **Market Maker + Arbitrage**, or **Basic Arbitrage** (and the CEX it uses, if any).
 - **Start** / **Stop**, **Edit**, and **Delete** controls (delete is available when the bot is stopped). Deleting asks for confirmation.
 - **Logs** while running.
 - A live activity summary while running, with an **Adjust** control on its inventory.
@@ -315,15 +315,31 @@ a configuration bisonw rejects stops the bot rather than failing the request.
 
 ### New bot wizard
 
-Creating a bot is a three-step flow (mirroring the bisonw market-maker settings page):
+Creating a bot is a three-step flow (mirroring the bisonw market-maker settings page). Every step has **Cancel**.
 
-1. **Market** - Pick the market to make.
-2. **Bot type** - Choose the strategy (basic market maker, arb market maker, simple arb) and, for arb types, the CEX.
-3. **Configure** - Fill the strategy configuration. A market report feeds the placements chart, an oracle table, and lots-to-USD hints.
+1. **Market** - Pick the market to make. A market that already has a bot opens that bot's settings instead of starting a new one.
+2. **Bot type** - Choose **Basic Market Maker**, **Market Maker + Arbitrage** or **Basic Arbitrage** and, for the arbitrage types, the exchange. The exchange tiles stay available even when no exchange supports the market yet, so keys can be set up from here; the key form opens on the exchange you clicked.
+3. **Configure** - Two columns, with the actions below both:
+   - **Left: how the bot quotes.**
+     - **Quick** has bisonw's quick placements: **Price levels per side**, **Lots per level** (or **USD per side**, about 100 USD of lots per step), **Profit threshold**, and **Price increment** (basic) or **Match buffer** (arbitrage). A saved bot reopens on Quick when Quick could have made it, and switching from Advanced to Quick reads the manual placements back the way bisonw does.
+     - **Advanced** has the gap strategy with bisonw's description of each, and the buy and sell placement tables in priority order, with gaps entered in the strategy's own unit (percent, rate or multiplier). A new placement is checked with bisonw's rules before it is added. **Basic Arbitrage** has no Advanced tab, as in bisonw.
+     - The knobs show on both tabs: **Drift tolerance** (up to 1%, bisonw's limit), **Order persistence** (in epochs), **Arbitrage rebalance** and, for **Basic Arbitrage**, **Max active arbs** (100 by default, bisonw's value).
+     - The placements chart.
+   - **Right: what the bot holds.** One pane per asset:
+     - what the bot commits of it (order inventory, CEX inventory, booking fees and the total, with USD);
+     - what is available on the DEX and the exchange;
+     - **Order reserves**, **Slippage buffer** (quote asset) and **Swap fee reserves** (tokens), each with the amount it reserves;
+     - **Minimum transfer** in coins, between the exchange's minimum withdrawal and the commit, while rebalancing is on;
+     - the wallet's funding options.
+
+     The oracle table follows the panes.
+   - **Actions** at the bottom right: **Cancel**, **Create bot**, **Create & start**. For a saved bot: **Save changes**, with **Delete bot** (after a confirmation) and **Reset settings** at the bottom left.
+
+Every save runs bisonw's own per-bot-type checks first. bisonw checks only a basic bot, and only when it starts, so a setting it would reject is caught here instead.
 
 Editing an existing bot jumps straight to the config step with the market and type locked. For a running bot the save button reads **Apply to running bot** (see [Changing a bot while it runs](#changing-a-bot-while-it-runs)).
 
-**Starting a bot** opens a funding dialog where you set the allocation (and, for arb types, auto-rebalance transfer thresholds). Allocation is collected at start time, not stored in the saved config. Each field's ceiling is what bisonw reports as still allocatable on that market, which accounts for what other bots hold and covers the CEX side too. Starting spends funds and is gated behind an explicit confirmation.
+**Starting a bot** opens a funding dialog where you set the allocation; for arbitrage bots with rebalancing on, the minimum transfers come from the **Minimum transfer** settings. Allocation is collected at start time, not stored in the saved config. Each field's ceiling is what bisonw reports as still allocatable on that market, which accounts for what other bots hold and covers the CEX side too. Starting spends funds and is gated behind an explicit confirmation. If bisonw refuses to start the bot, the reason shows in the dialog.
 
 ---
 
