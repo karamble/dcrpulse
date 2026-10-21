@@ -4,7 +4,9 @@
 
 import type { DexOrderOption } from '../../services/dcrdexApi';
 import { CoinIcon } from './CoinIcon';
+import { fmtAmt, fmtUsd } from './dexFormat';
 import { NumberSlider, Slider } from './DexMMInputs';
+import type { AssetBreakdown } from './dexMMAlloc';
 import { DexMMWalletOptions } from './DexMMWalletOptions';
 import { ASSET_LIMITS, type AssetFactors, type BotType } from './dexMMConfig';
 
@@ -16,8 +18,22 @@ export interface TransferRange {
   decimals: number;
 }
 
-// DexMMAssetPane is one asset's column of bisonw's settings page: the reserves
-// it keeps, the minimum CEX transfer, and the wallet's funding options.
+// Available is what the asset has free for the bot, on the DEX and the CEX.
+export interface Available {
+  dex: number | null;
+  cex: number | null;
+}
+
+const Row = ({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) => (
+  <div className={`flex items-baseline justify-between gap-3 ${strong ? 'font-medium' : ''}`}>
+    <dt className="text-muted-foreground">{label}</dt>
+    <dd className="font-mono tabular-nums text-right">{value}</dd>
+  </div>
+);
+
+// DexMMAssetPane is one asset's column of bisonw's settings page: what the bot
+// commits of it, what is available, the reserves it keeps, the minimum CEX
+// transfer, and the wallet's funding options.
 export const DexMMAssetPane = ({
   symbol,
   isQuote,
@@ -30,6 +46,9 @@ export const DexMMAssetPane = ({
   walletOpts,
   walletValue,
   onWalletChange,
+  breakdown,
+  fiatRate,
+  available,
 }: {
   symbol: string;
   isQuote: boolean;
@@ -42,9 +61,18 @@ export const DexMMAssetPane = ({
   walletOpts: DexOrderOption[];
   walletValue: Record<string, string>;
   onWalletChange: (v: Record<string, string>) => void;
+  breakdown: AssetBreakdown | null;
+  fiatRate: number;
+  available: Available;
 }) => {
   const hasWalletOpts = walletOpts.some((o) => isQuote || !o.quoteAssetOnly);
   const factor = Number(factors.transferFactor) || 0;
+  const sym = symbol.toUpperCase();
+  const amt = (v: number, unit = sym) => `${fmtAmt(v, 8)} ${unit}`;
+  const cexBot = botType !== 'basicmm';
+  const b = breakdown;
+  const fee = b?.feeSymbol.toUpperCase() ?? '';
+  const free = (available.dex ?? 0) + (available.cex ?? 0);
   return (
     <section
       aria-label={`${symbol} settings`}
@@ -54,6 +82,32 @@ export const DexMMAssetPane = ({
         <CoinIcon symbol={symbol} className="h-4 w-4" />
         {symbol.toUpperCase()}
       </div>
+      {b ? (
+        <dl className="space-y-1 text-xs">
+          <Row label="Order inventory" value={`${b.lots} lots × ${fmtAmt(b.lotValue, 8)} = ${amt(b.book)}`} />
+          {cexBot && <Row label="CEX inventory" value={amt(b.cex)} />}
+          <Row label="Booking fees" value={amt(b.bookingFees, fee)} />
+          <Row
+            label="Total"
+            strong
+            value={
+              <>
+                {amt(b.total)}
+                {fiatRate > 0 && <span className="block text-muted-foreground">~ {fmtUsd(b.total * fiatRate)}</span>}
+              </>
+            }
+          />
+        </dl>
+      ) : (
+        <div className="text-xs text-muted-foreground">Loading market data...</div>
+      )}
+      {(available.dex !== null || available.cex !== null) && (
+        <dl className="space-y-1 text-xs border-t border-border/40 pt-2">
+          <Row label="Available" value={amt(free)} strong />
+          {cexBot && available.dex !== null && <Row label="├─ DEX" value={amt(available.dex)} />}
+          {cexBot && available.cex !== null && <Row label="└─ CEX" value={amt(available.cex)} />}
+        </dl>
+      )}
       {botType !== 'simplearb' && (
         <NumberSlider
           label="Order reserves"
@@ -62,6 +116,7 @@ export const DexMMAssetPane = ({
           max={ASSET_LIMITS.orderReservesFactor.max}
           step={0.01}
           suffix="x"
+          hint={b ? `= ${amt(b.orderReserves)}` : undefined}
           onChange={(v) => onFactor('orderReservesFactor', v)}
         />
       )}
@@ -73,6 +128,7 @@ export const DexMMAssetPane = ({
           max={ASSET_LIMITS.slippageBufferFactor.max}
           step={0.01}
           suffix="x"
+          hint={b ? `= ${amt(b.slippage)}` : undefined}
           onChange={(v) => onFactor('slippageBufferFactor', v)}
         />
       )}
@@ -84,6 +140,7 @@ export const DexMMAssetPane = ({
           max={ASSET_LIMITS.swapFeeN.max}
           step={10}
           suffix="swaps"
+          hint={b ? `= ${amt(b.swapFeeReserves, fee)}` : undefined}
           onChange={(v) => onFactor('swapFeeN', v)}
         />
       )}

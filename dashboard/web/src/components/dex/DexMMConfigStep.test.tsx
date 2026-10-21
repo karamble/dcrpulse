@@ -1,8 +1,20 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DexAsset, DexMarket, MMBotConfig, MMMarketReport } from '../../services/dcrdexApi';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DexAsset, DexMarket, DexWalletState, MMBotConfig, MMMarketReport } from '../../services/dcrdexApi';
+import * as api from '../../services/dcrdexApi';
 import { DexMMConfigStep } from './DexMMConfigStep';
 import { defaultDraft, draftFromConfig, type BotType, type ConfigDraft } from './dexMMConfig';
+
+vi.mock('../../services/dcrdexApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/dcrdexApi')>()),
+  getMMAvailableBalances: vi.fn(),
+  getDexWallets: vi.fn(),
+}));
+
+beforeEach(() => {
+  vi.mocked(api.getMMAvailableBalances).mockRejectedValue(new Error('no market-maker config saved yet'));
+  vi.mocked(api.getDexWallets).mockResolvedValue([]);
+});
 
 const dcrBtc = {
   base: 'DCR',
@@ -326,5 +338,42 @@ describe('DexMMConfigStep Advanced tab', () => {
       { lots: 1, multiplier: 1 },
       { lots: 2, multiplier: 1.5 },
     ]);
+  });
+});
+
+// row is the value beside a label in an asset pane's breakdown.
+const row = (symbol: string, label: string) =>
+  pane(symbol).getByText(label).closest('div')!.querySelector('dd')!.textContent;
+
+describe('DexMMConfigStep breakdown', () => {
+  it("itemises each asset's commit", () => {
+    open('basicmm', { catalog, report });
+    // One lot is 20 USD, so the lots step is 5 lots of 1 DCR.
+    expect(row('DCR', 'Order inventory')).toBe('5 lots × 1 = 5 DCR');
+    // Reserves show their amount beside their setting: 5 lots of 0.00033333 BTC
+    // reserved once over, and 5% of book plus reserves held against slippage.
+    expect(pane('BTC').getByText('= 0.00166667 BTC')).toBeTruthy();
+    expect(pane('BTC').getByText('= 0.00016667 BTC')).toBeTruthy();
+    expect(pane('DCR').getByText('= 5 DCR')).toBeTruthy();
+    expect(pane('DCR').queryByText('CEX inventory')).toBeNull();
+    expect(row('DCR', 'Total')).toMatch(/^[\d.,]+ DCR~ \$/);
+  });
+
+  it("shows what the daemon has free for the bot, split by venue", async () => {
+    vi.mocked(api.getMMAvailableBalances).mockResolvedValue({
+      dexBalances: { 42: 700_000_000 },
+      cexBalances: { 42: 200_000_000 },
+    } as unknown as Awaited<ReturnType<typeof api.getMMAvailableBalances>>);
+    open('arbmm', { catalog, report });
+    await waitFor(() => expect(row('DCR', 'Available')).toBe('9 DCR'));
+    expect(row('DCR', '├─ DEX')).toBe('7 DCR');
+    expect(row('DCR', '└─ CEX')).toBe('2 DCR');
+    expect(pane('DCR').getByText('CEX inventory')).toBeTruthy();
+  });
+
+  it('falls back to the wallet balance before the bot is first saved', async () => {
+    vi.mocked(api.getDexWallets).mockResolvedValue([{ assetID: 42, available: 3.5 } as DexWalletState]);
+    open('basicmm', { catalog, report });
+    await waitFor(() => expect(row('DCR', 'Available')).toBe('3.5 DCR'));
   });
 });

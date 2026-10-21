@@ -5,8 +5,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Pencil } from 'lucide-react';
 import {
+  getDexWallets,
+  getMMAvailableBalances,
   multiFundingOptsForAsset,
   type DexAsset,
+  type DexWalletState,
   type DexMarket,
   type MMBotConfig,
   type MMMarketReport,
@@ -17,7 +20,7 @@ import { DexMMPlacementsChart } from './DexMMPlacementsChart';
 import { DexMMOracleTable } from './DexMMOracleTable';
 import { DexMMQuickConfig } from './DexMMQuickConfig';
 import { DexMMKnobs } from './DexMMKnobs';
-import { DexMMAssetPane, type TransferRange } from './DexMMAssetPane';
+import { DexMMAssetPane, type Available, type TransferRange } from './DexMMAssetPane';
 import { DexMMManualConfig } from './DexMMManualConfig';
 import { resolveAssetMeta, suggestedAllocation } from './dexMMAlloc';
 import {
@@ -141,6 +144,32 @@ export const DexMMConfigStep = ({
 
   const setFactor = (side: 'baseFactors' | 'quoteFactors', key: keyof AssetFactors, val: string) =>
     edit((d) => ({ ...d, [side]: { ...d[side], [key]: val } }));
+
+  // What each asset has free for this bot: the daemon's answer, which covers the
+  // CEX and other bots, or the wallet balance before the bot is first saved.
+  const [free, setFree] = useState<{ dex: Record<string, number>; cex: Record<string, number> } | null>(null);
+  const [wallets, setWallets] = useState<DexWalletState[]>([]);
+  useEffect(() => {
+    let live = true;
+    getMMAvailableBalances(host, market.baseID, market.quoteID)
+      .then((b) => live && setFree({ dex: b.dexBalances ?? {}, cex: b.cexBalances ?? {} }))
+      .catch(() => {});
+    getDexWallets()
+      .then((w) => live && setWallets(w))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [host, market.baseID, market.quoteID]);
+
+  const availableFor = (id: number, conv: number): Available => {
+    if (free) {
+      const at = (m: Record<string, number>) => (m[id] !== undefined ? m[id] / conv : null);
+      return { dex: at(free.dex), cex: at(free.cex) };
+    }
+    const w = wallets.find((x) => x.assetID === id);
+    return { dex: w ? w.available : null, cex: null };
+  };
 
   // The commit each asset needs, from the same projection the start dialog uses;
   // bisonw spans the Minimum Transfer slider from it.
@@ -298,6 +327,9 @@ export const DexMMConfigStep = ({
                   walletOpts={isQuote ? quoteOpts : baseOpts}
                   walletValue={isQuote ? draft.quoteWalletOptions : draft.baseWalletOptions}
                   onWalletChange={(v) => setField(isQuote ? 'quoteWalletOptions' : 'baseWalletOptions', v)}
+                  breakdown={projected ? projected.breakdown[isQuote ? 'quote' : 'base'] : null}
+                  fiatRate={(isQuote ? report?.quoteFiatRate : report?.baseFiatRate) ?? 0}
+                  available={availableFor(id, isQuote ? market.quoteConvFactor : market.baseConvFactor)}
                 />
               );
             })}

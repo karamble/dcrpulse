@@ -66,7 +66,7 @@ const sumLots = (placements?: { lots: number }[]): number =>
 // lotsForConfig returns baseLots (total sell-side lots, which consume base
 // inventory) and quoteLots (total buy-side lots, which consume quote), matching
 // bisonw's BotMarket. simpleArb has no per-side placements; bisonw uses
-// uiConfig.simpleArbLots (default 1), which we do not store.
+// uiConfig.simpleArbLots (default 1) on both sides.
 const lotsForConfig = (cfg: MMBotConfig): { baseLots: number; quoteLots: number } => {
   if (cfg.basicMarketMakingConfig) {
     return {
@@ -80,7 +80,8 @@ const lotsForConfig = (cfg: MMBotConfig): { baseLots: number; quoteLots: number 
       quoteLots: sumLots(cfg.arbMarketMakingConfig.buyPlacements),
     };
   }
-  return { baseLots: 1, quoteLots: 1 };
+  const lots = cfg.uiConfig?.simpleArbLots ?? 1;
+  return { baseLots: lots, quoteLots: lots };
 };
 
 // calculateQuoteLot returns the quote-asset value (atomic) of one base lot,
@@ -120,6 +121,22 @@ export interface AllocProjection {
   qCex: number;
 }
 
+// AssetBreakdown is one asset's commit as bisonw's settings page itemises it,
+// in conventional units. Fees are in feeSymbol, the asset that pays them, and
+// count toward total only when that is the asset itself.
+export interface AssetBreakdown {
+  lots: number;
+  lotValue: number;
+  book: number;
+  cex: number;
+  orderReserves: number;
+  slippage: number;
+  bookingFees: number;
+  swapFeeReserves: number;
+  feeSymbol: string;
+  total: number;
+}
+
 export interface SuggestedAllocation {
   dex: Record<number, number>; // assetID -> atoms
   cex: Record<number, number>;
@@ -131,6 +148,7 @@ export interface SuggestedAllocation {
   // projection feeds autoRebalanceSettings (the suggested/projected allocation is
   // what bisonw sizes rebalance transfers from, not the user-edited allocation).
   projection: AllocProjection;
+  breakdown: { base: AssetBreakdown; quote: AssetBreakdown };
 }
 
 // suggestedAllocation computes the funding allocation bisonw would propose for a
@@ -283,7 +301,45 @@ export const suggestedAllocation = (
     qCex,
   };
 
-  return { dex, cex, assets, quoteLot, projection };
+  const feeSymbol = (feeID: number) => resolveAssetMeta(catalog, feeID)?.symbol ?? String(feeID);
+  const item = (
+    id: number,
+    feeID: number,
+    parts: Omit<AssetBreakdown, 'feeSymbol' | 'total'>,
+  ): AssetBreakdown => ({
+    ...parts,
+    feeSymbol: feeSymbol(feeID),
+    total:
+      parts.book +
+      parts.cex +
+      parts.orderReserves +
+      parts.slippage +
+      (feeID === id ? parts.bookingFees + parts.swapFeeReserves : 0),
+  });
+  const breakdown = {
+    base: item(baseID, baseFeeID, {
+      lots: commit.dex.base.lots,
+      lotValue: lotSizeConv,
+      book: bBook,
+      cex: bCex,
+      orderReserves: bOrderReserves,
+      slippage: 0,
+      bookingFees: bBookingFees,
+      swapFeeReserves: bSwapFeeReserves,
+    }),
+    quote: item(quoteID, quoteFeeID, {
+      lots: commit.dex.quote.lots,
+      lotValue: quoteLotConv,
+      book: qBook,
+      cex: qCex,
+      orderReserves: qOrderReserves,
+      slippage: qSlippage,
+      bookingFees: qBookingFees,
+      swapFeeReserves: qSwapFeeReserves,
+    }),
+  };
+
+  return { dex, cex, assets, quoteLot, projection, breakdown };
 };
 
 // autoRebalanceSettings ports bisonw v1.0.6's mm.ts autoRebalanceSettings: the
