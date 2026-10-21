@@ -37,6 +37,7 @@ export const DexMMFundingDialog = ({
   needsCex,
   cexMarket,
   busy,
+  error,
   onConfirm,
   onCancel,
 }: {
@@ -49,6 +50,8 @@ export const DexMMFundingDialog = ({
   // the bot's market, used to floor the auto-rebalance transfer sizes.
   cexMarket?: { baseMinWithdraw: number; quoteMinWithdraw: number };
   busy: boolean;
+  // error is why the last start failed, shown in the dialog that started it.
+  error?: string | null;
   onConfirm: (alloc: MMAllocation, autoRebalance?: { minBaseTransfer: number; minQuoteTransfer: number }) => void;
   onCancel: () => void;
 }) => {
@@ -220,10 +223,10 @@ export const DexMMFundingDialog = ({
           )}
         </div>
 
-        {err && (
+        {(err || error) && (
           <div className="p-2.5 rounded-lg bg-destructive/5 border border-destructive/30 text-xs text-destructive flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span className="break-words">{err}</span>
+            <span className="break-words">{err ?? error}</span>
           </div>
         )}
 

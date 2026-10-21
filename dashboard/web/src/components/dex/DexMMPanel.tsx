@@ -28,13 +28,12 @@ import { DexMMArchives } from './DexMMArchives';
 import { DexMMWizard } from './DexMMWizard';
 import { DexMMFundingDialog } from './DexMMFundingDialog';
 import { DexMMCexConfigForm } from './DexMMCexConfigForm';
-import { botTypeOf, cexMarketFor, needsCex } from './dexMMConfig';
+import { botTypeLabel, botTypeOf, cexMarketFor, needsCex } from './dexMMConfig';
 import { apiError } from '../../utils/apiError';
 
 const HOST = 'dex.decred.org:7232';
 
-const botKind = (b: MMBotStatus): string =>
-  b.config.simpleArbConfig ? 'Simple arb' : b.config.arbMarketMakingConfig ? 'Arb market maker' : 'Basic market maker';
+const botKind = (b: MMBotStatus): string => botTypeLabel(botTypeOf(b.config));
 
 type View = 'list' | 'new' | 'edit' | 'cex' | 'archives';
 
@@ -53,6 +52,7 @@ export const DexMMPanel = () => {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [startBot, setStartBot] = useState<MMBotStatus | null>(null);
   const [startBusy, setStartBusy] = useState(false);
+  const [startErr, setStartErr] = useState<string | null>(null);
   const [logsBot, setLogsBot] = useState<MMBotStatus | null>(null);
   const [catalog, setCatalog] = useState<DexAsset[]>([]);
   const [startReport, setStartReport] = useState<MMMarketReport | null>(null);
@@ -117,7 +117,7 @@ export const DexMMPanel = () => {
   ) => {
     if (!startBot) return;
     setStartBusy(true);
-    setErr(null);
+    setStartErr(null);
     try {
       await startMMBot({
         host: startBot.config.host,
@@ -129,7 +129,7 @@ export const DexMMPanel = () => {
       refresh();
       setStartBot(null);
     } catch (e: any) {
-      setErr(apiError(e, 'Action failed'));
+      setStartErr(apiError(e, 'Failed to start the bot'));
     } finally {
       setStartBusy(false);
     }
@@ -163,6 +163,7 @@ export const DexMMPanel = () => {
           host={HOST}
           markets={markets}
           cexes={cexes}
+          bots={bots}
           editBot={view === 'edit' ? editBot ?? undefined : undefined}
           refresh={refresh}
           onCexSaved={refresh}
@@ -391,8 +392,12 @@ export const DexMMPanel = () => {
               needsCex={needsCex(botTypeOf(startBot.config))}
               cexMarket={cexMarketFor(cexes, startBot.config.cexName, m.baseID, m.quoteID)}
               busy={startBusy}
+              error={startErr}
               onConfirm={confirmStart}
-              onCancel={() => setStartBot(null)}
+              onCancel={() => {
+                setStartBot(null);
+                setStartErr(null);
+              }}
             />
           );
         })()}

@@ -17,7 +17,8 @@ type CexState = 'needsconfig' | 'disconnected' | 'unavailable' | 'ok';
 // DexMMBotTypeSelector is step 2 of the wizard: pick the bot strategy and, for
 // arbitrage strategies, the centralized exchange to use. Arb modes and CEX tiles
 // are gated by whether a configured CEX can arbitrage the chosen market, mirroring
-// v1.0.6 showBotTypeForm + setCEXAvailability.
+// v1.0.6 showBotTypeForm + setCEXAvailability. The exchange tiles stay reachable
+// so keys can be set up from here when no exchange supports the market yet.
 export const DexMMBotTypeSelector = ({
   market,
   cexes,
@@ -26,6 +27,7 @@ export const DexMMBotTypeSelector = ({
   onContinue,
   onChangeMarket,
   onCexSaved,
+  onCancel,
 }: {
   market: DexMarket;
   cexes: Record<string, MMCexStatus>;
@@ -34,6 +36,7 @@ export const DexMMBotTypeSelector = ({
   onContinue: (botType: BotType, cexName?: string) => void;
   onChangeMarket: () => void;
   onCexSaved: () => void;
+  onCancel: () => void;
 }) => {
   const [botType, setBotType] = useState<BotType>(initialBotType ?? 'basicmm');
   const [cexName, setCexName] = useState<string>(initialCex ?? '');
@@ -65,6 +68,8 @@ export const DexMMBotTypeSelector = ({
     if (!cexName || tileState(cexName) !== 'ok') setCexName(supporting[0]);
   }, [botType, arbEnabled, supporting]);
 
+  const anyConfigured = SUPPORTED_CEXES.some((c) => cexes[c]?.config);
+  const anyUnconfigured = SUPPORTED_CEXES.some((c) => !cexes[c]?.config);
   const selectedOk = !!cexName && tileState(cexName) === 'ok';
   const canContinue = !arb || selectedOk;
 
@@ -74,7 +79,7 @@ export const DexMMBotTypeSelector = ({
       setConfiguring(c);
       return;
     }
-    if (st === 'ok') setCexName(c);
+    if (st === 'ok' && arb) setCexName(c);
   };
 
   return (
@@ -114,82 +119,89 @@ export const DexMMBotTypeSelector = ({
         })}
       </div>
 
-      {arb && (
-        <div className="space-y-2">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground/70">Exchange</div>
-          <div className="flex flex-wrap gap-2">
-            {SUPPORTED_CEXES.map((c) => {
-              const st = tileState(c);
-              const selected = cexName === c;
-              const label =
-                st === 'needsconfig'
-                  ? 'set keys'
-                  : st === 'disconnected'
-                    ? 'fix keys'
-                    : st === 'unavailable'
-                      ? 'market not available'
-                      : cexes[c]?.connected
-                        ? 'connected'
-                        : 'configured';
-              return (
-                <div
-                  key={c}
-                  onClick={() => handleTileClick(c)}
-                  className={`relative flex flex-col items-center gap-1 px-4 py-3 rounded-lg border transition-colors ${
-                    st === 'unavailable' ? 'opacity-40 cursor-default' : 'cursor-pointer'
-                  } ${selected ? 'border-primary bg-muted/20' : 'border-border hover:bg-muted/10'}`}
-                >
-                  {cexes[c]?.config && (
-                    <button
-                      type="button"
-                      title="Reconfigure keys"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfiguring(c);
-                      }}
-                      className="absolute top-1 right-1 p-1 rounded hover:bg-muted/30 text-muted-foreground"
-                    >
-                      <Settings className="h-3 w-3" />
-                    </button>
-                  )}
-                  <CexIcon name={c} className={`h-7 w-7 ${st === 'unavailable' ? 'grayscale' : ''}`} />
-                  <span className="text-sm">{CEX_DISPLAY[c] || c}</span>
-                  <span
-                    className={`text-[10px] ${
-                      st === 'disconnected'
-                        ? 'text-destructive'
-                        : st === 'ok'
-                          ? 'text-success'
-                          : 'text-muted-foreground'
-                    }`}
+      <div className="space-y-2">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground/70">Exchange</div>
+        <div className="flex flex-wrap gap-2">
+          {SUPPORTED_CEXES.map((c) => {
+            const st = tileState(c);
+            const selected = cexName === c;
+            const label =
+              st === 'needsconfig'
+                ? 'set keys'
+                : st === 'disconnected'
+                  ? 'fix keys'
+                  : st === 'unavailable'
+                    ? 'market not available'
+                    : cexes[c]?.connected
+                      ? 'connected'
+                      : 'configured';
+            return (
+              <div
+                key={c}
+                onClick={() => handleTileClick(c)}
+                className={`relative flex flex-col items-center gap-1 px-4 py-3 rounded-lg border transition-colors ${
+                  st === 'unavailable' || (st === 'ok' && !arb) ? 'opacity-40 cursor-default' : 'cursor-pointer'
+                } ${selected && arb ? 'border-primary bg-muted/20' : 'border-border hover:bg-muted/10'}`}
+              >
+                {cexes[c]?.config && (
+                  <button
+                    type="button"
+                    title="Reconfigure keys"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfiguring(c);
+                    }}
+                    className="absolute top-1 right-1 p-1 rounded hover:bg-muted/30 text-muted-foreground"
                   >
-                    {label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          {configuring && (
-            <div className="mt-2 p-3 rounded-lg border border-border/50 bg-background/40">
-              <DexMMCexConfigForm
-                onSaved={() => {
-                  setConfiguring(null);
-                  onCexSaved();
-                }}
-              />
-            </div>
-          )}
+                    <Settings className="h-3 w-3" />
+                  </button>
+                )}
+                <CexIcon name={c} className={`h-7 w-7 ${st === 'unavailable' ? 'grayscale' : ''}`} />
+                <span className="text-sm">{CEX_DISPLAY[c] || c}</span>
+                <span
+                  className={`text-[10px] ${
+                    st === 'disconnected' ? 'text-destructive' : st === 'ok' ? 'text-success' : 'text-muted-foreground'
+                  }`}
+                >
+                  {label}
+                </span>
+              </div>
+            );
+          })}
         </div>
-      )}
+        {configuring && (
+          <div className="mt-2 p-3 rounded-lg border border-border/50 bg-background/40">
+            <DexMMCexConfigForm
+              key={configuring}
+              initial={configuring}
+              onClose={() => setConfiguring(null)}
+              onSaved={() => {
+                setConfiguring(null);
+                onCexSaved();
+              }}
+            />
+          </div>
+        )}
+      </div>
 
       {!arbEnabled && (
         <div className="text-xs text-muted-foreground">
-          No configured exchange can arbitrage {market.base}/{market.quote}. Configure a supporting exchange, or use the
-          basic market maker.
+          {anyConfigured
+            ? `Only the basic market making bot is available for this market.${
+                anyUnconfigured ? ' Configure other exchanges to maximize your options.' : ''
+              }`
+            : 'Only the basic market making bot is available. To enable arbitrage options, configure your exchange API.'}
         </div>
       )}
 
-      <div>
+      <div className="flex flex-wrap justify-end gap-2 border-t border-border/40 pt-4">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted/10"
+        >
+          Cancel
+        </button>
         <button
           type="button"
           disabled={!canContinue}

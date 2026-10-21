@@ -9,10 +9,12 @@ import type { DexMarket, DexOrderOption, MMBotAssetConfig, MMBotConfig, MMCexSta
 export type BotType = 'basicmm' | 'simplearb' | 'arbmm';
 
 export const BOT_TYPES: { id: BotType; label: string; desc: string; cex: boolean }[] = [
-  { id: 'basicmm', label: 'Basic market maker', desc: 'Quote both sides of the DEX book around an oracle price.', cex: false },
-  { id: 'simplearb', label: 'Simple arbitrage', desc: 'Trade only when a DEX/CEX price gap is profitable.', cex: true },
-  { id: 'arbmm', label: 'Arb market maker', desc: 'Market make on the DEX, hedging fills on the CEX.', cex: true },
+  { id: 'basicmm', label: 'Basic Market Maker', desc: 'Quote both sides of the DEX book around an oracle price.', cex: false },
+  { id: 'arbmm', label: 'Market Maker + Arbitrage', desc: 'Market make on the DEX, hedging fills on the CEX.', cex: true },
+  { id: 'simplearb', label: 'Basic Arbitrage', desc: 'Trade only when a DEX/CEX price gap is profitable.', cex: true },
 ];
+
+export const botTypeLabel = (t: BotType): string => BOT_TYPES.find((b) => b.id === t)!.label;
 
 export const GAP_STRATEGIES: MMGapStrategy[] = ['percent-plus', 'percent', 'multiplier', 'absolute', 'absolute-plus'];
 

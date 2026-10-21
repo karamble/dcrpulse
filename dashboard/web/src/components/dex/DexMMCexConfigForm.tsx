@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useState } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, X } from 'lucide-react';
 import { updateMMCexConfig } from '../../services/dcrdexApi';
 import { CEX_DISPLAY, CexIcon, SUPPORTED_CEXES } from './CexIcon';
 import { apiError } from '../../utils/apiError';
@@ -12,9 +12,18 @@ import { secretFieldProps } from '../../utils/secretField';
 // DexMMCexConfigForm stores a centralized-exchange API key/secret for the arb
 // bots. v1.0.6 supports Binance and BinanceUS. The dashboard never stores them;
 // it forwards them to bisonw (updatecexconfig), which keeps them in its
-// market-making config file as plain text, not encrypted.
-export const DexMMCexConfigForm = ({ onSaved }: { onSaved: () => void }) => {
-  const [name, setName] = useState<string>(SUPPORTED_CEXES[0]);
+// market-making config file as plain text, not encrypted. It opens on the
+// exchange named by initial, and onClose adds a close button.
+export const DexMMCexConfigForm = ({
+  onSaved,
+  initial,
+  onClose,
+}: {
+  onSaved: () => void;
+  initial?: string;
+  onClose?: () => void;
+}) => {
+  const [name, setName] = useState<string>(initial ?? SUPPORTED_CEXES[0]);
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [busy, setBusy] = useState(false);
@@ -41,7 +50,7 @@ export const DexMMCexConfigForm = ({ onSaved }: { onSaved: () => void }) => {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {SUPPORTED_CEXES.map((c) => (
           <button
             key={c}
@@ -55,12 +64,23 @@ export const DexMMCexConfigForm = ({ onSaved }: { onSaved: () => void }) => {
             {CEX_DISPLAY[c] || c}
           </button>
         ))}
+        {onClose && (
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="ml-auto p-1 rounded hover:bg-muted/20 text-muted-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <input
         {...secretFieldProps}
         value={apiKey}
         onChange={(e) => setApiKey(e.target.value)}
+        type="password"
         placeholder="API key"
         className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm font-mono focus:outline-none focus:border-primary"
       />

@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import {
   getDexAssetCatalog,
   getMMMarketReport,
+  removeMMBotConfig,
   startMMBot,
   updateMMBotConfig,
   updateRunningMMBotConfig,
@@ -21,6 +22,7 @@ import { DexMMMarketSelector } from './DexMMMarketSelector';
 import { DexMMBotTypeSelector } from './DexMMBotTypeSelector';
 import { DexMMConfigStep } from './DexMMConfigStep';
 import { DexMMFundingDialog } from './DexMMFundingDialog';
+import { apiError } from '../../utils/apiError';
 import {
   botTypeOf,
   cexMarketFor,
@@ -36,13 +38,15 @@ type Step = 'market' | 'type' | 'config';
 
 // DexMMWizard guides bot setup as a three-step flow (market -> bot type ->
 // configure), mirroring the v1.0.6 market-maker settings page. For editing an
-// existing bot it jumps straight to the config step with market and type locked.
+// existing bot it jumps straight to the config step with market and type locked,
+// and picking a market that already has a bot opens that bot the same way.
 // Allocation is collected at start time via the funding dialog, not stored in
 // the saved config.
 export const DexMMWizard = ({
   host,
   markets,
   cexes,
+  bots,
   editBot,
   refresh,
   onCexSaved,
@@ -51,17 +55,19 @@ export const DexMMWizard = ({
   host: string;
   markets: DexMarket[];
   cexes: Record<string, MMCexStatus>;
+  bots: MMBotStatus[];
   editBot?: MMBotStatus;
   refresh: () => void;
   onCexSaved: () => void;
   onDone: () => void;
 }) => {
-  const editing = !!editBot;
   const editMarket = editBot
     ? markets.find((m) => m.baseID === editBot.config.baseID && m.quoteID === editBot.config.quoteID) ?? null
     : null;
 
-  const [step, setStep] = useState<Step>(editing ? 'config' : 'market');
+  const [target, setTarget] = useState<MMBotStatus | undefined>(editBot);
+  const editing = !!target;
+  const [step, setStep] = useState<Step>(editBot ? 'config' : 'market');
   const [market, setMarket] = useState<DexMarket | null>(editMarket);
   const [botType, setBotType] = useState<BotType>(editBot ? botTypeOf(editBot.config) : 'basicmm');
   const [cexName, setCexName] = useState<string | undefined>(editBot?.config.cexName);
@@ -72,6 +78,9 @@ export const DexMMWizard = ({
   const [catalog, setCatalog] = useState<DexAsset[]>([]);
   const [fundingCfg, setFundingCfg] = useState<MMBotConfig | null>(null);
   const [startBusy, setStartBusy] = useState(false);
+  const [startErr, setStartErr] = useState<string | null>(null);
+  // Reset remounts the config step on the saved values.
+  const [resets, setResets] = useState(0);
 
   // Load the market report whenever a market is selected; it feeds the config
   // step's placements chart, oracle table, and lots-to-USD hints.
@@ -99,7 +108,18 @@ export const DexMMWizard = ({
 
   const handleMarketSelect = (m: DexMarket) => {
     setMarket(m);
-    setStep('type');
+    const existing = bots.find(
+      (b) => b.config.host === host && b.config.baseID === m.baseID && b.config.quoteID === m.quoteID,
+    );
+    if (!existing) {
+      setStep('type');
+      return;
+    }
+    setTarget(existing);
+    setBotType(botTypeOf(existing.config));
+    setCexName(existing.config.cexName);
+    setDraft(draftFromConfig(existing.config));
+    setStep('config');
   };
 
   const handleBotTypeContinue = (t: BotType, cex?: string) => {
@@ -114,10 +134,10 @@ export const DexMMWizard = ({
   // bot's standing orders survive the change. Lot size is carried over because
   // only the stopped path fills it in.
   const saveConfig = async (cfg: MMBotConfig) => {
-    if (editBot?.running) {
-      const problem = runningUpdateError(editBot.config, cfg);
+    if (target?.running) {
+      const problem = runningUpdateError(target.config, cfg);
       if (problem) throw new Error(problem);
-      await updateRunningMMBotConfig({ ...cfg, lotSize: editBot.config.lotSize });
+      await updateRunningMMBotConfig({ ...cfg, lotSize: target.config.lotSize });
     } else {
       await updateMMBotConfig(cfg);
     }
@@ -140,17 +160,26 @@ export const DexMMWizard = ({
   ) => {
     if (!fundingCfg) return;
     setStartBusy(true);
+    setStartErr(null);
     try {
       await startMMBot({ host, baseID: fundingCfg.baseID, quoteID: fundingCfg.quoteID, alloc, autoRebalance });
       refresh();
       onDone();
-    } catch {
+    } catch (e: any) {
+      setStartErr(apiError(e, 'Failed to start the bot'));
       setStartBusy(false);
     }
   };
 
+  const handleDelete = async () => {
+    if (!market) return;
+    await removeMMBotConfig(host, market.baseID, market.quoteID);
+    refresh();
+    onDone();
+  };
+
   if (step === 'market') {
-    return <DexMMMarketSelector markets={markets} cexes={cexes} onSelect={handleMarketSelect} />;
+    return <DexMMMarketSelector markets={markets} cexes={cexes} onSelect={handleMarketSelect} onCancel={onDone} />;
   }
 
   if (step === 'type' && market) {
@@ -163,6 +192,7 @@ export const DexMMWizard = ({
         onContinue={handleBotTypeContinue}
         onChangeMarket={() => setStep('market')}
         onCexSaved={onCexSaved}
+        onCancel={onDone}
       />
     );
   }
@@ -171,12 +201,12 @@ export const DexMMWizard = ({
     return (
       <>
         <DexMMConfigStep
-          key={`${market.baseID}-${market.quoteID}-${botType}-${cexName ?? ''}`}
+          key={`${market.baseID}-${market.quoteID}-${botType}-${cexName ?? ''}-${resets}`}
           host={host}
           market={market}
           initial={draft}
           editing={editing}
-          running={!!editBot?.running}
+          running={!!target?.running}
           report={report}
           catalog={catalog}
           cexMarket={cexMarketFor(cexes, cexName, market.baseID, market.quoteID)}
@@ -185,6 +215,8 @@ export const DexMMWizard = ({
           onSave={handleSave}
           onSaveAndStart={handleSaveAndStart}
           onCancel={onDone}
+          onReset={editing && !target?.running ? () => setResets((n) => n + 1) : undefined}
+          onDelete={editing && !target?.running ? handleDelete : undefined}
         />
         {fundingCfg && (
           <DexMMFundingDialog
@@ -195,6 +227,7 @@ export const DexMMWizard = ({
             needsCex={needsCex(botType)}
             cexMarket={cexMarketFor(cexes, fundingCfg.cexName, market.baseID, market.quoteID)}
             busy={startBusy}
+            error={startErr}
             onConfirm={handleFundingConfirm}
             onCancel={() => {
               setFundingCfg(null);

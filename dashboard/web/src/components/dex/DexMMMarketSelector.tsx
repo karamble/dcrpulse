@@ -17,10 +17,12 @@ export const DexMMMarketSelector = ({
   markets,
   cexes,
   onSelect,
+  onCancel,
 }: {
   markets: DexMarket[];
   cexes: Record<string, MMCexStatus>;
   onSelect: (m: DexMarket) => void;
+  onCancel: () => void;
 }) => {
   const [filter, setFilter] = useState('');
 
@@ -90,6 +92,16 @@ export const DexMMMarketSelector = ({
           })}
         </div>
       )}
+
+      <div className="flex justify-end border-t border-border/40 pt-4">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted/10"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 };

@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Pencil } from 'lucide-react';
+import { AlertCircle, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import {
   getDexWallets,
   getMMAvailableBalances,
@@ -25,6 +25,7 @@ import { DexMMManualConfig } from './DexMMManualConfig';
 import { resolveAssetMeta, suggestedAllocation } from './dexMMAlloc';
 import {
   applyQuick,
+  botTypeLabel,
   buildBotConfig,
   defaultQuick,
   defaultWalletOptions,
@@ -56,6 +57,8 @@ export const DexMMConfigStep = ({
   onSave,
   onSaveAndStart,
   onCancel,
+  onReset,
+  onDelete,
 }: {
   host: string;
   market: DexMarket;
@@ -71,6 +74,9 @@ export const DexMMConfigStep = ({
   onSave: (cfg: MMBotConfig) => Promise<void>;
   onSaveAndStart: (cfg: MMBotConfig) => Promise<void>;
   onCancel: () => void;
+  // onReset and onDelete are offered for a saved bot that is not running.
+  onReset?: () => void;
+  onDelete?: () => Promise<void>;
 }) => {
   const botType = initial.botType;
   const hasPlacements = botType !== 'simplearb';
@@ -91,6 +97,7 @@ export const DexMMConfigStep = ({
   // lots step once the market report arrives.
   const [pristine, setPristine] = useState(!editing);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const baseOpts = useMemo(() => multiFundingOptsForAsset(catalog, market.baseID), [catalog, market.baseID]);
@@ -215,6 +222,19 @@ export const DexMMConfigStep = ({
     }
   };
 
+  const doDelete = async () => {
+    if (!onDelete) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await onDelete();
+    } catch (e: any) {
+      setErr(apiError(e, 'Failed to delete the bot'));
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  };
+
   const doSaveAndStart = async () => {
     const cfg = build();
     if (!cfg) return;
@@ -254,13 +274,7 @@ export const DexMMConfigStep = ({
           disabled={editing}
           className="flex items-center gap-2 text-sm hover:bg-muted/10 rounded-lg px-2 py-1 disabled:hover:bg-transparent"
         >
-          <span className="font-medium">
-            {botType === 'basicmm'
-              ? 'Basic market maker'
-              : botType === 'arbmm'
-                ? 'Arb market maker'
-                : 'Simple arbitrage'}
-          </span>
+          <span className="font-medium">{botTypeLabel(botType)}</span>
           {draft.cexName && <CexIcon name={draft.cexName} className="h-4 w-4" />}
           {!editing && <Pencil className="h-3 w-3 text-muted-foreground" />}
         </button>
@@ -358,6 +372,28 @@ export const DexMMConfigStep = ({
         aria-label="Bot actions"
         className="flex flex-wrap justify-end gap-2 border-t border-border/40 pt-4"
       >
+        {onDelete && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setConfirmDelete(true)}
+            className="mr-auto flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete bot
+          </button>
+        )}
+        {onReset && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onReset}
+            className={`${onDelete ? '' : 'mr-auto '}flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm hover:bg-muted/10 disabled:opacity-50`}
+          >
+            <RotateCcw className="h-4 w-4" />
+            Reset settings
+          </button>
+        )}
         <button
           type="button"
           onClick={onCancel}
@@ -384,6 +420,39 @@ export const DexMMConfigStep = ({
           </button>
         )}
       </div>
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div
+            role="dialog"
+            aria-label="Delete Bot"
+            className="w-full max-w-sm rounded-xl border border-border bg-card p-5 space-y-4"
+          >
+            <h3 className="font-semibold">Delete Bot</h3>
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete this bot for the {market.base}-{market.quote} market on {host}?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmDelete(false)}
+                className="px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted/10 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={doDelete}
+                className="px-4 py-2 rounded-lg bg-destructive text-white text-sm font-medium hover:bg-destructive/90 disabled:opacity-50"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
