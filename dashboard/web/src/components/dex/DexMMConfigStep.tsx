@@ -27,6 +27,7 @@ import {
   applyQuick,
   botTypeLabel,
   buildBotConfig,
+  configError,
   defaultQuick,
   defaultWalletOptions,
   isQuickShaped,
@@ -206,7 +207,13 @@ export const DexMMConfigStep = ({
       setErr('Add at least one buy or sell placement with lots greater than zero.');
       return null;
     }
-    return buildBotConfig(host, market, draft);
+    const cfg = buildBotConfig(host, market, draft);
+    const problem = configError(cfg);
+    if (problem) {
+      setErr(problem);
+      return null;
+    }
+    return cfg;
   };
 
   const doSave = async () => {

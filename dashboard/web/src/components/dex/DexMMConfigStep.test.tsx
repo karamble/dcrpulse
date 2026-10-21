@@ -377,3 +377,25 @@ describe('DexMMConfigStep breakdown', () => {
     await waitFor(() => expect(row('DCR', 'Available')).toBe('3.5 DCR'));
   });
 });
+
+describe('DexMMConfigStep checks on save', () => {
+  const footerText = () => screen.getByRole('group', { name: 'Bot actions' }).parentElement!.textContent;
+
+  it('refuses a Quick setup whose outer levels bisonw would reject', () => {
+    open('basicmm');
+    type('Price levels per side', '3');
+    type('Profit threshold', '10');
+    type('Price increment', '2');
+    fireEvent.click(within(screen.getByRole('group', { name: 'Bot actions' })).getAllByRole('button')[1]);
+    expect(footerText()).toContain("A buy placement's gap 12% is outside the Percent Plus range.");
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('refuses a drift tolerance above 1%', () => {
+    open('basicmm');
+    type('Drift tolerance', '1.5');
+    fireEvent.click(within(screen.getByRole('group', { name: 'Bot actions' })).getAllByRole('button')[1]);
+    expect(footerText()).toContain('Drift tolerance must be between 0% and 1%.');
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { MMBotConfig } from '../../services/dcrdexApi';
 import {
   applyQuick,
+  configError,
   defaultDraft,
   defaultQuick,
   gapKind,
@@ -10,6 +12,7 @@ import {
   lotsPerLevelIncrement,
   newPlacementError,
   quickFromDraft,
+  runningUpdateError,
   type QuickDraft,
 } from './dexMMConfig';
 
@@ -120,5 +123,72 @@ describe('manual placements', () => {
     expect(newPlacementError('multiplier', [], '1', '0.9')).toBe('Multiplier must be between 1 and 100');
     expect(newPlacementError('multiplier', [], '1', '100')).toBeNull();
     expect(newPlacementError('rate', [], '1', '0')).toBe('Rate must be greater than 0');
+  });
+});
+
+describe('checks on save', () => {
+  const basic = (over: Partial<NonNullable<MMBotConfig['basicMarketMakingConfig']>>): MMBotConfig => ({
+    host: 'dex.example:7232',
+    baseID: 42,
+    quoteID: 0,
+    basicMarketMakingConfig: {
+      gapStrategy: 'percent-plus',
+      driftTolerance: 0.002,
+      buyPlacements: [{ lots: 1, gapFactor: 0.02 }],
+      sellPlacements: [{ lots: 1, gapFactor: 0.02 }],
+      ...over,
+    },
+  });
+
+  it("refuses what bisonw's validation refuses, in the units the page uses", () => {
+    expect(configError(basic({}))).toBeNull();
+    expect(configError(basic({ driftTolerance: 0.015 }))).toBe('Drift tolerance must be between 0% and 1%.');
+    expect(configError(basic({ buyPlacements: [{ lots: 1, gapFactor: 0.15 }] }))).toBe(
+      "A buy placement's gap 15% is outside the Percent Plus range.",
+    );
+    expect(
+      configError(
+        basic({
+          sellPlacements: [
+            { lots: 1, gapFactor: 0.02 },
+            { lots: 2, gapFactor: 0.02 },
+          ],
+        }),
+      ),
+    ).toBe('Two sell placements share the gap 2%.');
+    expect(configError(basic({ gapStrategy: 'multiplier' }))).toBe(
+      "A buy placement's gap 0.02 is outside the Multiplier range.",
+    );
+    const arb: MMBotConfig = {
+      host: 'dex.example:7232',
+      baseID: 42,
+      quoteID: 0,
+      cexName: 'Binance',
+      arbMarketMakingConfig: {
+        profit: 0,
+        driftTolerance: 0.002,
+        orderPersistence: 20,
+        buyPlacements: [{ lots: 1, multiplier: 1 }],
+        sellPlacements: [],
+      },
+    };
+    expect(configError(arb)).toBe('Profit threshold must be above 0%.');
+    const simple: MMBotConfig = {
+      host: 'dex.example:7232',
+      baseID: 42,
+      quoteID: 0,
+      cexName: 'Binance',
+      simpleArbConfig: { profitTrigger: 0, maxActiveArbs: 100, numEpochsLeaveOpen: 20 },
+    };
+    expect(configError(simple)).toBe('Profit threshold must be above 0% and at most 100%.');
+  });
+  it('applies the same checks to a running bot after its own', () => {
+    expect(runningUpdateError(basic({}), basic({ driftTolerance: 0.015 }))).toBe(
+      'Drift tolerance must be between 0% and 1%.',
+    );
+    expect(runningUpdateError(basic({}), { ...basic({}), cexName: 'Binance' })).toBeNull();
+    expect(runningUpdateError({ ...basic({}), cexName: 'Binance' }, basic({}))).toBe(
+      'A running bot cannot have its exchange removed.',
+    );
   });
 });
