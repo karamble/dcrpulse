@@ -3,9 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, AlertTriangle } from 'lucide-react';
 import {
-  sendDexWallet,
   estimateDexSendFee,
   hasTrait,
   WalletTrait,
@@ -14,8 +12,7 @@ import {
   type DexSendFee,
 } from '../../services/dcrdexApi';
 import { fmtAmt } from './dexFormat';
-import { apiError } from '../../utils/apiError';
-import { secretFieldProps } from '../../utils/secretField';
+import { DexSendConfirmModal } from './DexSendConfirmModal';
 
 interface Props {
   wallet: DexWalletState;
@@ -24,14 +21,11 @@ interface Props {
 }
 
 // DexWalletSend is a send form for a wallet. The amount is conventional; the
-// backend converts to atoms. Spending is behind a two-step confirmation.
+// backend converts to atoms. Spending is confirmed in DexSendConfirmModal.
 export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
   const [address, setAddress] = useState('');
   const [amount, setAmount] = useState('');
-  const [appPass, setAppPass] = useState('');
   const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
   const [fee, setFee] = useState<DexSendFee | null>(null);
   // Only a withdrawer wallet can take the fee out of the amount, as in bisonw.
@@ -72,25 +66,13 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, amount, subtract, wallet.assetID]);
 
-  const send = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      const coin = await sendDexWallet(wallet.assetID, value, address.trim(), appPass, subtract);
-      setSent(coin);
-      setAddress('');
-      setAmount('');
-      setAppPass('');
-      setSubtractBox(false);
-      setConfirming(false);
-      onSent();
-    } catch (e: any) {
-      setErr(apiError(e, 'Send failed'));
-      setAppPass('');
-      setConfirming(false);
-    } finally {
-      setBusy(false);
-    }
+  const sentCoin = (coin: string) => {
+    setSent(coin);
+    setAddress('');
+    setAmount('');
+    setSubtractBox(false);
+    setConfirming(false);
+    onSent();
   };
 
   return (
@@ -146,70 +128,31 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
         </p>
       )}
 
-      {err && (
-        <div className="p-2.5 rounded-lg bg-destructive/5 border border-destructive/30 text-xs text-destructive flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-          <span className="break-words">{err}</span>
-        </div>
-      )}
       {sent && (
         <div className="p-2.5 rounded-lg bg-success/10 border border-success/30 text-xs text-success break-all">
           Sent. Coin: {sent}
         </div>
       )}
 
-      {!confirming ? (
-        <button
-          type="button"
-          disabled={!valid}
-          onClick={() => setConfirming(true)}
-          className="w-full bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Send
-        </button>
-      ) : (
-        <>
-          <div className="p-2.5 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span>
-              Send {fmtAmt(value, decimals)} {wallet.symbol} to {address.slice(0, 12)}...
-              {fee &&
-                (subtract
-                  ? ` The network fee (~${fmtAmt(fee.fee, 8)} ${fee.feeSymbol}) comes out of this amount.`
-                  : ` plus the network fee (~${fmtAmt(fee.fee, 8)} ${fee.feeSymbol}).`)}{' '}
-              This spends real funds and cannot be undone.
-            </span>
-          </div>
-          <input
-            {...secretFieldProps}
-            type="password"
-            value={appPass}
-            onChange={(e) => setAppPass(e.target.value)}
-            placeholder="DCRDEX app password"
-            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary"
-          />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setConfirming(false);
-                setAppPass('');
-              }}
-              className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-background/50 transition-colors disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={busy || !appPass}
-              onClick={send}
-              className="flex-1 bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              {busy ? 'Sending...' : 'Confirm'}
-            </button>
-          </div>
-        </>
+      <button
+        type="button"
+        disabled={!valid}
+        onClick={() => setConfirming(true)}
+        className="w-full bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        Send
+      </button>
+      {confirming && (
+        <DexSendConfirmModal
+          assetID={wallet.assetID}
+          symbol={wallet.symbol}
+          address={address.trim()}
+          value={value}
+          decimals={decimals}
+          subtract={subtract}
+          onClose={() => setConfirming(false)}
+          onSent={sentCoin}
+        />
       )}
     </div>
   );

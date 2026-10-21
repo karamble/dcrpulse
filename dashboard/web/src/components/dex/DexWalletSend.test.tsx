@@ -23,8 +23,8 @@ const fillMax = (w: DexWalletState) => {
 };
 const confirm = async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-  fireEvent.change(screen.getByPlaceholderText('DCRDEX app password'), { target: { value: 'pw' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  fireEvent.change(screen.getByLabelText(/DCRDEX app password/), { target: { value: 'pw' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm & Send' }));
   await waitFor(() => expect(api.sendDexWallet).toHaveBeenCalledTimes(1));
 };
 
