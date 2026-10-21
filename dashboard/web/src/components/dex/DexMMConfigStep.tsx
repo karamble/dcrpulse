@@ -86,8 +86,9 @@ const Slider = ({
 
 // DexMMConfigStep is step 3 of the wizard: configure the strategy. It offers a
 // Quick mode (sliders that derive symmetric placements) and an Advanced mode
-// (manual gap strategy and placement tables), with a live placements chart and
-// the market's oracle table. Both modes build the same mm.BotConfig.
+// (manual gap strategy and placement tables). The left column holds how the bot
+// quotes, the right column what it holds and the market; the actions sit below
+// both, the same in either mode. Both modes build the same mm.BotConfig.
 export const DexMMConfigStep = ({
   host,
   market,
@@ -177,7 +178,11 @@ export const DexMMConfigStep = ({
   }, [report, market]);
 
   const build = (): MMBotConfig | null => {
-    if (hasPlacements && draft.buys.every((p) => !(Math.floor(Number(p.lots)) > 0)) && draft.sells.every((p) => !(Math.floor(Number(p.lots)) > 0))) {
+    if (
+      hasPlacements &&
+      draft.buys.every((p) => !(Math.floor(Number(p.lots)) > 0)) &&
+      draft.sells.every((p) => !(Math.floor(Number(p.lots)) > 0))
+    ) {
       setErr('Add at least one buy or sell placement with lots greater than zero.');
       return null;
     }
@@ -255,7 +260,7 @@ export const DexMMConfigStep = ({
   };
 
   return (
-    <div className="space-y-4 max-w-2xl">
+    <div className="space-y-4 max-w-6xl">
       {/* Market + bot type header, each editable */}
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -280,7 +285,13 @@ export const DexMMConfigStep = ({
           disabled={editing}
           className="flex items-center gap-2 text-sm hover:bg-muted/10 rounded-lg px-2 py-1 disabled:hover:bg-transparent"
         >
-          <span className="font-medium">{botType === 'basicmm' ? 'Basic market maker' : botType === 'arbmm' ? 'Arb market maker' : 'Simple arbitrage'}</span>
+          <span className="font-medium">
+            {botType === 'basicmm'
+              ? 'Basic market maker'
+              : botType === 'arbmm'
+                ? 'Arb market maker'
+                : 'Simple arbitrage'}
+          </span>
           {draft.cexName && <CexIcon name={draft.cexName} className="h-4 w-4" />}
           {!editing && <Pencil className="h-3 w-3 text-muted-foreground" />}
         </button>
@@ -300,269 +311,290 @@ export const DexMMConfigStep = ({
         ))}
       </div>
 
-      {mode === 'quick' ? (
-        <div className="space-y-4">
-          {hasPlacements && (
-            <Slider
-              label="Levels per side"
-              value={quick.levelsPerSide}
-              min={1}
-              max={10}
-              step={1}
-              onChange={(v) => applyQuick({ levelsPerSide: v })}
-            />
-          )}
-          <Slider
-            label={hasPlacements ? 'Lots per level' : 'Lots per arb'}
-            value={quick.lotsPerLevel}
-            min={1}
-            max={50}
-            step={1}
-            hint={usdPerLot > 0 ? `~${fmtUsd(usdPerLot * Number(quick.lotsPerLevel))} per level` : undefined}
-            onChange={(v) => applyQuick({ lotsPerLevel: v })}
-          />
-          <Slider
-            label={botType === 'simplearb' ? 'Profit trigger' : 'Profit'}
-            value={quick.profitPct}
-            min={0}
-            max={10}
-            step={0.1}
-            suffix="%"
-            onChange={(v) => applyQuick({ profitPct: v })}
-          />
-          {botType === 'basicmm' && (
-            <Slider
-              label="Level spacing"
-              value={quick.levelSpacingPct}
-              min={0}
-              max={5}
-              step={0.1}
-              suffix="%"
-              disabled={Number(quick.levelsPerSide) <= 1}
-              onChange={(v) => applyQuick({ levelSpacingPct: v })}
-            />
-          )}
-          {botType === 'arbmm' && (
-            <Slider
-              label="Match buffer"
-              value={quick.matchBufferPct}
-              min={0}
-              max={200}
-              step={1}
-              suffix="%"
-              hint="Extra order size to ensure CEX fills cover DEX matches."
-              onChange={(v) => applyQuick({ matchBufferPct: v })}
-            />
-          )}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="grid sm:grid-cols-3 gap-3">
-            {botType === 'basicmm' && (
-              <Field label="Gap strategy">
-                <select
-                  value={draft.gapStrategy}
-                  onChange={(e) => setField('gapStrategy', e.target.value as MMGapStrategy)}
-                  className={inputCls}
-                >
-                  {GAP_STRATEGIES.map((g) => (
-                    <option key={g} value={g}>
-                      {g}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            {botType === 'arbmm' && (
-              <>
-                <Field label="Profit">
-                  <input value={draft.profit} onChange={(e) => setField('profit', e.target.value)} className={inputCls} />
-                </Field>
-                <Field label="Order persistence">
-                  <input
-                    value={draft.orderPersistence}
-                    onChange={(e) => setField('orderPersistence', e.target.value)}
-                    className={inputCls}
-                  />
-                </Field>
-              </>
-            )}
-            {botType === 'simplearb' ? (
-              <>
-                <Field label="Profit trigger">
-                  <input
-                    value={draft.profitTrigger}
-                    onChange={(e) => setField('profitTrigger', e.target.value)}
-                    className={inputCls}
-                  />
-                </Field>
-                <Field label="Max active arbs">
-                  <input
-                    value={draft.maxActiveArbs}
-                    onChange={(e) => setField('maxActiveArbs', e.target.value)}
-                    className={inputCls}
-                  />
-                </Field>
-                <Field label="Epochs open">
-                  <input value={draft.numEpochs} onChange={(e) => setField('numEpochs', e.target.value)} className={inputCls} />
-                </Field>
-              </>
-            ) : (
-              <Field label="Drift tolerance">
-                <input
-                  value={draft.driftTolerance}
-                  onChange={(e) => setField('driftTolerance', e.target.value)}
-                  className={inputCls}
+      <div className="grid gap-6 lg:grid-cols-2 items-start">
+        <div className="space-y-4 min-w-0">
+          {mode === 'quick' ? (
+            <div className="space-y-4">
+              {hasPlacements && (
+                <Slider
+                  label="Levels per side"
+                  value={quick.levelsPerSide}
+                  min={1}
+                  max={10}
+                  step={1}
+                  onChange={(v) => applyQuick({ levelsPerSide: v })}
                 />
-              </Field>
-            )}
-          </div>
-          {hasPlacements && (
-            <div className="grid sm:grid-cols-2 gap-4">
-              {renderPlacements('Buy placements', 'buys')}
-              {renderPlacements('Sell placements', 'sells')}
+              )}
+              <Slider
+                label={hasPlacements ? 'Lots per level' : 'Lots per arb'}
+                value={quick.lotsPerLevel}
+                min={1}
+                max={50}
+                step={1}
+                hint={usdPerLot > 0 ? `~${fmtUsd(usdPerLot * Number(quick.lotsPerLevel))} per level` : undefined}
+                onChange={(v) => applyQuick({ lotsPerLevel: v })}
+              />
+              <Slider
+                label={botType === 'simplearb' ? 'Profit trigger' : 'Profit'}
+                value={quick.profitPct}
+                min={0}
+                max={10}
+                step={0.1}
+                suffix="%"
+                onChange={(v) => applyQuick({ profitPct: v })}
+              />
+              {botType === 'basicmm' && (
+                <Slider
+                  label="Level spacing"
+                  value={quick.levelSpacingPct}
+                  min={0}
+                  max={5}
+                  step={0.1}
+                  suffix="%"
+                  disabled={Number(quick.levelsPerSide) <= 1}
+                  onChange={(v) => applyQuick({ levelSpacingPct: v })}
+                />
+              )}
+              {botType === 'arbmm' && (
+                <Slider
+                  label="Match buffer"
+                  value={quick.matchBufferPct}
+                  min={0}
+                  max={200}
+                  step={1}
+                  suffix="%"
+                  hint="Extra order size to ensure CEX fills cover DEX matches."
+                  onChange={(v) => applyQuick({ matchBufferPct: v })}
+                />
+              )}
             </div>
-          )}
-
-          {/* Advanced allocation tuning (bisonw uiConfig per-asset factors) */}
-          <div className="space-y-2 border-t border-border/40 pt-3">
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70">Advanced allocation</span>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-medium">
-                  <CoinIcon symbol={market.base} className="h-3.5 w-3.5" />
-                  {market.base}
-                </div>
-                <Field label="Order reserves factor">
-                  <input
-                    value={draft.baseFactors.orderReservesFactor}
-                    onChange={(e) => setFactor('baseFactors', 'orderReservesFactor', e.target.value)}
-                    className={inputCls}
-                  />
-                </Field>
-                <Field label="Swap fee reserves (N)">
-                  <input
-                    value={draft.baseFactors.swapFeeN}
-                    onChange={(e) => setFactor('baseFactors', 'swapFeeN', e.target.value)}
-                    className={inputCls}
-                  />
-                </Field>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-medium">
-                  <CoinIcon symbol={market.quote} className="h-3.5 w-3.5" />
-                  {market.quote}
-                </div>
-                <Field label="Order reserves factor">
-                  <input
-                    value={draft.quoteFactors.orderReservesFactor}
-                    onChange={(e) => setFactor('quoteFactors', 'orderReservesFactor', e.target.value)}
-                    className={inputCls}
-                  />
-                </Field>
-                <Field label="Swap fee reserves (N)">
-                  <input
-                    value={draft.quoteFactors.swapFeeN}
-                    onChange={(e) => setFactor('quoteFactors', 'swapFeeN', e.target.value)}
-                    className={inputCls}
-                  />
-                </Field>
-                <Field label="Slippage buffer">
-                  <input
-                    value={draft.quoteFactors.slippageBufferFactor}
-                    onChange={(e) => setFactor('quoteFactors', 'slippageBufferFactor', e.target.value)}
-                    className={inputCls}
-                  />
-                </Field>
-              </div>
-            </div>
-            {botType === 'simplearb' && (
-              <Field label="Lots per arb">
-                <input
-                  value={draft.simpleArbLots}
-                  onChange={(e) => setField('simpleArbLots', e.target.value)}
-                  className={`${inputCls} w-28`}
-                />
-              </Field>
-            )}
-          </div>
-
-          {/* Auto-rebalance (CEX bots): toggle + per-asset min-transfer factor */}
-          {cexBot && (
-            <div className="space-y-2 border-t border-border/40 pt-3">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={draft.cexRebalance}
-                  onChange={(e) => setField('cexRebalance', e.target.checked)}
-                  className="accent-primary"
-                />
-                <span>Auto-rebalance funds with the CEX</span>
-              </label>
-              {draft.cexRebalance && (
-                <>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <Slider
-                      label={`${market.base} min transfer`}
-                      value={draft.baseFactors.transferFactor}
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      onChange={(v) => setFactor('baseFactors', 'transferFactor', v)}
+          ) : (
+            <div className="space-y-4">
+              <div className="grid sm:grid-cols-3 gap-3">
+                {botType === 'basicmm' && (
+                  <Field label="Gap strategy">
+                    <select
+                      value={draft.gapStrategy}
+                      onChange={(e) => setField('gapStrategy', e.target.value as MMGapStrategy)}
+                      className={inputCls}
+                    >
+                      {GAP_STRATEGIES.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
+                {botType === 'arbmm' && (
+                  <>
+                    <Field label="Profit">
+                      <input
+                        value={draft.profit}
+                        onChange={(e) => setField('profit', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Order persistence">
+                      <input
+                        value={draft.orderPersistence}
+                        onChange={(e) => setField('orderPersistence', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                  </>
+                )}
+                {botType === 'simplearb' ? (
+                  <>
+                    <Field label="Profit trigger">
+                      <input
+                        value={draft.profitTrigger}
+                        onChange={(e) => setField('profitTrigger', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Max active arbs">
+                      <input
+                        value={draft.maxActiveArbs}
+                        onChange={(e) => setField('maxActiveArbs', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Epochs open">
+                      <input
+                        value={draft.numEpochs}
+                        onChange={(e) => setField('numEpochs', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                  </>
+                ) : (
+                  <Field label="Drift tolerance">
+                    <input
+                      value={draft.driftTolerance}
+                      onChange={(e) => setField('driftTolerance', e.target.value)}
+                      className={inputCls}
                     />
-                    <Slider
-                      label={`${market.quote} min transfer`}
-                      value={draft.quoteFactors.transferFactor}
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      onChange={(v) => setFactor('quoteFactors', 'transferFactor', v)}
-                    />
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">
-                    Transfers are floored at the CEX minimum withdrawal; the factor sizes the transfer up toward your free balance.
-                  </div>
-                </>
+                  </Field>
+                )}
+              </div>
+              {hasPlacements && (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {renderPlacements('Buy placements', 'buys')}
+                  {renderPlacements('Sell placements', 'sells')}
+                </div>
               )}
             </div>
           )}
-        </div>
-      )}
 
-      {hasPlacements && (
-        <DexMMPlacementsChart
-          market={market}
-          botType={botType}
-          gapStrategy={draft.gapStrategy}
-          buys={draft.buys}
-          sells={draft.sells}
-          report={report}
-        />
-      )}
-
-      <DexMMOracleTable market={market} report={report} />
-
-      {(baseOpts.length > 0 || quoteOpts.length > 0) && (
-        <div className="space-y-2">
-          <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70">Wallet options</span>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <DexMMWalletOptions
-              assetSymbol={market.base}
-              opts={baseOpts}
-              isQuote={false}
-              value={draft.baseWalletOptions}
-              onChange={(v) => setField('baseWalletOptions', v)}
+          {hasPlacements && (
+            <DexMMPlacementsChart
+              market={market}
+              botType={botType}
+              gapStrategy={draft.gapStrategy}
+              buys={draft.buys}
+              sells={draft.sells}
+              report={report}
             />
-            <DexMMWalletOptions
-              assetSymbol={market.quote}
-              opts={quoteOpts}
-              isQuote
-              value={draft.quoteWalletOptions}
-              onChange={(v) => setField('quoteWalletOptions', v)}
-            />
-          </div>
+          )}
         </div>
-      )}
+
+        <div className="space-y-4 min-w-0">
+          {mode === 'advanced' && (
+            <div className="space-y-4">
+              {/* Advanced allocation tuning (bisonw uiConfig per-asset factors) */}
+              <div className="space-y-2 border-t border-border/40 pt-3">
+                <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70">
+                  Advanced allocation
+                </span>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-medium">
+                      <CoinIcon symbol={market.base} className="h-3.5 w-3.5" />
+                      {market.base}
+                    </div>
+                    <Field label="Order reserves factor">
+                      <input
+                        value={draft.baseFactors.orderReservesFactor}
+                        onChange={(e) => setFactor('baseFactors', 'orderReservesFactor', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Swap fee reserves (N)">
+                      <input
+                        value={draft.baseFactors.swapFeeN}
+                        onChange={(e) => setFactor('baseFactors', 'swapFeeN', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-medium">
+                      <CoinIcon symbol={market.quote} className="h-3.5 w-3.5" />
+                      {market.quote}
+                    </div>
+                    <Field label="Order reserves factor">
+                      <input
+                        value={draft.quoteFactors.orderReservesFactor}
+                        onChange={(e) => setFactor('quoteFactors', 'orderReservesFactor', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Swap fee reserves (N)">
+                      <input
+                        value={draft.quoteFactors.swapFeeN}
+                        onChange={(e) => setFactor('quoteFactors', 'swapFeeN', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Slippage buffer">
+                      <input
+                        value={draft.quoteFactors.slippageBufferFactor}
+                        onChange={(e) => setFactor('quoteFactors', 'slippageBufferFactor', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                  </div>
+                </div>
+                {botType === 'simplearb' && (
+                  <Field label="Lots per arb">
+                    <input
+                      value={draft.simpleArbLots}
+                      onChange={(e) => setField('simpleArbLots', e.target.value)}
+                      className={`${inputCls} w-28`}
+                    />
+                  </Field>
+                )}
+              </div>
+
+              {/* Auto-rebalance (CEX bots): toggle + per-asset min-transfer factor */}
+              {cexBot && (
+                <div className="space-y-2 border-t border-border/40 pt-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={draft.cexRebalance}
+                      onChange={(e) => setField('cexRebalance', e.target.checked)}
+                      className="accent-primary"
+                    />
+                    <span>Auto-rebalance funds with the CEX</span>
+                  </label>
+                  {draft.cexRebalance && (
+                    <>
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        <Slider
+                          label={`${market.base} min transfer`}
+                          value={draft.baseFactors.transferFactor}
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          onChange={(v) => setFactor('baseFactors', 'transferFactor', v)}
+                        />
+                        <Slider
+                          label={`${market.quote} min transfer`}
+                          value={draft.quoteFactors.transferFactor}
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          onChange={(v) => setFactor('quoteFactors', 'transferFactor', v)}
+                        />
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        Transfers are floored at the CEX minimum withdrawal; the factor sizes the transfer up toward
+                        your free balance.
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DexMMOracleTable market={market} report={report} />
+
+          {(baseOpts.length > 0 || quoteOpts.length > 0) && (
+            <div className="space-y-2">
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70">Wallet options</span>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <DexMMWalletOptions
+                  assetSymbol={market.base}
+                  opts={baseOpts}
+                  isQuote={false}
+                  value={draft.baseWalletOptions}
+                  onChange={(v) => setField('baseWalletOptions', v)}
+                />
+                <DexMMWalletOptions
+                  assetSymbol={market.quote}
+                  opts={quoteOpts}
+                  isQuote
+                  value={draft.quoteWalletOptions}
+                  onChange={(v) => setField('quoteWalletOptions', v)}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {err && (
         <div className="p-2.5 rounded-lg bg-destructive/5 border border-destructive/30 text-xs text-destructive flex items-start gap-2">
@@ -573,12 +605,23 @@ export const DexMMConfigStep = ({
 
       {running && (
         <p className="text-[11px] text-muted-foreground">
-          This bot is running. Saving applies the change straight away and leaves its orders on the book, but the
-          stored config is untouched until the bot is stopped and saved again.
+          This bot is running. Saving applies the change straight away and leaves its orders on the book, but the stored
+          config is untouched until the bot is stopped and saved again.
         </p>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <div
+        role="group"
+        aria-label="Bot actions"
+        className="flex flex-wrap justify-end gap-2 border-t border-border/40 pt-4"
+      >
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted/10"
+        >
+          Cancel
+        </button>
         <button
           type="button"
           disabled={busy}
@@ -597,9 +640,6 @@ export const DexMMConfigStep = ({
             Create &amp; start
           </button>
         )}
-        <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted/10">
-          Cancel
-        </button>
       </div>
     </div>
   );
