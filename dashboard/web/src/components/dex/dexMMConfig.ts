@@ -75,8 +75,6 @@ export interface QuickDraft {
 const num = (s: string): number => Number(s) || 0;
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
-const defaultFactor = (t: BotType): string => (t === 'arbmm' ? '1.5' : '0.02');
-
 // defaultFactors seeds bisonw's per-asset uiConfig defaults (mmsettings.ts), so a
 // default-config bot allocates and rebalances identically to the official UI.
 export const defaultFactors = (): AssetFactors => ({
@@ -103,25 +101,31 @@ const factorsToConfig = (f: AssetFactors): MMBotAssetConfig => ({
   transferFactor: clamp(num(f.transferFactor), 0, 1),
 });
 
-export const defaultDraft = (botType: BotType, cexName?: string): ConfigDraft => ({
-  botType,
-  cexName: needsCex(botType) ? cexName : undefined,
-  gapStrategy: 'percent-plus',
-  driftTolerance: '0.001',
-  profit: '0.01',
-  orderPersistence: '10',
-  profitTrigger: '0.01',
-  maxActiveArbs: '5',
-  numEpochs: '10',
-  buys: [{ lots: '1', factor: defaultFactor(botType) }],
-  sells: [{ lots: '1', factor: defaultFactor(botType) }],
-  baseWalletOptions: {},
-  quoteWalletOptions: {},
-  cexRebalance: true,
-  simpleArbLots: '1',
-  baseFactors: defaultFactors(),
-  quoteFactors: defaultFactors(),
-});
+// defaultDraft is a new bot's draft, its placements and profit generated from
+// the default Quick values so the page shows what a save would store.
+export const defaultDraft = (botType: BotType, cexName?: string, lotsIncrement = 1): ConfigDraft =>
+  applyQuick(
+    {
+      botType,
+      cexName: needsCex(botType) ? cexName : undefined,
+      gapStrategy: 'percent-plus',
+      driftTolerance: '0.001',
+      profit: '0.02',
+      orderPersistence: '10',
+      profitTrigger: '0.02',
+      maxActiveArbs: '5',
+      numEpochs: '10',
+      buys: [],
+      sells: [],
+      baseWalletOptions: {},
+      quoteWalletOptions: {},
+      cexRebalance: true,
+      simpleArbLots: '1',
+      baseFactors: defaultFactors(),
+      quoteFactors: defaultFactors(),
+    },
+    defaultQuick(lotsIncrement),
+  );
 
 // defaultWalletOptions seeds a wallet's funding options from their defaults,
 // skipping quote-only options on the base asset (mirrors bisonw's
@@ -136,13 +140,85 @@ export const defaultWalletOptions = (opts: DexOrderOption[], isQuote: boolean): 
   return out;
 };
 
-export const defaultQuick = (): QuickDraft => ({
+// QUICK_LIMITS are bisonw v1.0.6's Quick placement inputs (mmsettings.ts
+// defaultProfit, defaultLevelSpacing, defaultMatchBuffer), in percent.
+export const QUICK_LIMITS = {
+  profitPct: { min: 0.1, max: 10 },
+  levelSpacingPct: { min: 0.1, max: 2 },
+  matchBufferPct: { min: 0, max: 100 },
+} as const;
+
+// lotsPerLevelIncrement is bisonw's lots step: about 100 USD of lots, at least 1.
+export const lotsPerLevelIncrement = (lotSizeUSD: number): number =>
+  lotSizeUSD > 0 ? Math.round(Math.max(1, 100 / lotSizeUSD)) : 1;
+
+export const defaultQuick = (lotsIncrement = 1): QuickDraft => ({
   levelsPerSide: '1',
-  lotsPerLevel: '1',
-  profitPct: '1',
+  lotsPerLevel: String(lotsIncrement),
+  profitPct: '2',
   levelSpacingPct: '0.5',
-  matchBufferPct: '50',
+  matchBufferPct: '0',
 });
+
+// applyQuick writes the Quick values into the draft, as bisonw's quick config
+// does: profit is the arb profit or the simple-arb trigger, lots the simple-arb
+// lots, and the other bots get symmetric generated placements.
+export const applyQuick = (d: ConfigDraft, q: QuickDraft): ConfigDraft => {
+  const profit = String(Number((num(q.profitPct) / 100).toFixed(6)));
+  if (d.botType === 'simplearb') {
+    return { ...d, profitTrigger: profit, simpleArbLots: String(Math.max(1, Math.floor(num(q.lotsPerLevel)))) };
+  }
+  const rows = deriveQuickPlacements(d.botType, q);
+  const next: ConfigDraft = { ...d, buys: rows, sells: rows.map((r) => ({ ...r })) };
+  if (d.botType === 'basicmm') next.gapStrategy = 'percent-plus';
+  else next.profit = profit;
+  return next;
+};
+
+// isQuickShaped reports whether a draft is what Quick generates, so a saved bot
+// reopens on the Quick tab (bisonw isQuickPlacements plus percent-plus).
+export const isQuickShaped = (d: ConfigDraft): boolean => {
+  if (d.botType === 'simplearb') return true;
+  if (d.botType === 'basicmm' && d.gapStrategy !== 'percent-plus') return false;
+  if (d.buys.length === 0 || d.buys.length !== d.sells.length) return false;
+  return d.buys.every((b, i) => num(b.lots) === num(d.sells[i].lots) && num(b.factor) === num(d.sells[i].factor));
+};
+
+// quickFromDraft approximates the Quick values of a draft, as bisonw's
+// switchToQuickConfig does when the user moves from manual to quick.
+export const quickFromDraft = (d: ConfigDraft, lotsIncrement = 1): QuickDraft => {
+  const q = defaultQuick(lotsIncrement);
+  const pct = (v: number) => String(Number((v * 100).toFixed(4)));
+  if (d.botType === 'simplearb') {
+    return {
+      ...q,
+      profitPct: pct(num(d.profitTrigger)),
+      lotsPerLevel: String(Math.max(1, Math.floor(num(d.simpleArbLots)))),
+    };
+  }
+  if (d.botType === 'arbmm') q.profitPct = pct(num(d.profit));
+  const buys = toPlacements(d.buys);
+  const sells = toPlacements(d.sells);
+  if (buys.length === 0 || sells.length === 0) return q;
+  const levels = Math.max(1, Math.floor((buys.length + sells.length) / 2));
+  const factors = (ps: { factor: number }[]) => ps.map((p) => p.factor);
+  if (d.botType === 'basicmm') {
+    const best = (ps: { factor: number }[]) => Math.min(...factors(ps));
+    const worst = (ps: { factor: number }[]) => Math.max(...factors(ps));
+    q.profitPct = pct((best(buys) + best(sells)) / 2);
+    if (levels > 1) {
+      const range = (worst(buys) - best(buys) + (worst(sells) - best(sells))) / 2;
+      q.levelSpacingPct = pct(range / (levels - 1));
+    }
+  } else {
+    const all = [...factors(buys), ...factors(sells)];
+    q.matchBufferPct = pct(all.reduce((a, b) => a + b, 0) / all.length - 1 || 0);
+  }
+  const lots = [...buys, ...sells].reduce((a, p) => a + p.lots, 0);
+  q.levelsPerSide = String(levels);
+  q.lotsPerLevel = String(Math.max(1, Math.round(lots / 2 / levels)));
+  return q;
+};
 
 // draftFromConfig seeds an editable draft from a saved bot config (for editing).
 export const draftFromConfig = (cfg: MMBotConfig): ConfigDraft => {

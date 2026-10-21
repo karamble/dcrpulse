@@ -14,75 +14,26 @@ import {
 } from '../../services/dcrdexApi';
 import { CoinIcon } from './CoinIcon';
 import { CexIcon } from './CexIcon';
-import { fmtUsd } from './dexFormat';
 import { DexMMPlacementsChart } from './DexMMPlacementsChart';
 import { DexMMOracleTable } from './DexMMOracleTable';
 import { DexMMWalletOptions } from './DexMMWalletOptions';
+import { DexMMQuickConfig } from './DexMMQuickConfig';
+import { Field, inputCls, Slider } from './DexMMInputs';
 import {
+  applyQuick,
   buildBotConfig,
   defaultQuick,
   defaultWalletOptions,
-  deriveQuickPlacements,
   GAP_STRATEGIES,
+  isQuickShaped,
+  lotsPerLevelIncrement,
+  quickFromDraft,
   type AssetFactors,
   type ConfigDraft,
   type PlacementRow,
   type QuickDraft,
 } from './dexMMConfig';
 import { apiError } from '../../utils/apiError';
-
-const inputCls =
-  'px-2.5 py-1.5 rounded-lg bg-background border border-border text-sm font-mono focus:outline-none focus:border-primary';
-
-const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <label className="flex flex-col gap-1">
-    <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70">{label}</span>
-    {children}
-  </label>
-);
-
-const Slider = ({
-  label,
-  value,
-  min,
-  max,
-  step,
-  suffix,
-  hint,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  min: number;
-  max: number;
-  step: number;
-  suffix?: string;
-  hint?: string;
-  disabled?: boolean;
-  onChange: (v: string) => void;
-}) => (
-  <div className={`space-y-1 ${disabled ? 'opacity-40' : ''}`}>
-    <div className="flex items-center justify-between">
-      <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70">{label}</span>
-      <span className="font-mono text-sm">
-        {value}
-        {suffix}
-      </span>
-    </div>
-    <input
-      type="range"
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full accent-primary"
-    />
-    {hint && <div className="text-[10px] text-muted-foreground">{hint}</div>}
-  </div>
-);
 
 // DexMMConfigStep is step 3 of the wizard: configure the strategy. It offers a
 // Quick mode (sliders that derive symmetric placements) and an Advanced mode
@@ -120,9 +71,20 @@ export const DexMMConfigStep = ({
   const hasPlacements = botType !== 'simplearb';
   const cexBot = botType !== 'basicmm';
 
-  const [mode, setMode] = useState<'quick' | 'advanced'>(editing ? 'advanced' : 'quick');
+  // lotSizeUSD is the USD value of one lot; bisonw sizes the lots step from it.
+  const lotSizeUSD =
+    report && report.baseFiatRate > 0 && market.baseConvFactor > 0
+      ? (market.lotSize / market.baseConvFactor) * report.baseFiatRate
+      : 0;
+  const lotsIncrement = lotsPerLevelIncrement(lotSizeUSD);
+
+  // A saved bot opens on Quick when Quick could have made it, as in bisonw.
+  const [mode, setMode] = useState<'quick' | 'advanced'>(!editing || isQuickShaped(initial) ? 'quick' : 'advanced');
   const [draft, setDraft] = useState<ConfigDraft>(initial);
-  const [quick, setQuick] = useState<QuickDraft>(defaultQuick);
+  const [quick, setQuick] = useState<QuickDraft>(() => (editing ? quickFromDraft(initial) : defaultQuick()));
+  // pristine is a new bot nobody has edited yet: its lots follow the market's
+  // lots step once the market report arrives.
+  const [pristine, setPristine] = useState(!editing);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -140,42 +102,52 @@ export const DexMMConfigStep = ({
     }));
   }, [baseOpts, quoteOpts]);
 
-  // applyQuick updates a quick field and recomputes the derived draft so the
-  // Advanced tables stay in sync, mirroring v1.0.6 quickConfigUpdated.
-  const applyQuick = (patch: Partial<QuickDraft>) => {
-    const q = { ...quick, ...patch };
+  useEffect(() => {
+    if (!pristine || lotsIncrement <= 1) return;
+    const q = { ...quick, lotsPerLevel: String(lotsIncrement) };
     setQuick(q);
-    setDraft((d) => {
-      if (botType === 'simplearb') {
-        return { ...d, profitTrigger: String(Number(q.profitPct) / 100) };
-      }
-      const rows = deriveQuickPlacements(botType, q);
-      const next: ConfigDraft = { ...d, buys: rows, sells: rows.map((r) => ({ ...r })) };
-      if (botType === 'basicmm') next.gapStrategy = 'percent-plus';
-      return next;
-    });
+    setDraft((d) => applyQuick(d, q));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lotsIncrement]);
+
+  // updateQuick changes a Quick value and regenerates the draft from it, as
+  // bisonw's quickConfigUpdated does.
+  const updateQuick = (patch: Partial<QuickDraft>) => {
+    const q = { ...quick, ...patch };
+    setPristine(false);
+    setQuick(q);
+    setDraft((d) => applyQuick(d, q));
   };
 
-  const setField = <K extends keyof ConfigDraft>(key: K, val: ConfigDraft[K]) =>
-    setDraft((d) => ({ ...d, [key]: val }));
+  // Moving to Quick approximates the manual placements and regenerates them, as
+  // bisonw's switchToQuickConfig does.
+  const switchMode = (m: 'quick' | 'advanced') => {
+    if (m === 'quick' && mode !== 'quick') {
+      const q = quickFromDraft(draft, lotsIncrement);
+      setQuick(q);
+      setDraft(applyQuick(draft, q));
+    }
+    setMode(m);
+  };
+
+  const edit = (fn: (d: ConfigDraft) => ConfigDraft) => {
+    setPristine(false);
+    setDraft(fn);
+  };
+
+  const setField = <K extends keyof ConfigDraft>(key: K, val: ConfigDraft[K]) => edit((d) => ({ ...d, [key]: val }));
 
   const setFactor = (side: 'baseFactors' | 'quoteFactors', key: keyof AssetFactors, val: string) =>
-    setDraft((d) => ({ ...d, [side]: { ...d[side], [key]: val } }));
+    edit((d) => ({ ...d, [side]: { ...d[side], [key]: val } }));
 
   const editPlacement = (side: 'buys' | 'sells', i: number, field: keyof PlacementRow, val: string) =>
-    setDraft((d) => ({ ...d, [side]: d[side].map((p, idx) => (idx === i ? { ...p, [field]: val } : p)) }));
+    edit((d) => ({ ...d, [side]: d[side].map((p, idx) => (idx === i ? { ...p, [field]: val } : p)) }));
 
   const addPlacement = (side: 'buys' | 'sells') =>
-    setDraft((d) => ({ ...d, [side]: [...d[side], { lots: '1', factor: botType === 'arbmm' ? '1.5' : '0.02' }] }));
+    edit((d) => ({ ...d, [side]: [...d[side], { lots: '1', factor: botType === 'arbmm' ? '1.5' : '0.02' }] }));
 
   const removePlacement = (side: 'buys' | 'sells', i: number) =>
-    setDraft((d) => ({ ...d, [side]: d[side].filter((_, idx) => idx !== i) }));
-
-  // usdPerLot is the conventional USD value of one lot, for the quick-config hint.
-  const usdPerLot = useMemo(() => {
-    if (!report || report.baseFiatRate <= 0 || market.baseConvFactor <= 0) return 0;
-    return (market.lotSize / market.baseConvFactor) * report.baseFiatRate;
-  }, [report, market]);
+    edit((d) => ({ ...d, [side]: d[side].filter((_, idx) => idx !== i) }));
 
   const build = (): MMBotConfig | null => {
     if (
@@ -303,7 +275,7 @@ export const DexMMConfigStep = ({
           <button
             key={m}
             type="button"
-            onClick={() => setMode(m)}
+            onClick={() => switchMode(m)}
             className={`px-3 py-1 rounded-md capitalize ${mode === m ? 'bg-primary text-primary-foreground' : 'hover:bg-muted/10'}`}
           >
             {m}
@@ -314,60 +286,13 @@ export const DexMMConfigStep = ({
       <div className="grid gap-6 lg:grid-cols-2 items-start">
         <div className="space-y-4 min-w-0">
           {mode === 'quick' ? (
-            <div className="space-y-4">
-              {hasPlacements && (
-                <Slider
-                  label="Levels per side"
-                  value={quick.levelsPerSide}
-                  min={1}
-                  max={10}
-                  step={1}
-                  onChange={(v) => applyQuick({ levelsPerSide: v })}
-                />
-              )}
-              <Slider
-                label={hasPlacements ? 'Lots per level' : 'Lots per arb'}
-                value={quick.lotsPerLevel}
-                min={1}
-                max={50}
-                step={1}
-                hint={usdPerLot > 0 ? `~${fmtUsd(usdPerLot * Number(quick.lotsPerLevel))} per level` : undefined}
-                onChange={(v) => applyQuick({ lotsPerLevel: v })}
-              />
-              <Slider
-                label={botType === 'simplearb' ? 'Profit trigger' : 'Profit'}
-                value={quick.profitPct}
-                min={0}
-                max={10}
-                step={0.1}
-                suffix="%"
-                onChange={(v) => applyQuick({ profitPct: v })}
-              />
-              {botType === 'basicmm' && (
-                <Slider
-                  label="Level spacing"
-                  value={quick.levelSpacingPct}
-                  min={0}
-                  max={5}
-                  step={0.1}
-                  suffix="%"
-                  disabled={Number(quick.levelsPerSide) <= 1}
-                  onChange={(v) => applyQuick({ levelSpacingPct: v })}
-                />
-              )}
-              {botType === 'arbmm' && (
-                <Slider
-                  label="Match buffer"
-                  value={quick.matchBufferPct}
-                  min={0}
-                  max={200}
-                  step={1}
-                  suffix="%"
-                  hint="Extra order size to ensure CEX fills cover DEX matches."
-                  onChange={(v) => applyQuick({ matchBufferPct: v })}
-                />
-              )}
-            </div>
+            <DexMMQuickConfig
+              botType={botType}
+              quick={quick}
+              lotSizeUSD={lotSizeUSD}
+              lotsIncrement={lotsIncrement}
+              onChange={updateQuick}
+            />
           ) : (
             <div className="space-y-4">
               <div className="grid sm:grid-cols-3 gap-3">
