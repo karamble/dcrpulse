@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DexMarket, MMBotConfig, MMMarketReport } from '../../services/dcrdexApi';
+import type { DexAsset, DexMarket, MMBotConfig, MMMarketReport } from '../../services/dcrdexApi';
 import { DexMMConfigStep } from './DexMMConfigStep';
 import { defaultDraft, draftFromConfig, type BotType, type ConfigDraft } from './dexMMConfig';
 
@@ -19,17 +19,26 @@ const onSave = vi.fn(async (_: MMBotConfig) => {});
 
 const open = (
   botType: BotType = 'basicmm',
-  opts: { editing?: boolean; running?: boolean; initial?: ConfigDraft; report?: MMMarketReport } = {},
+  opts: {
+    editing?: boolean;
+    running?: boolean;
+    initial?: ConfigDraft;
+    report?: MMMarketReport;
+    market?: DexMarket;
+    catalog?: DexAsset[];
+    cexMarket?: { baseMinWithdraw: number; quoteMinWithdraw: number };
+  } = {},
 ) =>
   render(
     <DexMMConfigStep
       host="dex.example:7232"
-      market={dcrBtc}
+      market={opts.market ?? dcrBtc}
       initial={opts.initial ?? defaultDraft(botType, botType === 'basicmm' ? undefined : 'Binance')}
       editing={!!opts.editing}
       running={opts.running}
       report={opts.report ?? null}
-      catalog={[]}
+      catalog={opts.catalog ?? []}
+      cexMarket={opts.cexMarket}
       onChangeMarket={() => {}}
       onChangeBotType={() => {}}
       onSave={onSave}
@@ -142,5 +151,102 @@ describe('DexMMConfigStep Quick tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'quick' }));
     // The best buy (4%) and best sell (2%) average to a 3% profit threshold.
     expect(value('Profit threshold')).toBe('3');
+  });
+});
+
+const has = (label: string) => screen.queryByLabelText(label) !== null;
+const knobs = () => ['Drift tolerance', 'Order persistence', 'Max active arbs'].filter(has);
+const toAdvanced = () => fireEvent.click(screen.getByRole('button', { name: 'advanced' }));
+
+describe('DexMMConfigStep knobs', () => {
+  it('shows each bot type its knobs on both tabs', () => {
+    open('basicmm');
+    expect(knobs()).toEqual(['Drift tolerance']);
+    expect(screen.queryByText('Arbitrage rebalance')).toBeNull();
+    toAdvanced();
+    expect(knobs()).toEqual(['Drift tolerance']);
+    cleanup();
+    open('arbmm');
+    expect(knobs()).toEqual(['Drift tolerance', 'Order persistence']);
+    expect(screen.getByText('Arbitrage rebalance')).toBeTruthy();
+    toAdvanced();
+    expect(knobs()).toEqual(['Drift tolerance', 'Order persistence']);
+    cleanup();
+    open('simplearb');
+    expect(knobs()).toEqual(['Order persistence', 'Max active arbs']);
+    expect(screen.queryByRole('button', { name: 'advanced' })).toBeNull();
+  });
+
+  it("saves bisonw's knob defaults", async () => {
+    open('arbmm');
+    expect((await saved()).arbMarketMakingConfig).toMatchObject({ driftTolerance: 0.002, orderPersistence: 20 });
+    cleanup();
+    onSave.mockClear();
+    open('simplearb');
+    expect((await saved()).simpleArbConfig).toMatchObject({ numEpochsLeaveOpen: 20, maxActiveArbs: 100 });
+  });
+
+  it('takes drift tolerance in percent', async () => {
+    open('basicmm');
+    type('Drift tolerance', '0.5');
+    expect((await saved()).basicMarketMakingConfig?.driftTolerance).toBe(0.005);
+  });
+});
+
+const unit = (conversionFactor: number) => ({ conversionFactor }) as DexAsset['unitInfo'];
+const catalog = [
+  { id: 42, symbol: 'dcr', isAccountBased: false, unitInfo: unit(1e8), availableWallets: [] },
+  { id: 0, symbol: 'btc', isAccountBased: false, unitInfo: unit(1e8), availableWallets: [] },
+  {
+    id: 60,
+    symbol: 'eth',
+    isAccountBased: true,
+    unitInfo: unit(1e9),
+    availableWallets: [],
+    tokens: [{ id: 60001, parentID: 60, symbol: 'usdc.eth', unitInfo: unit(1e6), definition: {} }],
+  },
+] as unknown as DexAsset[];
+const dcrUsdc = { ...dcrBtc, quote: 'USDC.ETH', quoteID: 60001, quoteConvFactor: 1e6 } as DexMarket;
+const pane = (symbol: string) => within(screen.getByRole('region', { name: `${symbol} settings` }));
+const fees = { max: { swap: 1000, redeem: 1000, refund: 1000 }, estimated: { swap: 500, redeem: 500, refund: 500 } };
+const report: MMMarketReport = { price: 0, oracles: [], baseFiatRate: 20, quoteFiatRate: 60000, baseFees: fees, quoteFees: fees };
+
+describe('DexMMConfigStep asset panes', () => {
+  it("shows each asset's settings on both tabs", () => {
+    open('basicmm', { market: dcrUsdc, catalog });
+    const check = () => {
+      expect(pane('DCR').queryByLabelText('Order reserves')).not.toBeNull();
+      expect(pane('DCR').queryByLabelText('Slippage buffer')).toBeNull();
+      expect(pane('DCR').queryByLabelText('Swap fee reserves')).toBeNull();
+      expect(pane('USDC.ETH').queryByLabelText('Slippage buffer')).not.toBeNull();
+      expect(pane('USDC.ETH').queryByLabelText('Swap fee reserves')).not.toBeNull();
+    };
+    check();
+    toAdvanced();
+    check();
+    cleanup();
+    open('simplearb', { market: dcrUsdc, catalog });
+    expect(pane('DCR').queryByLabelText('Order reserves')).toBeNull();
+  });
+
+  it('sets the minimum transfer as a coin amount between the exchange minimum and the commit', async () => {
+    open('arbmm', { catalog, report, cexMarket: { baseMinWithdraw: 10_000_000, quoteMinWithdraw: 1_000 } });
+    const dcrMin = pane('DCR').getByLabelText('Minimum transfer');
+    fireEvent.change(dcrMin, { target: { value: '0.1' } });
+    const btcMin = pane('BTC').getByLabelText('Minimum transfer') as HTMLInputElement;
+    fireEvent.change(btcMin, { target: { value: '1000' } });
+    // Past the top of the range the field shows the most a save would store.
+    fireEvent.blur(btcMin);
+    expect(Number(btcMin.value)).toBeLessThan(1);
+    const ui = (await saved()).uiConfig;
+    expect(ui?.baseConfig.transferFactor).toBe(0);
+    expect(ui?.quoteConfig.transferFactor).toBe(1);
+  });
+
+  it('hides the minimum transfer while rebalancing is off', () => {
+    open('arbmm', { catalog, report, cexMarket: { baseMinWithdraw: 10_000_000, quoteMinWithdraw: 1_000 } });
+    expect(pane('DCR').queryByLabelText('Minimum transfer')).not.toBeNull();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Arbitrage rebalance/ }));
+    expect(pane('DCR').queryByLabelText('Minimum transfer')).toBeNull();
   });
 });

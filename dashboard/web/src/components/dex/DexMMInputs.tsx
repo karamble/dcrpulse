@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
 
 export const inputCls =
@@ -68,7 +68,8 @@ const atLeast = (v: string, min: number): string => {
 };
 
 // NumberSlider is a typed value with a slider beside it. The slider covers the
-// usual range; the typed value may go past it but not below min.
+// usual range; the typed value may go past it but not below min. What is typed
+// stays as typed until the field loses focus, so a derived value can be edited.
 export const NumberSlider = ({
   label,
   value,
@@ -91,6 +92,7 @@ export const NumberSlider = ({
   onChange: (v: string) => void;
 }) => {
   const id = useId();
+  const [typed, setTyped] = useState<string | null>(null);
   return (
     <div className={`space-y-1 ${disabled ? 'opacity-40' : ''}`}>
       <div className="flex items-center justify-between gap-3">
@@ -103,10 +105,16 @@ export const NumberSlider = ({
             type="number"
             min={min}
             step={step}
-            value={value}
+            value={typed ?? value}
             disabled={disabled}
-            onChange={(e) => onChange(e.target.value)}
-            onBlur={(e) => onChange(atLeast(e.target.value, min))}
+            onChange={(e) => {
+              setTyped(e.target.value);
+              onChange(e.target.value);
+            }}
+            onBlur={(e) => {
+              setTyped(null);
+              onChange(atLeast(e.target.value, min));
+            }}
             className={`${inputCls} w-24 text-right`}
           />
           {suffix && <span className="text-sm text-muted-foreground">{suffix}</span>}

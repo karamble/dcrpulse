@@ -12,29 +12,34 @@ const isTrue = (v: string) => v === 'true';
 // the per-asset Wallet Options pane on the bisonw bot-config page. multisplit lets
 // the bot pre-size a split funding transaction, so it can fund orders even when
 // the balance sits in UTXOs larger than the bot's per-market allocation.
+// embedded drops the card and heading for use inside an asset pane.
 export const DexMMWalletOptions = ({
   assetSymbol,
   opts,
   isQuote,
   value,
   onChange,
+  embedded = false,
 }: {
   assetSymbol: string;
   opts: DexOrderOption[];
   isQuote: boolean;
   value: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
+  embedded?: boolean;
 }) => {
   const visible = opts.filter((o) => isQuote || !o.quoteAssetOnly);
   if (visible.length === 0) return null;
   const set = (key: string, v: string) => onChange({ ...value, [key]: v });
 
   return (
-    <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-3">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <CoinIcon symbol={assetSymbol} className="h-4 w-4" />
-        {assetSymbol.toUpperCase()}
-      </div>
+    <div className={embedded ? 'space-y-3' : 'rounded-lg border border-border/50 bg-background/40 p-3 space-y-3'}>
+      {!embedded && (
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <CoinIcon symbol={assetSymbol} className="h-4 w-4" />
+          {assetSymbol.toUpperCase()}
+        </div>
+      )}
       {visible.map((o) => {
         if (o.dependsOn && !isTrue(value[o.dependsOn] ?? '')) return null;
         const cur = value[o.key] ?? o.default;

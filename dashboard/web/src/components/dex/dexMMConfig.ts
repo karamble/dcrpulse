@@ -45,7 +45,8 @@ export interface ConfigDraft {
   botType: BotType;
   cexName?: string;
   gapStrategy: MMGapStrategy;
-  driftTolerance: string;
+  // driftTolerancePct is entered in percent; the bot config stores a fraction.
+  driftTolerancePct: string;
   profit: string;
   orderPersistence: string;
   profitTrigger: string;
@@ -74,6 +75,23 @@ export interface QuickDraft {
 
 const num = (s: string): number => Number(s) || 0;
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
+const toPct = (fraction: number): string => String(Number((fraction * 100).toFixed(6)));
+const fromPct = (pct: string): number => Number((num(pct) / 100).toFixed(8));
+
+// KNOB_LIMITS bound the bot-wide settings. Drift tolerance stops at bisonw's
+// own 1% validation limit, below the 2% its slider allows; order persistence
+// starts at the 2 epochs it requires.
+export const KNOB_LIMITS = {
+  driftTolerancePct: { min: 0, max: 1 },
+  orderPersistence: { min: 2, max: 40 },
+} as const;
+
+// ASSET_LIMITS are the slider ranges of bisonw's per-asset settings.
+export const ASSET_LIMITS = {
+  orderReservesFactor: { min: 0, max: 3 },
+  slippageBufferFactor: { min: 0, max: 0.3 },
+  swapFeeN: { min: 0, max: 1000 },
+} as const;
 
 // defaultFactors seeds bisonw's per-asset uiConfig defaults (mmsettings.ts), so a
 // default-config bot allocates and rebalances identically to the official UI.
@@ -109,12 +127,13 @@ export const defaultDraft = (botType: BotType, cexName?: string, lotsIncrement =
       botType,
       cexName: needsCex(botType) ? cexName : undefined,
       gapStrategy: 'percent-plus',
-      driftTolerance: '0.001',
+      driftTolerancePct: '0.2',
       profit: '0.02',
-      orderPersistence: '10',
+      orderPersistence: '20',
       profitTrigger: '0.02',
-      maxActiveArbs: '5',
-      numEpochs: '10',
+      // bisonw sends 100 and does not show the setting.
+      maxActiveArbs: '100',
+      numEpochs: '20',
       buys: [],
       sells: [],
       baseWalletOptions: {},
@@ -231,12 +250,12 @@ export const draftFromConfig = (cfg: MMBotConfig): ConfigDraft => {
   const simple = cfg.simpleArbConfig;
   if (basic) {
     d.gapStrategy = basic.gapStrategy;
-    d.driftTolerance = String(basic.driftTolerance);
+    d.driftTolerancePct = toPct(basic.driftTolerance);
     d.buys = basic.buyPlacements.map((p) => ({ lots: String(p.lots), factor: String(p.gapFactor) }));
     d.sells = basic.sellPlacements.map((p) => ({ lots: String(p.lots), factor: String(p.gapFactor) }));
   } else if (arb) {
     d.profit = String(arb.profit);
-    d.driftTolerance = String(arb.driftTolerance);
+    d.driftTolerancePct = toPct(arb.driftTolerance);
     d.orderPersistence = String(arb.orderPersistence);
     d.buys = arb.buyPlacements.map((p) => ({ lots: String(p.lots), factor: String(p.multiplier) }));
     d.sells = arb.sellPlacements.map((p) => ({ lots: String(p.lots), factor: String(p.multiplier) }));
@@ -286,7 +305,7 @@ export const buildBotConfig = (host: string, market: DexMarket, d: ConfigDraft):
   if (d.botType === 'basicmm') {
     cfg.basicMarketMakingConfig = {
       gapStrategy: d.gapStrategy,
-      driftTolerance: num(d.driftTolerance),
+      driftTolerance: fromPct(d.driftTolerancePct),
       buyPlacements: toPlacements(d.buys).map((p) => ({ lots: p.lots, gapFactor: p.factor })),
       sellPlacements: toPlacements(d.sells).map((p) => ({ lots: p.lots, gapFactor: p.factor })),
     };
@@ -301,7 +320,7 @@ export const buildBotConfig = (host: string, market: DexMarket, d: ConfigDraft):
     } else {
       cfg.arbMarketMakingConfig = {
         profit: num(d.profit),
-        driftTolerance: num(d.driftTolerance),
+        driftTolerance: fromPct(d.driftTolerancePct),
         orderPersistence: Math.max(2, Math.floor(num(d.orderPersistence) || 2)),
         buyPlacements: toPlacements(d.buys).map((p) => ({ lots: p.lots, multiplier: p.factor })),
         sellPlacements: toPlacements(d.sells).map((p) => ({ lots: p.lots, multiplier: p.factor })),

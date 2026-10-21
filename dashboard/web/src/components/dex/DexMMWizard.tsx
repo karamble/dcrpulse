@@ -179,6 +179,7 @@ export const DexMMWizard = ({
           running={!!editBot?.running}
           report={report}
           catalog={catalog}
+          cexMarket={cexMarketFor(cexes, cexName, market.baseID, market.quoteID)}
           onChangeMarket={() => setStep('market')}
           onChangeBotType={() => setStep('type')}
           onSave={handleSave}
