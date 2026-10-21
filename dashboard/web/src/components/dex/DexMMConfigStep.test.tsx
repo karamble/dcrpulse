@@ -147,7 +147,11 @@ describe('DexMMConfigStep Quick tab', () => {
   it('reads manual placements back into Quick when switching tabs', () => {
     open('basicmm');
     fireEvent.click(screen.getByRole('button', { name: 'advanced' }));
-    fireEvent.change(screen.getAllByPlaceholderText('gap')[0], { target: { value: '0.04' } });
+    const buys = within(screen.getByRole('table', { name: 'Buy placements' }));
+    fireEvent.click(buys.getByRole('button', { name: 'Remove' }));
+    fireEvent.change(buys.getByLabelText('Buy lots'), { target: { value: '1' } });
+    fireEvent.change(buys.getByLabelText('Buy percent'), { target: { value: '4' } });
+    fireEvent.click(buys.getByRole('button', { name: 'Add buy placement' }));
     fireEvent.click(screen.getByRole('button', { name: 'quick' }));
     // The best buy (4%) and best sell (2%) average to a 3% profit threshold.
     expect(value('Profit threshold')).toBe('3');
@@ -248,5 +252,79 @@ describe('DexMMConfigStep asset panes', () => {
     expect(pane('DCR').queryByLabelText('Minimum transfer')).not.toBeNull();
     fireEvent.click(screen.getByRole('checkbox', { name: /Arbitrage rebalance/ }));
     expect(pane('DCR').queryByLabelText('Minimum transfer')).toBeNull();
+  });
+});
+
+const table = (side: 'Buy' | 'Sell') => within(screen.getByRole('table', { name: `${side} placements` }));
+// around is the text of a placement table's section, where its errors show.
+const around = (side: 'Buy' | 'Sell') =>
+  screen.getByRole('table', { name: `${side} placements` }).parentElement!.textContent;
+const headers = (side: 'Buy' | 'Sell') => table(side).getAllByRole('columnheader').map((h) => h.textContent);
+const addRow = (side: 'Buy' | 'Sell', lots: string, gap: string, gapLabel = 'percent') => {
+  fireEvent.change(table(side).getByLabelText(`${side} lots`), { target: { value: lots } });
+  fireEvent.change(table(side).getByLabelText(`${side} ${gapLabel}`), { target: { value: gap } });
+  fireEvent.click(table(side).getByRole('button', { name: `Add ${side.toLowerCase()} placement` }));
+};
+
+describe('DexMMConfigStep Advanced tab', () => {
+  it("names each gap strategy and keeps each strategy's own placements", () => {
+    open('basicmm');
+    toAdvanced();
+    const select = screen.getByLabelText('Gap strategy') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.text)).toEqual(['Percent Plus', 'Percent', 'Absolute Plus', 'Absolute', 'Multiplier']);
+    expect(screen.getByText(/adds the specified spread, calculated as a percentage of the mid-gap price/)).toBeTruthy();
+    expect(headers('Buy')).toEqual(['Priority', 'Lots', 'Percent', '']);
+    expect(table('Buy').getByText('2 %')).toBeTruthy();
+
+    fireEvent.change(select, { target: { value: 'multiplier' } });
+    expect(screen.getByText(/the specified multiple of the break-even spread/)).toBeTruthy();
+    expect(headers('Buy')).toEqual(['Priority', 'Lots', 'Multiplier', '']);
+    expect(table('Buy').queryAllByRole('button', { name: 'Remove' })).toHaveLength(0);
+    fireEvent.change(select, { target: { value: 'percent-plus' } });
+    expect(table('Buy').getByText('2 %')).toBeTruthy();
+  });
+
+  it("checks a placement with bisonw's rules before adding it", async () => {
+    open('basicmm');
+    toAdvanced();
+    addRow('Buy', '1', '2');
+    expect(around('Buy')).toContain('Duplicate placement');
+    addRow('Buy', '0', '3');
+    expect(around('Buy')).toContain('Lots must be greater than 0');
+    addRow('Buy', '1', '12');
+    expect(around('Buy')).toContain('Percent must be between 0 and 10');
+    addRow('Buy', '3', '1.5');
+    expect((await saved()).basicMarketMakingConfig?.buyPlacements).toEqual([
+      { lots: 1, gapFactor: 0.02 },
+      { lots: 3, gapFactor: 0.015 },
+    ]);
+  });
+
+  it('saves placements in the priority order set', async () => {
+    open('basicmm');
+    toAdvanced();
+    addRow('Sell', '5', '3');
+    fireEvent.click(table('Sell').getByRole('button', { name: 'Move up' }));
+    expect((await saved()).basicMarketMakingConfig?.sellPlacements).toEqual([
+      { lots: 5, gapFactor: 0.03 },
+      { lots: 1, gapFactor: 0.02 },
+    ]);
+  });
+
+  it('enters arb market maker placements as a match buffer multiplier and its profit in percent', async () => {
+    open('arbmm');
+    toAdvanced();
+    expect(headers('Buy')).toEqual(['Priority', 'Lots', 'Match buffer', '']);
+    expect(table('Buy').getByText('1 x')).toBeTruthy();
+    addRow('Buy', '2', '0.5', 'match buffer');
+    expect(around('Buy')).toContain('Multiplier must be between 1 and 100');
+    addRow('Buy', '2', '1.5', 'match buffer');
+    type('Profit threshold', '1.5');
+    const arb = (await saved()).arbMarketMakingConfig;
+    expect(arb?.profit).toBe(0.015);
+    expect(arb?.buyPlacements).toEqual([
+      { lots: 1, multiplier: 1 },
+      { lots: 2, multiplier: 1.5 },
+    ]);
   });
 });

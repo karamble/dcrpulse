@@ -3,8 +3,12 @@ import {
   applyQuick,
   defaultDraft,
   defaultQuick,
+  gapKind,
+  gapShown,
+  gapStored,
   isQuickShaped,
   lotsPerLevelIncrement,
+  newPlacementError,
   quickFromDraft,
   type QuickDraft,
 } from './dexMMConfig';
@@ -89,5 +93,32 @@ describe('reading a draft back into Quick', () => {
     // One level per side from three placements; profit is the mean of the best
     // gaps; nine lots over two sides of one level round to five.
     expect(quickFromDraft(d)).toMatchObject({ levelsPerSide: '1', profitPct: '1.5', lotsPerLevel: '5' });
+  });
+});
+
+describe('manual placements', () => {
+  it("enters each strategy's gap in its own unit", () => {
+    expect(gapKind('basicmm', 'percent-plus')).toBe('percent');
+    expect(gapKind('basicmm', 'percent')).toBe('percent');
+    expect(gapKind('basicmm', 'absolute-plus')).toBe('rate');
+    expect(gapKind('basicmm', 'multiplier')).toBe('multiplier');
+    expect(gapKind('arbmm', 'percent-plus')).toBe('multiplier');
+    expect(gapStored('percent', '1.5')).toBe('0.015');
+    expect(gapShown('percent', '0.015')).toBe('1.5');
+    expect(gapStored('rate', '0.25')).toBe('0.25');
+    expect(gapShown('multiplier', '2')).toBe('2');
+  });
+
+  it("refuses a placement bisonw would refuse", () => {
+    const side = [{ lots: '1', factor: '0.02' }];
+    expect(newPlacementError('percent', side, '0', '1')).toBe('Lots must be greater than 0');
+    expect(newPlacementError('percent', side, '1', '')).toBe('Enter a gap');
+    expect(newPlacementError('percent', side, '1', '0')).toBe('Percent must be between 0 and 10');
+    expect(newPlacementError('percent', side, '1', '10.5')).toBe('Percent must be between 0 and 10');
+    expect(newPlacementError('percent', side, '1', '2')).toBe('Duplicate placement');
+    expect(newPlacementError('percent', side, '1', '10')).toBeNull();
+    expect(newPlacementError('multiplier', [], '1', '0.9')).toBe('Multiplier must be between 1 and 100');
+    expect(newPlacementError('multiplier', [], '1', '100')).toBeNull();
+    expect(newPlacementError('rate', [], '1', '0')).toBe('Rate must be greater than 0');
   });
 });

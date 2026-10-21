@@ -3,13 +3,12 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Pencil, Plus, X } from 'lucide-react';
+import { AlertCircle, Pencil } from 'lucide-react';
 import {
   multiFundingOptsForAsset,
   type DexAsset,
   type DexMarket,
   type MMBotConfig,
-  type MMGapStrategy,
   type MMMarketReport,
 } from '../../services/dcrdexApi';
 import { CoinIcon } from './CoinIcon';
@@ -19,20 +18,18 @@ import { DexMMOracleTable } from './DexMMOracleTable';
 import { DexMMQuickConfig } from './DexMMQuickConfig';
 import { DexMMKnobs } from './DexMMKnobs';
 import { DexMMAssetPane, type TransferRange } from './DexMMAssetPane';
-import { Field, inputCls } from './DexMMInputs';
+import { DexMMManualConfig } from './DexMMManualConfig';
 import { resolveAssetMeta, suggestedAllocation } from './dexMMAlloc';
 import {
   applyQuick,
   buildBotConfig,
   defaultQuick,
   defaultWalletOptions,
-  GAP_STRATEGIES,
   isQuickShaped,
   lotsPerLevelIncrement,
   quickFromDraft,
   type AssetFactors,
   type ConfigDraft,
-  type PlacementRow,
   type QuickDraft,
 } from './dexMMConfig';
 import { apiError } from '../../utils/apiError';
@@ -145,15 +142,6 @@ export const DexMMConfigStep = ({
   const setFactor = (side: 'baseFactors' | 'quoteFactors', key: keyof AssetFactors, val: string) =>
     edit((d) => ({ ...d, [side]: { ...d[side], [key]: val } }));
 
-  const editPlacement = (side: 'buys' | 'sells', i: number, field: keyof PlacementRow, val: string) =>
-    edit((d) => ({ ...d, [side]: d[side].map((p, idx) => (idx === i ? { ...p, [field]: val } : p)) }));
-
-  const addPlacement = (side: 'buys' | 'sells') =>
-    edit((d) => ({ ...d, [side]: [...d[side], { lots: '1', factor: botType === 'arbmm' ? '1.5' : '0.02' }] }));
-
-  const removePlacement = (side: 'buys' | 'sells', i: number) =>
-    edit((d) => ({ ...d, [side]: d[side].filter((_, idx) => idx !== i) }));
-
   // The commit each asset needs, from the same projection the start dialog uses;
   // bisonw spans the Minimum Transfer slider from it.
   const projected = useMemo(
@@ -209,50 +197,6 @@ export const DexMMConfigStep = ({
       setErr(apiError(e, 'Failed to save bot config'));
       setBusy(false);
     }
-  };
-
-  const renderPlacements = (title: string, side: 'buys' | 'sells') => {
-    const list = draft[side];
-    return (
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70">{title}</span>
-          <button
-            type="button"
-            onClick={() => addPlacement(side)}
-            className="p-1 rounded hover:bg-muted/20 text-muted-foreground"
-            title="Add level"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        {list.map((p, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input
-              value={p.lots}
-              onChange={(e) => editPlacement(side, i, 'lots', e.target.value)}
-              placeholder="lots"
-              className={`${inputCls} w-20`}
-            />
-            <input
-              value={p.factor}
-              onChange={(e) => editPlacement(side, i, 'factor', e.target.value)}
-              placeholder={botType === 'arbmm' ? 'multiplier' : 'gap'}
-              className={`${inputCls} flex-1`}
-            />
-            {list.length > 1 && (
-              <button
-                type="button"
-                onClick={() => removePlacement(side, i)}
-                className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-    );
   };
 
   return (
@@ -318,40 +262,7 @@ export const DexMMConfigStep = ({
               onChange={updateQuick}
             />
           ) : (
-            <div className="space-y-4">
-              <div className="grid sm:grid-cols-3 gap-3">
-                {botType === 'basicmm' && (
-                  <Field label="Gap strategy">
-                    <select
-                      value={draft.gapStrategy}
-                      onChange={(e) => setField('gapStrategy', e.target.value as MMGapStrategy)}
-                      className={inputCls}
-                    >
-                      {GAP_STRATEGIES.map((g) => (
-                        <option key={g} value={g}>
-                          {g}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                )}
-                {botType === 'arbmm' && (
-                  <Field label="Profit">
-                    <input
-                      value={draft.profit}
-                      onChange={(e) => setField('profit', e.target.value)}
-                      className={inputCls}
-                    />
-                  </Field>
-                )}
-              </div>
-              {hasPlacements && (
-                <div className="grid sm:grid-cols-2 gap-4">
-                  {renderPlacements('Buy placements', 'buys')}
-                  {renderPlacements('Sell placements', 'sells')}
-                </div>
-              )}
-            </div>
+            <DexMMManualConfig draft={draft} market={market} onChange={(patch) => edit((d) => ({ ...d, ...patch }))} />
           )}
 
           <DexMMKnobs draft={draft} onChange={(patch) => edit((d) => ({ ...d, ...patch }))} />

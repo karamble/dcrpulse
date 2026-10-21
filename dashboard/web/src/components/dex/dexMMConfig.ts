@@ -16,6 +16,32 @@ export const BOT_TYPES: { id: BotType; label: string; desc: string; cex: boolean
 
 export const GAP_STRATEGIES: MMGapStrategy[] = ['percent-plus', 'percent', 'multiplier', 'absolute', 'absolute-plus'];
 
+// GAP_STRATEGY_INFO is bisonw's label and description of each gap strategy, in
+// the order its settings page lists them.
+export const GAP_STRATEGY_INFO: { id: MMGapStrategy; label: string; desc: string }[] = [
+  {
+    id: 'percent-plus',
+    label: 'Percent Plus',
+    desc: 'The gap starts at the break-even spread, which is the minimum spread at which a buy-sell combo produces profit, and then adds the specified spread, calculated as a percentage of the mid-gap price.',
+  },
+  { id: 'percent', label: 'Percent', desc: 'The gap is set to the specified percent of the mid-gap price.' },
+  {
+    id: 'absolute-plus',
+    label: 'Absolute Plus',
+    desc: 'The gap starts at the break-even spread, which is the minimum spread at which a buy-sell combo produces profit, and then adds the specified rate difference to both sides.',
+  },
+  {
+    id: 'absolute',
+    label: 'Absolute',
+    desc: 'The spread is set to the specified value both left and right of the mid-gap, resulting in a total gap of twice the specified value.',
+  },
+  {
+    id: 'multiplier',
+    label: 'Multiplier',
+    desc: 'The gap is set to the specified multiple of the break-even spread, which is the minimum spread at which a buy-sell combo produces profit.',
+  },
+];
+
 export const needsCex = (t: BotType): boolean => BOT_TYPES.find((b) => b.id === t)!.cex;
 
 // botTypeOf reports the bot type of a saved config.
@@ -75,8 +101,8 @@ export interface QuickDraft {
 
 const num = (s: string): number => Number(s) || 0;
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
-const toPct = (fraction: number): string => String(Number((fraction * 100).toFixed(6)));
-const fromPct = (pct: string): number => Number((num(pct) / 100).toFixed(8));
+export const toPct = (fraction: number): string => String(Number((fraction * 100).toFixed(6)));
+export const fromPct = (pct: string): number => Number((num(pct) / 100).toFixed(8));
 
 // KNOB_LIMITS bound the bot-wide settings. Drift tolerance stops at bisonw's
 // own 1% validation limit, below the 2% its slider allows; order persistence
@@ -290,6 +316,36 @@ export const deriveQuickPlacements = (botType: BotType, q: QuickDraft): Placemen
     rows.push({ lots: String(lots), factor: String(Number(factor.toFixed(6))) });
   }
   return rows;
+};
+
+// GapKind is how a placement's gap is entered: a percent of the mid price, a
+// rate, or a multiplier. Arb market maker placements are always multipliers.
+export type GapKind = 'percent' | 'rate' | 'multiplier';
+
+export const gapKind = (botType: BotType, strategy: MMGapStrategy): GapKind =>
+  botType === 'arbmm' || strategy === 'multiplier'
+    ? 'multiplier'
+    : strategy === 'percent' || strategy === 'percent-plus'
+      ? 'percent'
+      : 'rate';
+
+// gapShown is a stored gap factor as entered; gapStored is the reverse.
+export const gapShown = (kind: GapKind, factor: string): string => (kind === 'percent' ? toPct(num(factor)) : factor);
+export const gapStored = (kind: GapKind, shown: string): string =>
+  kind === 'percent' ? String(fromPct(shown)) : String(num(shown));
+
+// newPlacementError checks a placement before it joins a side, with bisonw's
+// rules and messages; lots must also be positive.
+export const newPlacementError = (kind: GapKind, side: PlacementRow[], lots: string, gap: string): string | null => {
+  if (!(Math.floor(num(lots)) > 0)) return 'Lots must be greater than 0';
+  const g = Number(gap);
+  if (gap.trim() === '' || !Number.isFinite(g)) return 'Enter a gap';
+  if (kind === 'multiplier' && (g < 1 || g > 100)) return 'Multiplier must be between 1 and 100';
+  if (kind === 'rate' && g <= 0) return 'Rate must be greater than 0';
+  if (kind === 'percent' && (g <= 0 || g > 10)) return 'Percent must be between 0 and 10';
+  const stored = num(gapStored(kind, gap));
+  if (side.some((r) => num(r.factor) === stored)) return 'Duplicate placement';
+  return null;
 };
 
 const toPlacements = (rows: PlacementRow[]): { lots: number; factor: number }[] =>
