@@ -23,7 +23,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '26'
           cache: npm
           cache-dependency-path: dashboard/web/package-lock.json
 
