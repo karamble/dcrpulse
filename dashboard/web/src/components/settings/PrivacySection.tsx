@@ -67,15 +67,19 @@ export const PrivacySection = () => {
     }
   };
 
+  // A switch saves only the switches, so it never contacts the Decred Pulse
+  // bot; a failed save puts the switch back.
   const updateExternal = async (next: ExternalRequestSettings) => {
     if (externalBusy) return;
+    const prev = external;
     setExternal(next);
     setExternalBusy(true);
     setFeedback(null);
     try {
-      const res = await saveSettings({ global: { externalRequests: next, decredPulseBotUrl: botUrl.trim() } });
+      const res = await saveSettings({ global: { externalRequests: next } });
       setFeedback({ kind: 'info', text: savedText(res.notApplied) });
     } catch (err: any) {
+      setExternal(prev);
       setFeedback({
         kind: 'error',
         text: apiError(err, 'Failed to save preferences'),
@@ -95,7 +99,7 @@ export const PrivacySection = () => {
     setExternalBusy(true);
     setFeedback(null);
     try {
-      await saveSettings({ global: { externalRequests: external, decredPulseBotUrl: v } });
+      await saveSettings({ global: { decredPulseBotUrl: v } });
       setBotUrl(v === '' ? defaultBotUrl : v);
       setFeedback({ kind: 'info', text: v === '' ? 'Reset to default.' : 'Saved - bot reachable.' });
     } catch (err: any) {

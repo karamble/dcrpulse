@@ -1010,8 +1010,9 @@ export interface SaveSettingsResult {
   notApplied: string[];
 }
 
+// GlobalSettings is read whole; a save may name only what it changes.
 export interface GlobalSettings {
-  externalRequests: ExternalRequestSettings;
+  externalRequests?: ExternalRequestSettings;
   decredPulseBotUrl?: string;
 }
 

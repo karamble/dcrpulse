@@ -115,14 +115,16 @@ optional, convenience-only data. Each is on by default:
   DCRDEX needs a session to change its sources, so a locked DCRDEX picks it up
   the next time it is unlocked, and the save says so.
 
-These preferences are persisted to the global config.
+These preferences are persisted to the global config. Changing a toggle never
+contacts the Decred Pulse bot, so the toggles save whether or not the bot is up.
 
 ### Decred Pulse Bot URL
 
 The endpoint used by the "Join Decred chat networks" invite bot. Leave it at the
 default unless you run your own brulse instance. The field accepts a URL that
 must start with `http://` or `https://`; clearing it resets the value to the
-default. Saving confirms the bot is reachable.
+default. Saving the URL confirms the bot is reachable, and is the only setting
+that contacts the bot.
 
 Automatic community joining requires the bot's `/invite` response to include
 its `botUID` and intended `gcid`. Dcrpulse accepts only a BR invitation matching

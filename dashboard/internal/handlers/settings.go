@@ -36,7 +36,7 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			Brseeder:      new(services.ExternalRequestAllowed(config.ExternalRequestBrseeder)),
 			ExchangeRates: new(services.ExternalRequestAllowed(config.ExternalRequestExchangeRates)),
 		},
-		DecredPulseBotURL: services.DefaultDecredPulseBotURL,
+		DecredPulseBotURL: new(services.DefaultDecredPulseBotURL),
 	}
 
 	if network != "" {
@@ -55,7 +55,7 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	if gc, err := config.LoadGlobalCfg(); err == nil {
 		var botURL string
 		if ok, _ := gc.Get(config.KeyDecredPulseBotURL, &botURL); ok && strings.TrimSpace(botURL) != "" {
-			globalOut.DecredPulseBotURL = strings.TrimRight(strings.TrimSpace(botURL), "/")
+			globalOut.DecredPulseBotURL = new(strings.TrimRight(strings.TrimSpace(botURL), "/"))
 		}
 	}
 
@@ -64,6 +64,13 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		Global: &globalOut,
 	})
 }
+
+// checkBotHealth is the reachability check a saved bot URL must pass, and
+// globalCfgPath where the save writes; variables so tests can stand in.
+var (
+	checkBotHealth = services.CheckDecredPulseBotHealth
+	globalCfgPath  = config.GlobalCfgPath
+)
 
 // SaveSettingsHandler updates either or both subsections. Partial
 // envelopes are accepted; unknown Decrediton keys in the underlying
@@ -112,7 +119,7 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	result := types.SaveSettingsResult{NotApplied: []string{}}
 	if req.Global != nil {
 		ratesWere := services.ExchangeRatesEnabled()
-		gc, err := config.LoadGlobalCfg()
+		gc, err := config.LoadGlobalCfgAt(globalCfgPath())
 		if err != nil {
 			settLog.Errorf("settings save: load global cfg: %v", err)
 			http.Error(w, "failed to load global settings", http.StatusInternalServerError)
@@ -128,27 +135,30 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		botURL := strings.TrimRight(strings.TrimSpace(req.Global.DecredPulseBotURL), "/")
-		if botURL != "" && !strings.HasPrefix(botURL, "http://") && !strings.HasPrefix(botURL, "https://") {
-			http.Error(w, "Decred Pulse bot URL must start with http:// or https://", http.StatusBadRequest)
-			return
-		}
-		botEnabled := true
-		if v, ok := allowed[config.ExternalRequestDecredPulseBot]; ok {
-			botEnabled = v
-		}
-		if botURL != "" && botEnabled {
-			probeCtx, probeCancel := context.WithTimeout(r.Context(), 15*time.Second)
-			err := services.CheckDecredPulseBotHealth(probeCtx, botURL)
-			probeCancel()
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadGateway)
+		// Only a save that names a bot URL contacts the bot, to check the URL.
+		if req.Global.DecredPulseBotURL != nil {
+			botURL := strings.TrimRight(strings.TrimSpace(*req.Global.DecredPulseBotURL), "/")
+			if botURL != "" && !strings.HasPrefix(botURL, "http://") && !strings.HasPrefix(botURL, "https://") {
+				http.Error(w, "Decred Pulse bot URL must start with http:// or https://", http.StatusBadRequest)
 				return
 			}
-		}
-		if err := gc.Set(config.KeyDecredPulseBotURL, botURL); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			botEnabled := true
+			if v, ok := allowed[config.ExternalRequestDecredPulseBot]; ok {
+				botEnabled = v
+			}
+			if botURL != "" && botEnabled {
+				probeCtx, probeCancel := context.WithTimeout(r.Context(), 15*time.Second)
+				err := checkBotHealth(probeCtx, botURL)
+				probeCancel()
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadGateway)
+					return
+				}
+			}
+			if err := gc.Set(config.KeyDecredPulseBotURL, botURL); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		if err := gc.Save(); err != nil {
 			settLog.Errorf("settings save: save global cfg: %v", err)

@@ -34,7 +34,8 @@ type GlobalSettings struct {
 	ExternalRequests ExternalRequestSettings `json:"externalRequests"`
 	// DecredPulseBotURL is the brulse invite-bot base URL. Empty means the
 	// https default; the BRULSE_API_URL env var still overrides it if set.
-	DecredPulseBotURL string `json:"decredPulseBotUrl,omitempty"`
+	// A save that omits it leaves the stored URL alone.
+	DecredPulseBotURL *string `json:"decredPulseBotUrl,omitempty"`
 }
 
 // SettingsEnvelope is the GET/POST body for /api/wallet/settings.
