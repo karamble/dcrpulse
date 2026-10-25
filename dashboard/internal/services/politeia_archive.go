@@ -1,0 +1,202 @@
+// Copyright (c) 2015-2026 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
+package services
+
+import (
+	"context"
+	"encoding/base64"
+	"errors"
+	"path/filepath"
+	"sort"
+	"sync/atomic"
+	"time"
+
+	"dcrpulse/internal/config"
+	"dcrpulse/internal/politeia/archive"
+	"dcrpulse/internal/politeia/verify"
+	"dcrpulse/internal/types"
+)
+
+// piArchiveStore holds the archive of finished proposals; set by tests.
+var piArchiveStore atomic.Pointer[archive.Store]
+
+// politeiaArchive returns the archive kept on the dashboard data volume.
+func politeiaArchive() *archive.Store {
+	if s := piArchiveStore.Load(); s != nil {
+		return s
+	}
+	s := archive.NewStore(filepath.Join(config.AppDataDir, "politeia"), verify.PinnedServerKey)
+	if piArchiveStore.CompareAndSwap(nil, s) {
+		return s
+	}
+	return piArchiveStore.Load()
+}
+
+// ArchiveOnlyError carries a list served from the archive alone because
+// Politeia is switched off or did not answer.
+type ArchiveOnlyError struct {
+	Err error
+}
+
+func (e *ArchiveOnlyError) Error() string { return "served from the archive: " + e.Err.Error() }
+func (e *ArchiveOnlyError) Unwrap() error { return e.Err }
+
+// Reason is "disabled" when Politeia is switched off, else "unreachable".
+func (e *ArchiveOnlyError) Reason() string {
+	if errors.Is(e.Err, ErrPoliteiaDisabled) {
+		return "disabled"
+	}
+	return "unreachable"
+}
+
+// billingStatusNames are the pi v1 billing statuses.
+var billingStatusNames = map[uint32]string{1: "active", 2: "closed", 3: "completed"}
+
+// archivedProposals lists the archived proposals in a status bucket, newest
+// vote first.
+func archivedProposals(ctx context.Context, bucket string) []types.Proposal {
+	var out []types.Proposal
+	for _, e := range politeiaArchive().All() {
+		p := proposalFromArchive(e)
+		if p.Status == bucket {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return out
+	}
+	votes, counts := loadLocalPoliteiaVotes(ctx), loadLocalPoliteiaVoteCounts(ctx)
+	for i := range out {
+		out[i].CurrentChoice = votes[out[i].Token]
+		out[i].VotedTicketCount = counts[out[i].Token]
+	}
+	sortByEndBlock(out)
+	return out
+}
+
+// withArchived adds the bucket's archived proposals that the live list does
+// not already hold, and marks the ones it does.
+func withArchived(ctx context.Context, live []types.Proposal, bucket string) []types.Proposal {
+	archived := archivedProposals(ctx, bucket)
+	if len(archived) == 0 {
+		return live
+	}
+	have := map[string]bool{}
+	for _, p := range archived {
+		have[p.Token] = true
+	}
+	out := make([]types.Proposal, 0, len(live)+len(archived))
+	for _, p := range live {
+		if have[p.Token] {
+			p.Archived = true
+			delete(have, p.Token)
+		}
+		out = append(out, p)
+	}
+	for _, p := range archived {
+		if have[p.Token] {
+			out = append(out, p)
+		}
+	}
+	sortByEndBlock(out)
+	return out
+}
+
+func sortByEndBlock(ps []types.Proposal) {
+	sort.SliceStable(ps, func(i, j int) bool { return ps[i].EndBlock > ps[j].EndBlock })
+}
+
+// proposalFromArchive is the list row of an archived proposal; its vote
+// figures are Politeia's unsigned summary.
+func proposalFromArchive(e archive.Entry) types.Proposal {
+	p, sum := e.Proposal, e.Proposal.Summary
+	out := types.Proposal{
+		Token:           p.Token(),
+		Name:            e.Checked.Metadata.Name,
+		Username:        p.Record.Username,
+		Status:          summaryStatusToBucket(sum.Status),
+		VoteStatus:      sum.Status,
+		VoteCounts:      map[string]int64{},
+		EligibleTickets: sum.EligibleTickets,
+		EndBlock:        sum.EndBlockHeight,
+		Archived:        true,
+	}
+	if out.Name == "" {
+		out.Name = p.Token()
+	}
+	for _, r := range sum.Results {
+		out.VoteCounts[r.ID] = r.Votes
+		out.TotalVotes += r.Votes
+	}
+	if sum.EligibleTickets > 0 && sum.QuorumPercentage > 0 {
+		out.QuorumMin = sum.EligibleTickets * int64(sum.QuorumPercentage) / 100
+	}
+	return out
+}
+
+// detailFromArchive is the detail view of an archived proposal, with what
+// its signatures cover.
+func detailFromArchive(e archive.Entry, serverKey string) *types.ProposalDetail {
+	p := e.Proposal
+	d := &types.ProposalDetail{
+		Proposal:    proposalFromArchive(e),
+		SubmittedAt: p.Record.Timestamp,
+	}
+	for _, f := range p.Record.Files {
+		if f.Name == "index.md" {
+			if raw, err := base64.StdEncoding.DecodeString(f.Payload); err == nil {
+				d.Description = string(raw)
+				d.DescriptionHTML = renderProposalMarkdown(d.Description)
+			}
+		}
+	}
+	// The started vote's options are signed; the summary's are not.
+	if p.Vote != nil {
+		for _, o := range p.Vote.Params.Options {
+			d.VoteOptions = append(d.VoteOptions, types.ProposalVoteOption{ID: o.ID, Bit: uint32(o.Bit)})
+		}
+	} else {
+		for _, r := range p.Summary.Results {
+			d.VoteOptions = append(d.VoteOptions, types.ProposalVoteOption{ID: r.ID, Bit: uint32(r.VoteBit)})
+		}
+	}
+	d.Comments = commentsFromPi(p.Comments)
+
+	v := &types.ProposalVerification{
+		ServerKey:       serverKey,
+		Migrated:        e.Checked.Migrated(),
+		LegacyToken:     e.Checked.Metadata.LegacyToken,
+		Comments:        len(p.Comments),
+		CommentsLeftOut: len(p.DroppedComments),
+		Authorized:      len(p.Auths) > 0,
+		Source:          p.Source,
+		ArchivedAt:      p.ArchivedAt,
+	}
+	if e.Checked.Author != nil {
+		v.AuthorKey = e.Checked.Author.PublicKey
+	}
+	if p.Vote != nil {
+		v.VoteStartKey = p.Vote.PublicKey
+	}
+	if n := len(p.Billing); n > 0 {
+		v.BillingStatus = billingStatusNames[p.Billing[n-1].Status]
+	}
+	d.Verification = v
+	return d
+}
+
+// archivedDetail returns the archived detail of a proposal, with the
+// wallet's own vote applied.
+func archivedDetail(ctx context.Context, token string) (*types.ProposalDetail, time.Time, bool) {
+	s := politeiaArchive()
+	e, ok := s.Get(token)
+	if !ok {
+		return nil, time.Time{}, false
+	}
+	d := detailFromArchive(e, s.ServerKey())
+	d.CurrentChoice = loadLocalPoliteiaVotes(ctx)[token]
+	d.VotedTicketCount = loadLocalPoliteiaVoteCounts(ctx)[token]
+	return d, time.Unix(e.Proposal.ArchivedAt, 0), true
+}

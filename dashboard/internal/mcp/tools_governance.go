@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -86,6 +87,8 @@ type leanProposalDetail struct {
 	SubmittedAt int64                      `json:"submittedAt"`
 	VoteOptions []types.ProposalVoteOption `json:"voteOptions"`
 	Comments    []leanProposalComment      `json:"comments"`
+	// Verification is set for an archived proposal.
+	Verification *types.ProposalVerification `json:"verification,omitempty"`
 }
 
 // shapeProposalDetail returns the detail as-is when includeHtml is set, otherwise a
@@ -95,11 +98,12 @@ func shapeProposalDetail(d *types.ProposalDetail, includeHtml bool) any {
 		return d
 	}
 	lean := leanProposalDetail{
-		Proposal:    d.Proposal,
-		Description: d.Description,
-		SubmittedAt: d.SubmittedAt,
-		VoteOptions: d.VoteOptions,
-		Comments:    make([]leanProposalComment, len(d.Comments)),
+		Proposal:     d.Proposal,
+		Description:  d.Description,
+		SubmittedAt:  d.SubmittedAt,
+		VoteOptions:  d.VoteOptions,
+		Comments:     make([]leanProposalComment, len(d.Comments)),
+		Verification: d.Verification,
 	}
 	for i, c := range d.Comments {
 		lean.Comments[i] = leanProposalComment{
@@ -154,20 +158,21 @@ var governanceTools = []toolDef{
 		"List the wallet's treasury-spend (TSpend) voting policies.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return services.ListTSpendPolicies(ctx) }),
 	readTool("governance", "governance_proposals",
-		"List Politeia governance proposals for one status bucket: pre-vote, voting (default), finished, or abandoned.",
+		"List Politeia governance proposals for one status bucket: pre-vote, voting (default), finished, or abandoned. Rows with archived=true are kept, signature-verified, on the dashboard and are served even while Politeia is off or down; their tallies are reported by Politeia, not signed.",
 		func(ctx context.Context, in proposalsListInput) (any, error) {
 			bucket, err := proposalBucketOrDefault(in.Status)
 			if err != nil {
 				return nil, err
 			}
+			// With Politeia off or down, the archived proposals still answer.
 			proposals, _, err := services.ListProposals(ctx, bucket)
-			if err != nil {
+			if err != nil && !errors.As(err, new(*services.ArchiveOnlyError)) {
 				return nil, err
 			}
 			return proposals, nil
 		}),
 	readTool("governance", "governance_proposal_detail",
-		"Get one Politeia proposal's full record (cached, auto-fetched on first access). Rendered HTML is omitted unless includeHtml is set.",
+		"Get one Politeia proposal's full record (cached, auto-fetched on first access). Rendered HTML is omitted unless includeHtml is set. An archived proposal carries a verification block naming what its verified signatures cover.",
 		func(ctx context.Context, in proposalDetailInput) (any, error) {
 			detail, _, err := services.GetProposalDetail(ctx, in.Token)
 			if err != nil {

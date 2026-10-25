@@ -171,8 +171,9 @@ func SetTSpendPolicyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeProposalsResponse encodes the proposals envelope (list + last-fetch time
-// + when a manual refresh is next allowed) at the given status.
-func writeProposalsResponse(w http.ResponseWriter, status int, proposals []types.Proposal, fetchedAt time.Time, hasMore bool) {
+// + when a manual refresh is next allowed) at the given status. offline names
+// why a list of archived proposals only was served.
+func writeProposalsResponse(w http.ResponseWriter, status int, proposals []types.Proposal, fetchedAt time.Time, hasMore bool, offline string) {
 	if proposals == nil {
 		proposals = []types.Proposal{}
 	}
@@ -186,6 +187,7 @@ func writeProposalsResponse(w http.ResponseWriter, status int, proposals []types
 		FetchedAt:          fetched,
 		RefreshAvailableAt: refreshAt,
 		HasMore:            hasMore,
+		Offline:            offline,
 	})
 }
 
@@ -203,6 +205,11 @@ func GetProposalsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), services.ProposalsFetchTimeout)
 	defer cancel()
 	proposals, fetchedAt, err := services.ListProposals(ctx, bucket)
+	var archived *services.ArchiveOnlyError
+	if errors.As(err, &archived) {
+		writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, false, archived.Reason())
+		return
+	}
 	if err != nil {
 		if errors.Is(err, services.ErrPoliteiaDisabled) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -212,7 +219,7 @@ func GetProposalsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, services.ProposalsHaveMore(bucket))
+	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, services.ProposalsHaveMore(bucket), "")
 }
 
 // RefreshProposalsHandler forces a Politeia re-fetch, subject to the refresh
@@ -236,14 +243,14 @@ func RefreshProposalsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, services.ErrProposalsRefreshCoolingDown) {
-			writeProposalsResponse(w, http.StatusTooManyRequests, proposals, fetchedAt, services.ProposalsHaveMore(bucket))
+			writeProposalsResponse(w, http.StatusTooManyRequests, proposals, fetchedAt, services.ProposalsHaveMore(bucket), "")
 			return
 		}
 		govnLog.Errorf("RefreshProposals: %v", err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, services.ProposalsHaveMore(bucket))
+	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, services.ProposalsHaveMore(bucket), "")
 }
 
 // LoadMoreProposalsHandler appends the next inventory page of each of the
@@ -270,7 +277,7 @@ func LoadMoreProposalsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, services.ProposalsHaveMore(bucket))
+	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, services.ProposalsHaveMore(bucket), "")
 }
 
 // writeProposalDetailResponse encodes the proposal-detail envelope (record +

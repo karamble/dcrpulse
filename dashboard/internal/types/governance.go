@@ -153,6 +153,8 @@ type Proposal struct {
 	BlocksLeft       int64            `json:"blocksLeft"`
 	CurrentChoice    string           `json:"currentChoice"`
 	VotedTicketCount int              `json:"votedTicketCount"`
+	// Archived is a proposal kept, signature-verified, on the dashboard.
+	Archived bool `json:"archived,omitempty"`
 }
 
 // ProposalVoteOption mirrors Politeia's vote option definition.
@@ -187,6 +189,30 @@ type ProposalDetail struct {
 	SubmittedAt     int64                `json:"submittedAt"`
 	VoteOptions     []ProposalVoteOption `json:"voteOptions"`
 	Comments        []ProposalComment    `json:"comments"`
+	// Verification is set for an archived proposal.
+	Verification *ProposalVerification `json:"verification,omitempty"`
+}
+
+// ProposalVerification says which parts of an archived proposal carry
+// verified signatures. The rest is reported by Politeia and signed by
+// nobody: the vote summary, statuses, dates and comment vote counts.
+type ProposalVerification struct {
+	// ServerKey signed the text, each comment's receipt and the vote start.
+	ServerKey string `json:"serverKey"`
+	// AuthorKey signed the text; empty for a migrated proposal.
+	AuthorKey string `json:"authorKey,omitempty"`
+	// Migrated proposals were moved off Politeia's old backend in 2021,
+	// which blanked their author signature, comments and vote records.
+	Migrated        bool   `json:"migrated"`
+	LegacyToken     string `json:"legacyToken,omitempty"`
+	Comments        int    `json:"comments"`
+	CommentsLeftOut int    `json:"commentsLeftOut"`
+	Authorized      bool   `json:"authorized"`
+	VoteStartKey    string `json:"voteStartKey,omitempty"`
+	BillingStatus   string `json:"billingStatus,omitempty"`
+	// Source is where the archived copy came from: snapshot, refresh or import.
+	Source     string `json:"source"`
+	ArchivedAt int64  `json:"archivedAt"`
 }
 
 // VoteEligibility is what the vote modal needs when the user opens it: how many
@@ -224,6 +250,9 @@ type ProposalsResponse struct {
 	FetchedAt          int64      `json:"fetchedAt"`
 	RefreshAvailableAt int64      `json:"refreshAvailableAt"`
 	HasMore            bool       `json:"hasMore"`
+	// Offline is "disabled" or "unreachable" when Politeia could not be
+	// asked and the list holds archived proposals only.
+	Offline string `json:"offline,omitempty"`
 }
 
 // ProposalDetailResponse is the envelope for the proposal-detail endpoint: the

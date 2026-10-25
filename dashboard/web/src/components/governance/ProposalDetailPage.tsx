@@ -1,8 +1,8 @@
-// Copyright (c) 2015-2025 The Decred developers
+// Copyright (c) 2015-2026 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -11,14 +11,17 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  Info,
   Loader2,
   MessageSquare,
   RefreshCw,
+  ShieldCheck,
   Vote,
 } from 'lucide-react';
 import {
   ProposalComment,
   ProposalDetail,
+  ProposalVerification,
   getProposalDetail,
   refreshProposalDetail,
 } from '../../services/api';
@@ -132,6 +135,104 @@ const CommentThread = ({ node, now, depth }: { node: CommentNode; now: number; d
   );
 };
 
+const sourceLabel: Record<ProposalVerification['source'], string> = {
+  snapshot: 'the snapshot shipped with dcrpulse',
+  refresh: 'a refresh from Politeia',
+  import: 'an imported archive file',
+};
+
+const SignatureRow = ({
+  signed,
+  label,
+  children,
+}: {
+  signed: boolean;
+  label: string;
+  children: ReactNode;
+}) => (
+  <li className="flex items-start gap-2">
+    {signed ? (
+      <CheckCircle2 className="h-4 w-4 text-success shrink-0 mt-0.5" />
+    ) : (
+      <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+    )}
+    <div className="min-w-0">
+      <span className="font-medium">{label}:</span>{' '}
+      <span className="text-muted-foreground">{children}</span>
+    </div>
+  </li>
+);
+
+const Mono = ({ text }: { text: string }) => (
+  <span className="block font-mono text-xs break-all text-foreground/70">{text}</span>
+);
+
+// VerificationPanel lists which parts of an archived proposal carry verified
+// signatures and which Politeia reports unsigned.
+const VerificationPanel = ({ v }: { v: ProposalVerification }) => (
+  <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-3">
+    <h3 className="font-semibold flex items-center gap-2">
+      <ShieldCheck className="h-4 w-4 text-success" />
+      Signatures
+    </h3>
+    <ul className="space-y-2 text-sm">
+      <SignatureRow signed label="Text">
+        signed by the Politeia server
+        <Mono text={v.serverKey} />
+      </SignatureRow>
+      {v.authorKey ? (
+        <SignatureRow signed label="Author">
+          signed by the author
+          <Mono text={v.authorKey} />
+        </SignatureRow>
+      ) : (
+        <SignatureRow signed={false} label="Author">
+          original signature lost when Politeia migrated this proposal in 2021
+          {v.legacyToken && <Mono text={`old token ${v.legacyToken}`} />}
+        </SignatureRow>
+      )}
+      {v.migrated ? (
+        <SignatureRow signed={false} label="Comments, vote and billing records">
+          not archived: the 2021 migration left them without signatures
+        </SignatureRow>
+      ) : (
+        <>
+          <SignatureRow signed label="Comments">
+            {v.comments} verified, each with its signature and server receipt
+            {v.commentsLeftOut > 0 &&
+              `; ${v.commentsLeftOut} left out because their signatures did not verify`}
+          </SignatureRow>
+          <SignatureRow signed={v.authorized} label="Vote authorization">
+            {v.authorized ? 'signed by the author, with a server receipt' : 'none archived'}
+          </SignatureRow>
+          <SignatureRow signed={!!v.voteStartKey} label="Vote start">
+            {v.voteStartKey ? (
+              <>
+                signed by an admin, with a server receipt
+                <Mono text={v.voteStartKey} />
+              </>
+            ) : (
+              'none archived'
+            )}
+          </SignatureRow>
+          <SignatureRow signed={!!v.billingStatus} label="Billing status">
+            {v.billingStatus
+              ? `${v.billingStatus}, signed by an admin, with a server receipt`
+              : 'none archived'}
+          </SignatureRow>
+        </>
+      )}
+      <SignatureRow signed={false} label="Reported by Politeia, not signed">
+        the vote tally, statuses, dates and comment votes
+      </SignatureRow>
+    </ul>
+    <p className="text-xs text-muted-foreground pt-2 border-t border-border/30">
+      Archived from {sourceLabel[v.source] ?? v.source} on{' '}
+      {new Date(v.archivedAt * 1000).toLocaleDateString()}.
+    </p>
+  </div>
+);
+
 export const ProposalDetailPage = () => {
   const { token } = useParams<{ token: string }>();
   const [detail, setDetail] = useState<ProposalDetail | null>(null);
@@ -235,7 +336,9 @@ export const ProposalDetailPage = () => {
         </Link>
         <div className="ml-auto flex items-center gap-3">
           {fetchedAt > 0 && (
-            <span className="text-xs text-muted-foreground">updated {formatAgo(now - fetchedAt)}</span>
+            <span className="text-xs text-muted-foreground">
+              {detail.verification ? 'archived' : 'updated'} {formatAgo(now - fetchedAt)}
+            </span>
           )}
           <button
             type="button"
@@ -315,9 +418,16 @@ export const ProposalDetailPage = () => {
               eligibleTickets={detail.eligibleTickets}
               quorumMin={detail.quorumMin}
             />
+            {detail.verification && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Tally reported by Politeia, not signed.
+              </p>
+            )}
           </div>
         )}
       </div>
+
+      {detail.verification && <VerificationPanel v={detail.verification} />}
 
       {isVoting && !isWatchOnly && (
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-3">
@@ -383,6 +493,10 @@ export const ProposalDetailPage = () => {
               <CommentThread key={node.commentID} node={node} now={now} depth={0} />
             ))}
           </div>
+        ) : detail.verification?.migrated ? (
+          <p className="text-sm text-muted-foreground">
+            Comments of proposals migrated in 2021 are not archived.
+          </p>
         ) : (
           <p className="text-sm text-muted-foreground">No comments on this proposal yet.</p>
         )}

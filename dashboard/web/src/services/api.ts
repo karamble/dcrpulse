@@ -1167,6 +1167,8 @@ export interface Proposal {
   blocksLeft: number;
   currentChoice: string;
   votedTicketCount: number;
+  // archived is a proposal kept, signature-verified, on the dashboard.
+  archived?: boolean;
 }
 
 export interface ProposalVoteOption {
@@ -1196,6 +1198,24 @@ export interface ProposalDetail extends Proposal {
   submittedAt: number;
   voteOptions: ProposalVoteOption[];
   comments?: ProposalComment[];
+  verification?: ProposalVerification;
+}
+
+// ProposalVerification says which parts of an archived proposal carry verified
+// signatures. A migrated proposal moved off Politeia's old backend in 2021 and
+// keeps only its server-signed text.
+export interface ProposalVerification {
+  serverKey: string;
+  authorKey?: string;
+  migrated: boolean;
+  legacyToken?: string;
+  comments: number;
+  commentsLeftOut: number;
+  authorized: boolean;
+  voteStartKey?: string;
+  billingStatus?: string;
+  source: 'snapshot' | 'refresh' | 'import';
+  archivedAt: number;
 }
 
 export interface CastVoteResult {
@@ -1280,6 +1300,9 @@ export interface ProposalsResponse {
   fetchedAt: number;
   refreshAvailableAt: number;
   hasMore: boolean;
+  // offline is set when Politeia could not be asked and the list holds
+  // archived proposals only.
+  offline?: 'disabled' | 'unreachable';
 }
 
 // getProposals returns the cached proposals envelope. The backend caches the

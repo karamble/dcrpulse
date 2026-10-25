@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/config"
+	"dcrpulse/internal/politeia/verify"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
@@ -138,21 +139,36 @@ type piPreparedVote struct {
 // their summary tallies, plus the time of the last successful fetch. The
 // list is cached in-process indefinitely; an empty cache (e.g. after a
 // restart) auto-fetches once on first access. Use RefreshProposals to force
-// a re-fetch. Returns ErrPoliteiaDisabled if the toggle is off.
+// a re-fetch. The bucket's archived proposals are added; when Politeia is off
+// or does not answer they are returned alone with an ArchiveOnlyError, and
+// without any, its error is returned.
 func ListProposals(ctx context.Context, bucket string) ([]types.Proposal, time.Time, error) {
 	if !PoliteiaEnabled() {
-		return nil, time.Time{}, ErrPoliteiaDisabled
+		return archiveOnly(ctx, bucket, ErrPoliteiaDisabled)
 	}
 
 	piCacheMu.RLock()
 	if e, ok := piCachedLists[bucket]; ok {
 		list, at := e.list, e.at
 		piCacheMu.RUnlock()
-		return list, at, nil
+		return withArchived(ctx, list, bucket), at, nil
 	}
 	piCacheMu.RUnlock()
 
-	return ensureProposalsCached(ctx, bucket)
+	list, at, err := ensureProposalsCached(ctx, bucket)
+	if err != nil {
+		return archiveOnly(ctx, bucket, err)
+	}
+	return withArchived(ctx, list, bucket), at, nil
+}
+
+// archiveOnly answers a list read Politeia could not serve from the archive
+// when it holds proposals of the bucket, else with err.
+func archiveOnly(ctx context.Context, bucket string, err error) ([]types.Proposal, time.Time, error) {
+	if archived := archivedProposals(ctx, bucket); len(archived) > 0 {
+		return archived, time.Time{}, &ArchiveOnlyError{Err: err}
+	}
+	return nil, time.Time{}, err
 }
 
 // ensureProposalsCached performs the cold list fill under piListFetchMu so
@@ -188,8 +204,17 @@ func ensureProposalsCached(ctx context.Context, bucket string) ([]types.Proposal
 // ProposalsRefreshCooldown measured from the last successful fetch. While
 // cooling down it returns the cached list, the last-fetch time, and
 // ErrProposalsRefreshCoolingDown. On success it returns the fresh list and
-// the new fetch time. A failed fetch does not start the cooldown.
+// the new fetch time. A failed fetch does not start the cooldown. Either list
+// includes the bucket's archived proposals.
 func RefreshProposals(ctx context.Context, bucket string) ([]types.Proposal, time.Time, error) {
+	list, at, err := refreshProposals(ctx, bucket)
+	if list != nil {
+		list = withArchived(ctx, list, bucket)
+	}
+	return list, at, err
+}
+
+func refreshProposals(ctx context.Context, bucket string) ([]types.Proposal, time.Time, error) {
 	if !PoliteiaEnabled() {
 		return nil, time.Time{}, ErrPoliteiaDisabled
 	}
@@ -227,8 +252,17 @@ func ProposalsHaveMore(bucket string) bool {
 // LoadMoreProposals fetches the next inventory page for each of the bucket's
 // statuses that still has one, enriches only the new tokens, and appends them
 // to the cached list. Unlike a refresh it never discards what is already
-// cached, and a failure leaves the cache untouched for a retry.
-func LoadMoreProposals(_ context.Context, bucket string) ([]types.Proposal, time.Time, error) {
+// cached, and a failure leaves the cache untouched for a retry. The list
+// includes the bucket's archived proposals.
+func LoadMoreProposals(ctx context.Context, bucket string) ([]types.Proposal, time.Time, error) {
+	list, at, err := loadMoreProposals(bucket)
+	if err != nil {
+		return nil, at, err
+	}
+	return withArchived(ctx, list, bucket), at, nil
+}
+
+func loadMoreProposals(bucket string) ([]types.Proposal, time.Time, error) {
 	if !PoliteiaEnabled() {
 		return nil, time.Time{}, ErrPoliteiaDisabled
 	}
@@ -492,13 +526,18 @@ func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal,
 // GetProposalDetail returns one proposal with full description + vote options,
 // plus the time it was fetched. Cached in-process indefinitely (per token);
 // auto-fetched on first access and cleared on a successful cast-vote against
-// the token. Use RefreshProposalDetail to force a re-fetch.
+// the token. Use RefreshProposalDetail to force a re-fetch. An archived
+// proposal is served from the archive.
 func GetProposalDetail(ctx context.Context, token string) (*types.ProposalDetail, time.Time, error) {
-	if !PoliteiaEnabled() {
-		return nil, time.Time{}, ErrPoliteiaDisabled
-	}
 	if token == "" {
 		return nil, time.Time{}, fmt.Errorf("token required")
+	}
+	// An archived proposal is read from disk, Politeia switched on or not.
+	if d, at, ok := archivedDetail(ctx, token); ok {
+		return d, at, nil
+	}
+	if !PoliteiaEnabled() {
+		return nil, time.Time{}, ErrPoliteiaDisabled
 	}
 
 	piCacheMu.RLock()
@@ -1111,7 +1150,6 @@ var piStatusName = map[int]string{
 	5: "approved",
 	6: "rejected",
 	7: "ineligible",
-	8: "abandoned",
 }
 
 type piVoteResultEntry struct {
@@ -1140,19 +1178,7 @@ type piCastVote struct {
 }
 
 type piCommentsResp struct {
-	Comments []piComment `json:"comments"`
-}
-
-type piComment struct {
-	CommentID uint32 `json:"commentid"`
-	ParentID  uint32 `json:"parentid"`
-	Username  string `json:"username"`
-	Comment   string `json:"comment"`
-	CreatedAt int64  `json:"createdat"`
-	Upvotes   int64  `json:"upvotes"`
-	Downvotes int64  `json:"downvotes"`
-	Deleted   bool   `json:"deleted"`
-	Reason    string `json:"reason"`
+	Comments []verify.Comment `json:"comments"`
 }
 
 type piVoteSection struct {
@@ -1190,6 +1216,7 @@ var piVoteStatusEnum = map[string]int{
 	"unauthorized": 1,
 	"authorized":   2,
 	"started":      3,
+	"finished":     4,
 	"approved":     5,
 	"rejected":     6,
 	"ineligible":   7,
@@ -1299,7 +1326,7 @@ func piResults(ctx context.Context, token string) ([]piCastVote, error) {
 
 // piComments fetches the full comment thread for a proposal. Politeia returns
 // every comment for the record in a single response (no pagination).
-func piComments(ctx context.Context, token string) ([]piComment, error) {
+func piComments(ctx context.Context, token string) ([]verify.Comment, error) {
 	body := struct {
 		Token string `json:"token"`
 	}{Token: token}
@@ -1376,9 +1403,11 @@ func bucketStatuses(bucket string) []string {
 	case "pre-vote":
 		return []string{"authorized", "unauthorized"}
 	case "finished":
-		return []string{"approved", "rejected", "ineligible"}
+		return []string{"approved", "rejected", "finished"}
 	case "abandoned":
-		return []string{"abandoned"}
+		// Politeia has no abandoned vote status: a proposal abandoned or
+		// censored before its vote ends up ineligible.
+		return []string{"ineligible"}
 	}
 	return nil
 }
@@ -1443,9 +1472,9 @@ func summaryStatusToBucket(status string) string {
 		return "pre-vote"
 	case "started":
 		return "voting"
-	case "approved", "rejected", "ineligible":
+	case "approved", "rejected", "finished":
 		return "finished"
-	case "abandoned":
+	case "ineligible":
 		return "abandoned"
 	}
 	if status == "" {
@@ -1480,7 +1509,7 @@ func proposalName(token string, rec piRecord) string {
 // commentsFromPi maps Politeia comments to the frontend shape, sorted oldest
 // first. Deleted comments keep their reason but have no displayable text;
 // Politeia already blanks the comment body in that case.
-func commentsFromPi(in []piComment) []types.ProposalComment {
+func commentsFromPi(in []verify.Comment) []types.ProposalComment {
 	out := make([]types.ProposalComment, 0, len(in))
 	for _, c := range in {
 		pc := types.ProposalComment{
@@ -1488,8 +1517,8 @@ func commentsFromPi(in []piComment) []types.ProposalComment {
 			ParentID:  c.ParentID,
 			Username:  c.Username,
 			CreatedAt: c.CreatedAt,
-			Upvotes:   c.Upvotes,
-			Downvotes: c.Downvotes,
+			Upvotes:   int64(c.Upvotes),
+			Downvotes: int64(c.Downvotes),
 			Deleted:   c.Deleted,
 			Reason:    c.Reason,
 		}

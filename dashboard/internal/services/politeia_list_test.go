@@ -226,7 +226,7 @@ func TestCompleteFetchIsCached(t *testing.T) {
 
 // pagedInventoryRouter serves a policy page size of 3 and an inventory where
 // "approved" spans two pages (a1-a3, then a4-a5), "rejected" is short on page
-// one and "ineligible" is empty - so the finished bucket starts with more to
+// one and "finished" is absent - so the finished bucket starts with more to
 // load and ends exhausted after one load-more.
 func pagedInventoryRouter(t *testing.T, pages *[]string) {
 	t.Helper()
@@ -243,7 +243,7 @@ func pagedInventoryRouter(t *testing.T, pages *[]string) {
 			*pages = append(*pages, fmt.Sprintf("s%d-p%d", req.Status, req.Page))
 			switch {
 			case req.Status == 0:
-				_, _ = w.Write([]byte(`{"vetted":{"approved":["a1","a2","a3"],"rejected":["r1"],"ineligible":[]},"bestblock":100}`))
+				_, _ = w.Write([]byte(`{"vetted":{"approved":["a1","a2","a3"],"rejected":["r1"]},"bestblock":100}`))
 			case req.Status == 5 && req.Page == 2:
 				_, _ = w.Write([]byte(`{"vetted":{"approved":["a4","a5"]},"bestblock":100}`))
 			default:
@@ -289,7 +289,7 @@ func TestLoadMoreProposalsPagesEachStatus(t *testing.T) {
 	}
 
 	// Exactly one paged request, for approved (enum 5) page 2: rejected and
-	// ineligible were short on page one and must not be asked again.
+	// finished were short on page one and must not be asked again.
 	var paged []string
 	for _, p := range pages {
 		if p != "s0-p0" {

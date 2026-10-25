@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, ExternalLink, Filter, Loader2, RefreshCw, ShieldOff } from 'lucide-react';
+import { AlertCircle, Archive, ExternalLink, Filter, Loader2, RefreshCw, ShieldOff } from 'lucide-react';
 import { Proposal, getProposals, refreshProposals, loadMoreProposals } from '../../services/api';
 import { VoteResultsBar } from './VoteResultsBar';
 import { VoteTrickleCard } from './VoteTrickleCard';
@@ -21,7 +21,7 @@ const statusBadge = (voteStatus: string) => {
       return 'bg-success/15 text-success border border-success/30';
     case 'rejected':
       return 'bg-warning/15 text-warning border border-warning/30';
-    case 'abandoned':
+    case 'ineligible':
       return 'bg-destructive/15 text-destructive border border-destructive/30';
     case 'started':
       return 'bg-info/15 text-info border border-info/30';
@@ -65,6 +65,7 @@ export const ProposalsTab = () => {
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [disabled, setDisabled] = useState(false);
+  const [offline, setOffline] = useState<'disabled' | 'unreachable' | undefined>();
   const [filter, setFilter] = useState<(typeof statusBuckets)[number]>('voting');
   // now (unix seconds) drives the live countdown / "updated X ago" display.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
@@ -76,6 +77,8 @@ export const ProposalsTab = () => {
     setLoading(true);
     setProposals([]);
     setError(null);
+    setDisabled(false);
+    setOffline(undefined);
     setHasMore(false);
     setLoadMoreError(null);
     (async () => {
@@ -86,6 +89,7 @@ export const ProposalsTab = () => {
         setFetchedAt(r.fetchedAt);
         setRefreshAvailableAt(r.refreshAvailableAt);
         setHasMore(!!r.hasMore);
+        setOffline(r.offline);
       } catch (err: any) {
         if (cancelled) return;
         if (err?.response?.status === 503) {
@@ -134,6 +138,7 @@ export const ProposalsTab = () => {
       setFetchedAt(r.fetchedAt);
       setRefreshAvailableAt(r.refreshAvailableAt);
       setHasMore(!!r.hasMore);
+      setOffline(undefined);
     } catch (err: any) {
       const status = err?.response?.status;
       const data = err?.response?.data;
@@ -153,27 +158,6 @@ export const ProposalsTab = () => {
     }
   };
 
-  if (disabled) {
-    return (
-      <div className="p-6 rounded-xl bg-gradient-card border border-warning/30 bg-warning/5 space-y-3">
-        <div className="flex items-center gap-2">
-          <ShieldOff className="h-5 w-5 text-warning" />
-          <h3 className="font-semibold">Politeia is disabled in Settings</h3>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Enable the Politeia external-request toggle to fetch off-chain proposals from
-          proposals.decred.org.
-        </p>
-        <Link
-          to="/wallet/settings/privacy"
-          className="inline-block text-sm text-primary hover:underline"
-        >
-          Open Privacy &amp; Security settings
-        </Link>
-      </div>
-    );
-  }
-
   if (loading && proposals.length === 0) {
     return (
       <div className="p-6 rounded-xl bg-gradient-card border border-border/50 text-sm text-muted-foreground flex items-center gap-2">
@@ -183,18 +167,11 @@ export const ProposalsTab = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="p-4 rounded-xl bg-destructive/5 border border-destructive/30 text-sm text-destructive flex items-center gap-2">
-        <AlertCircle className="h-4 w-4" />
-        {error}
-      </div>
-    );
-  }
+  const politeiaOff = disabled || offline === 'disabled';
 
   return (
     <div className="space-y-4">
-      <VoteTrickleCard />
+      {!politeiaOff && <VoteTrickleCard />}
       <div className="flex items-center gap-3">
         <Filter className="h-4 w-4 text-muted-foreground" />
         <select
@@ -208,32 +185,38 @@ export const ProposalsTab = () => {
             </option>
           ))}
         </select>
-        <span className="text-xs text-muted-foreground">
-          {proposals.length} proposals
-        </span>
-        <div className="ml-auto flex items-center gap-3">
-          {fetchedAt > 0 && (
-            <span className="text-xs text-muted-foreground">updated {formatAgo(now - fetchedAt)}</span>
-          )}
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={!canRefresh}
-            title={
-              canRefresh
-                ? 'Refresh proposals from Politeia'
-                : `Next refresh available in ${formatDuration(cooldownRemaining)}`
-            }
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-border/50 bg-background hover:bg-muted/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing
-              ? 'Refreshing...'
-              : cooldownRemaining > 0
-                ? `Refresh in ${formatDuration(cooldownRemaining)}`
-                : 'Refresh'}
-          </button>
-        </div>
+        {!disabled && !error && (
+          <span className="text-xs text-muted-foreground">
+            {proposals.length} proposals
+          </span>
+        )}
+        {!politeiaOff && (
+          <div className="ml-auto flex items-center gap-3">
+            {fetchedAt > 0 && (
+              <span className="text-xs text-muted-foreground">
+                updated {formatAgo(now - fetchedAt)}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={!canRefresh}
+              title={
+                canRefresh
+                  ? 'Refresh proposals from Politeia'
+                  : `Next refresh available in ${formatDuration(cooldownRemaining)}`
+              }
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-border/50 bg-background hover:bg-muted/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing
+                ? 'Refreshing...'
+                : cooldownRemaining > 0
+                  ? `Refresh in ${formatDuration(cooldownRemaining)}`
+                  : 'Refresh'}
+            </button>
+          </div>
+        )}
       </div>
 
       {refreshError && (
@@ -243,7 +226,41 @@ export const ProposalsTab = () => {
         </div>
       )}
 
-      {proposals.length === 0 ? (
+      {offline && (
+        <div className="p-4 rounded-xl border border-warning/30 bg-warning/5 text-sm text-muted-foreground flex items-start gap-2">
+          <Archive className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+          <span>
+            {offline === 'disabled'
+              ? 'Politeia is disabled in Settings.'
+              : 'Politeia did not answer.'}{' '}
+            Showing the archived proposals kept on this dashboard, signatures verified.
+          </span>
+        </div>
+      )}
+
+      {disabled ? (
+        <div className="p-6 rounded-xl bg-gradient-card border border-warning/30 bg-warning/5 space-y-3">
+          <div className="flex items-center gap-2">
+            <ShieldOff className="h-5 w-5 text-warning" />
+            <h3 className="font-semibold">Politeia is disabled in Settings</h3>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Enable the Politeia external-request toggle to fetch off-chain proposals from
+            proposals.decred.org. Finished proposals archived on this dashboard stay readable.
+          </p>
+          <Link
+            to="/wallet/settings/privacy"
+            className="inline-block text-sm text-primary hover:underline"
+          >
+            Open Privacy &amp; Security settings
+          </Link>
+        </div>
+      ) : error ? (
+        <div className="p-4 rounded-xl bg-destructive/5 border border-destructive/30 text-sm text-destructive flex items-center gap-2">
+          <AlertCircle className="h-4 w-4" />
+          {error}
+        </div>
+      ) : proposals.length === 0 ? (
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50 text-sm text-muted-foreground">
           No {filter} proposals.
         </div>
@@ -269,6 +286,15 @@ export const ProposalsTab = () => {
                   >
                     {p.voteStatus}
                   </span>
+                  {p.archived && (
+                    <span
+                      title="Kept on this dashboard, signatures verified"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-muted-foreground border border-border/50"
+                    >
+                      <Archive className="h-3 w-3" />
+                      archived
+                    </span>
+                  )}
                   {p.blocksLeft > 0 && (
                     <span className="text-sm text-muted-foreground">
                       {p.blocksLeft.toLocaleString()} blocks left
