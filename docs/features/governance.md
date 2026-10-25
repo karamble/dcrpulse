@@ -140,7 +140,7 @@ Enable the Politeia external-request toggle to fetch off-chain
 proposals from proposals.decred.org.
 ```
 
-with a link to **Privacy & Security settings**. Enable the Politeia external-request toggle there to use this tab.
+with a link to **Privacy & Security settings**. Enable the Politeia external-request toggle there to use this tab. The **finished** and **abandoned** filters still list the proposals archived on the dashboard (see [The proposal archive](#the-proposal-archive)), since reading them asks no outside server.
 
 #### Browsing proposals
 
@@ -153,14 +153,16 @@ When enabled, the tab lists proposals with:
   - **started** - voting is open
   - **approved** - passed
   - **rejected** - did not pass
-  - **abandoned** - withdrawn
+  - **finished** - the vote ended without an approved or rejected outcome, as a multiple-choice vote does
+  - **ineligible** - abandoned or censored before a vote
+- **archived** - the proposal is kept on the dashboard with its signatures verified.
 - **Blocks left** - for proposals in active voting.
 - A **vote results bar** (yes / no / abstain split, cast vs. eligible tickets, and whether quorum is reached) for proposals where voting has begun.
 - **you voted: X** - shown when your wallet has already voted on a proposal (see the local cache below).
 
 **Filtering**
 
-A status filter narrows the list. The buckets are **all**, **voting**, **pre-vote**, **finished**, and **abandoned**. The tab opens on **voting** so active votes are front and center.
+A status filter narrows the list. The buckets are **voting**, **pre-vote**, **finished** (approved, rejected and finished votes), and **abandoned** (ineligible proposals). There is no "all" bucket: each filter fetches only its own statuses. The tab opens on **voting** so active votes are front and center.
 
 **Refreshing**
 
@@ -183,6 +185,40 @@ Clicking a proposal opens its detail page (`/wallet/governance/proposals/:token`
 - **Description** - the proposal body, rendered from Politeia's markdown. Embedded images are not loaded; the page links out to Politeia for the original visuals and formatting.
 - **Cast your vote** section (only while the proposal is in **voting**) - opens the vote modal.
 - **Discussion** - the Politeia comment thread, rendered as a reply tree with up/down vote counts and a net score per comment. Deleted comments are shown as removed rather than dropped.
+- **Signatures** and **Votes** - for an archived proposal; see below.
+
+#### The proposal archive
+
+Finished proposals no longer change on Politeia, so dcrpulse keeps them on the dashboard's data volume (`politeia/<token>.json`) and reads them from there. The archive answers while Politeia is switched off in Settings or does not respond.
+
+**What goes in.** Opening or refreshing a finished proposal (approved, rejected, finished or ineligible) while Politeia answers fetches all of it: the full record with its images, the comments, the vote authorization and vote start, and the billing status changes. Every signature is checked before anything is stored:
+
+- the **text** against the Politeia server key pinned in dcrpulse (`a3a3b37951a1dd5de6ab2a35e19e266b6df2daad39aad4c2da04034ca95672f5`), over the merkle root of every file, images included;
+- the **author's** signature over the same root, and each status change;
+- each **comment** (new, edited or deleted) with its signer's key and the server's receipt;
+- the **vote authorization**, the admin's **vote start** and the **billing status changes**, each with its receipt.
+
+A record or vote start that fails is not stored at all, and the page says so above the text, showing what Politeia sent. A single comment, authorization or billing change that fails is left out and the rest is kept. Images are used for the check and then dropped; only their digests are kept. A censored proposal has no files left to check, so it is shown as Politeia has it and not archived.
+
+The 115 proposals Politeia moved off its old backend in 2021 lost their author signature, comment signatures and vote records in the move. For those, only the text is archived, signed by today's server.
+
+An approved proposal still takes author updates and replies until its billing is closed or completed, so it is fetched again while Politeia answers and served from the archive otherwise. Any other archived proposal is read from the archive; **Refresh** on its page fetches and verifies it again.
+
+**Signatures panel.** An archived proposal's page lists what each signature covers and which key made it, and labels what Politeia reports without signing it: the vote tally, statuses, dates and comment votes. The tally under the results bar carries the same label.
+
+**Votes.** On an archived proposal whose vote started, **Verify votes** fetches every ballot from Politeia and checks each one in the background, the way Politeia's `politeiaverify` tool does:
+
+- the ticket's signature over the token, ticket and vote bit, and the server's receipt;
+- that the ticket was in the eligible-ticket list Politeia reports for the vote, and voted once;
+- that the vote bit is one of the vote's options;
+- that the ballot was signed with the ticket's largest commitment address, read from your own dcrd.
+
+The result is stored with the proposal: how many ballots verified, whether their count matches Politeia's tally option by option, and each ballot that was not counted with its reason. **Download votes** then saves the ballots as `<token>-votes.json`, the votes bundle `politeiaverify` reads, so you can check them with Politeia's own tool too. One check runs at a time.
+
+**Export and import.** The **finished** and **abandoned** filters show an archive card with the number of archived proposals:
+
+- **Export** downloads every archived proposal as one JSON file.
+- **Import** reads such a file one proposal at a time and verifies each against the pinned server key before storing it; nothing in the file is trusted. A proposal the archive already holds from the same fetch or a later one is kept as it is, and each one that fails is listed with its reason. A vote check in the file is not imported.
 
 #### Casting a Politeia vote
 
@@ -226,8 +262,10 @@ After a successful cast - and also whenever the eligibility check discovers your
 - `POST /api/wallet/governance/proposals/cast-vote` (sign + cast ballot)
 - `POST /api/wallet/governance/votetrickle/start`, `POST /api/wallet/governance/votetrickle/stop?token=<token>` (start or stop a politeiavoter-mode run)
 - `GET /api/wallet/governance/votetrickle/status` (one entry per run), `GET /api/wallet/governance/votetrickle/events` (WebSocket event stream, replaying the last 200 events on connect)
+- `GET /api/wallet/governance/archive` (number of archived proposals), `GET /api/wallet/governance/archive/export`, `POST /api/wallet/governance/archive/import`
+- `POST /api/wallet/governance/proposals/{token}/verify-votes` (start a vote check), `GET` on the same path (its progress), `GET /api/wallet/governance/proposals/{token}/votes` (the checked ballots)
 
-When Politeia is disabled, these endpoints return **503 Service Unavailable**.
+When Politeia is disabled, these endpoints return **503 Service Unavailable**, except where the archive answers: a list holding archived proposals comes back with `offline` set to `disabled` (or `unreachable` when Politeia did not answer), an archived proposal's detail is served, and export, import and the votes download work.
 
 ---
 
@@ -339,6 +377,7 @@ In all three cases the wallet is unlocked only for the moment of the change and 
 2. Use the status filter (defaulting to **voting**) to find proposals you can still vote on.
 3. Opening the vote modal does real work (it fetches a ticket snapshot), so open it when you intend to vote.
 4. The **you voted: X** badge reflects your local record of past votes.
+5. Export the archive now and then; importing it on another dashboard gives it the same verified proposals without asking Politeia.
 
 ---
 
@@ -347,7 +386,12 @@ In all three cases the wallet is unlocked only for the moment of the change and 
 ### Proposals Tab Shows "Politeia is disabled"
 **Problem**: The proposals tab will not load any proposals.
 
-**Solution**: Enable the Politeia external-request toggle in **Privacy & Security** settings. The proposal endpoints return 503 while it is off.
+**Solution**: Enable the Politeia external-request toggle in **Privacy & Security** settings. The proposal endpoints return 503 while it is off; the **finished** and **abandoned** filters still list the archived proposals.
+
+### Verify Votes Stopped "on this node"
+**Problem**: The vote check stops with an error naming a ticket "on this node".
+
+**Solution**: The check reads each ticket from your own dcrd, which needs its transaction index (`--txindex`, on by default in the dcrpulse stack). Turn it back on if you removed it, and let dcrd finish building the index before checking again.
 
 ### No Consensus Agendas Listed
 **Problem**: The Consensus tab is empty.
