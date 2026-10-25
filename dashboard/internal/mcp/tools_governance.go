@@ -89,6 +89,7 @@ type leanProposalDetail struct {
 	Comments    []leanProposalComment      `json:"comments"`
 	// Verification is set for an archived proposal.
 	Verification *types.ProposalVerification `json:"verification,omitempty"`
+	VerifyError  string                      `json:"verifyError,omitempty"`
 }
 
 // shapeProposalDetail returns the detail as-is when includeHtml is set, otherwise a
@@ -104,6 +105,7 @@ func shapeProposalDetail(d *types.ProposalDetail, includeHtml bool) any {
 		VoteOptions:  d.VoteOptions,
 		Comments:     make([]leanProposalComment, len(d.Comments)),
 		Verification: d.Verification,
+		VerifyError:  d.VerifyError,
 	}
 	for i, c := range d.Comments {
 		lean.Comments[i] = leanProposalComment{

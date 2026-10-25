@@ -191,6 +191,9 @@ type ProposalDetail struct {
 	Comments        []ProposalComment    `json:"comments"`
 	// Verification is set for an archived proposal.
 	Verification *ProposalVerification `json:"verification,omitempty"`
+	// VerifyError says why a finished proposal fetched from Politeia was
+	// not archived: its signatures did not verify.
+	VerifyError string `json:"verifyError,omitempty"`
 }
 
 // ProposalVerification says which parts of an archived proposal carry

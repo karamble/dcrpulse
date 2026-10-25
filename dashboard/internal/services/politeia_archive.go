@@ -54,6 +54,124 @@ func (e *ArchiveOnlyError) Reason() string {
 // billingStatusNames are the pi v1 billing statuses.
 var billingStatusNames = map[uint32]string{1: "active", 2: "closed", 3: "completed"}
 
+// archiveVoteStatuses are the vote statuses a proposal is archived in.
+var archiveVoteStatuses = map[string]bool{"approved": true, "rejected": true, "finished": true, "ineligible": true}
+
+// stillOpen reports whether an archived proposal can still change on
+// Politeia: an approved one takes author updates and replies until its
+// billing is closed or completed.
+func stillOpen(e archive.Entry) bool {
+	p := e.Proposal
+	if p.Summary.Status != "approved" || e.Checked.Migrated() {
+		return false
+	}
+	n := len(p.Billing)
+	return n == 0 || p.Billing[n-1].Status == 1
+}
+
+// errCensored is a censored record: Politeia deleted its files, so there is
+// nothing to archive.
+var errCensored = errors.New("censored record")
+
+// notVerifiedError carries Politeia data whose signatures did not verify.
+type notVerifiedError struct{ err error }
+
+func (e *notVerifiedError) Error() string { return "signatures did not verify: " + e.err.Error() }
+
+type piDetailsResp struct {
+	Record verify.Record `json:"record"`
+}
+
+type piVoteRecordResp struct {
+	Auths []verify.AuthDetails `json:"auths"`
+	Vote  *verify.VoteDetails  `json:"vote"`
+}
+
+type piBillingResp struct {
+	BillingStatusChanges map[string][]verify.BillingStatusChange `json:"billingstatuschanges"`
+}
+
+// fetchArchivable fetches every part of a proposal the archive keeps. The
+// record comes whole, images included, since the merkle root covers them.
+func fetchArchivable(ctx context.Context, token string, sum piSummary) (archive.Fetched, error) {
+	req := struct {
+		Token string `json:"token"`
+	}{token}
+	var rec piDetailsResp
+	if err := piPost(ctx, "/records/v1/details", req, &rec, politeiaTimeout); err != nil {
+		return archive.Fetched{}, err
+	}
+	if rec.Record.Status == verify.RecordStatusCensored {
+		return archive.Fetched{}, errCensored
+	}
+	cmts, err := piComments(ctx, token)
+	if err != nil {
+		return archive.Fetched{}, err
+	}
+	var vote piVoteRecordResp
+	if err := piPost(ctx, "/ticketvote/v1/details", req, &vote, politeiaTimeout); err != nil {
+		return archive.Fetched{}, err
+	}
+	var bill piBillingResp
+	breq := struct {
+		Tokens []string `json:"tokens"`
+	}{[]string{token}}
+	if err := piPost(ctx, "/pi/v1/billingstatuschanges", breq, &bill, politeiaTimeout); err != nil {
+		return archive.Fetched{}, err
+	}
+	return archive.Fetched{
+		Record:   rec.Record,
+		Comments: cmts,
+		Auths:    vote.Auths,
+		Vote:     vote.Vote,
+		Billing:  bill.BillingStatusChanges[token],
+		Summary:  archiveSummary(sum),
+	}, nil
+}
+
+func archiveSummary(sum piSummary) archive.Summary {
+	out := archive.Summary{
+		Status:           piStatusName[sum.Status],
+		EligibleTickets:  sum.EligibleTicketCount,
+		QuorumPercentage: uint32(sum.QuorumPercentage),
+		PassPercentage:   uint32(sum.PassPercentage),
+		StartBlockHeight: sum.StartBlockHeight,
+		EndBlockHeight:   sum.EndBlockHeight,
+	}
+	for _, r := range sum.Results {
+		out.Results = append(out.Results, archive.Result{ID: r.ID, VoteBit: uint64(r.VoteBit), Votes: r.Votes})
+	}
+	return out
+}
+
+// archiveFromPoliteia fetches a finished proposal, verifies it and stores it.
+// Data that fails verification comes back as a notVerifiedError.
+func archiveFromPoliteia(ctx context.Context, token string, sum piSummary, source string) (archive.Entry, error) {
+	f, err := fetchArchivable(ctx, token, sum)
+	if err != nil {
+		return archive.Entry{}, err
+	}
+	if f.Record.CensorshipRecord.Token != token {
+		return archive.Entry{}, &notVerifiedError{errors.New("record is for another proposal")}
+	}
+	s := politeiaArchive()
+	p, err := archive.New(f, s.ServerKey(), source, time.Now().Unix())
+	if err != nil {
+		return archive.Entry{}, &notVerifiedError{err}
+	}
+	e, err := s.Put(p)
+	if err != nil {
+		// Verified but not written: still serve it.
+		govnLog.Warnf("Politeia proposal %s not stored: %v", token, err)
+		ck, err := archive.Verify(p, s.ServerKey())
+		if err != nil {
+			return archive.Entry{}, &notVerifiedError{err}
+		}
+		return archive.Entry{Proposal: p, Checked: ck}, nil
+	}
+	return e, nil
+}
+
 // archivedProposals lists the archived proposals in a status bucket, newest
 // vote first.
 func archivedProposals(ctx context.Context, bucket string) []types.Proposal {
@@ -189,14 +307,9 @@ func detailFromArchive(e archive.Entry, serverKey string) *types.ProposalDetail 
 
 // archivedDetail returns the archived detail of a proposal, with the
 // wallet's own vote applied.
-func archivedDetail(ctx context.Context, token string) (*types.ProposalDetail, time.Time, bool) {
-	s := politeiaArchive()
-	e, ok := s.Get(token)
-	if !ok {
-		return nil, time.Time{}, false
-	}
-	d := detailFromArchive(e, s.ServerKey())
-	d.CurrentChoice = loadLocalPoliteiaVotes(ctx)[token]
-	d.VotedTicketCount = loadLocalPoliteiaVoteCounts(ctx)[token]
-	return d, time.Unix(e.Proposal.ArchivedAt, 0), true
+func archivedDetail(ctx context.Context, e archive.Entry) (*types.ProposalDetail, time.Time, error) {
+	d := detailFromArchive(e, politeiaArchive().ServerKey())
+	d.CurrentChoice = loadLocalPoliteiaVotes(ctx)[e.Proposal.Token()]
+	d.VotedTicketCount = loadLocalPoliteiaVoteCounts(ctx)[e.Proposal.Token()]
+	return d, time.Unix(e.Proposal.ArchivedAt, 0), nil
 }

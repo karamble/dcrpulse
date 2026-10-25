@@ -137,7 +137,7 @@ const CommentThread = ({ node, now, depth }: { node: CommentNode; now: number; d
 
 const sourceLabel: Record<ProposalVerification['source'], string> = {
   snapshot: 'the snapshot shipped with dcrpulse',
-  refresh: 'a refresh from Politeia',
+  refresh: 'a fetch from Politeia',
   import: 'an imported archive file',
 };
 
@@ -365,6 +365,16 @@ export const ProposalDetailPage = () => {
         <div className="text-xs text-destructive flex items-center gap-1">
           <AlertCircle className="h-3 w-3" />
           {refreshError}
+        </div>
+      )}
+
+      {detail.verifyError && (
+        <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 text-sm flex items-start gap-2">
+          <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+          <span>
+            Politeia&apos;s signatures on this proposal did not verify, so it was not archived and
+            is shown as Politeia sent it: {detail.verifyError}
+          </span>
         </div>
       )}
 

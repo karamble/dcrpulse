@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/config"
+	"dcrpulse/internal/politeia/archive"
 	"dcrpulse/internal/politeia/verify"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
@@ -527,19 +529,29 @@ func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal,
 // plus the time it was fetched. Cached in-process indefinitely (per token);
 // auto-fetched on first access and cleared on a successful cast-vote against
 // the token. Use RefreshProposalDetail to force a re-fetch. An archived
-// proposal is served from the archive.
+// proposal is served from the archive, unless it is still open and Politeia
+// answers.
 func GetProposalDetail(ctx context.Context, token string) (*types.ProposalDetail, time.Time, error) {
 	if token == "" {
 		return nil, time.Time{}, fmt.Errorf("token required")
 	}
-	// An archived proposal is read from disk, Politeia switched on or not.
-	if d, at, ok := archivedDetail(ctx, token); ok {
-		return d, at, nil
+	e, archived := politeiaArchive().Get(token)
+	if archived && (!PoliteiaEnabled() || !stillOpen(e)) {
+		return archivedDetail(ctx, e)
 	}
 	if !PoliteiaEnabled() {
 		return nil, time.Time{}, ErrPoliteiaDisabled
 	}
+	d, at, err := liveProposalDetail(ctx, token)
+	if err != nil && archived {
+		govnLog.Warnf("Serving archived proposal %s: %v", token, err)
+		return archivedDetail(ctx, e)
+	}
+	return d, at, err
+}
 
+// liveProposalDetail serves a proposal from the in-memory cache or Politeia.
+func liveProposalDetail(ctx context.Context, token string) (*types.ProposalDetail, time.Time, error) {
 	piCacheMu.RLock()
 	entry, ok := piCachedDetails[token]
 	piCacheMu.RUnlock()
@@ -629,12 +641,39 @@ func RefreshProposalDetail(ctx context.Context, token string) (*types.ProposalDe
 }
 
 // fetchAndCacheProposalDetail fetches one proposal's full record + summary
-// (+ vote details when voting is active) from Politeia and caches it per token.
-// The cache entry (and thus the refresh cooldown anchor) is written ONLY on
+// from Politeia and caches it per token. A finished proposal is verified and
+// archived; one whose signatures fail is served unverified, saying so. The
+// cache entry (and thus the refresh cooldown anchor) is written ONLY on
 // success. Capped at ProposalsFetchTimeout.
 func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.ProposalDetail, time.Time, error) {
 	ctx, cancel := context.WithTimeout(ctx, ProposalsFetchTimeout)
 	defer cancel()
+
+	sum, err := piSummariesBatch(ctx, []string{token})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	verifyErr := ""
+	if archiveVoteStatuses[piStatusName[sum[token].Status]] {
+		e, err := archiveFromPoliteia(ctx, token, sum[token], archive.SourceRefresh)
+		var nv *notVerifiedError
+		switch {
+		case err == nil:
+			d, at, _ := archivedDetail(ctx, e)
+			cached := *d
+			piCacheMu.Lock()
+			piCachedDetails[token] = piDetailCacheEntry{detail: &cached, at: at, commentsLoaded: true}
+			piCacheMu.Unlock()
+			return d, at, nil
+		case errors.As(err, &nv):
+			govnLog.Warnf("Politeia proposal %s not archived: %v", token, err)
+			verifyErr = nv.Error()
+		case errors.Is(err, errCensored):
+			// Nothing to archive; served as Politeia has it.
+		default:
+			return nil, time.Time{}, err
+		}
+	}
 
 	records, err := piRecordsBatch(ctx, []string{token}, piDetailFilenames)
 	if err != nil {
@@ -643,10 +682,6 @@ func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.Prop
 	rec, ok := records[token]
 	if !ok {
 		return nil, time.Time{}, fmt.Errorf("record not found")
-	}
-	sum, err := piSummariesBatch(ctx, []string{token})
-	if err != nil {
-		return nil, time.Time{}, err
 	}
 
 	proposal := proposalFromRecordAndSummary(token, rec, sum[token])
@@ -659,6 +694,7 @@ func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.Prop
 		Description:     desc,
 		DescriptionHTML: renderProposalMarkdown(desc),
 		SubmittedAt:     rec.Timestamp,
+		VerifyError:     verifyErr,
 	}
 
 	// Comments are a best-effort enrichment: a failure here must not block

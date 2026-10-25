@@ -1199,6 +1199,8 @@ export interface ProposalDetail extends Proposal {
   voteOptions: ProposalVoteOption[];
   comments?: ProposalComment[];
   verification?: ProposalVerification;
+  // verifyError says why a finished proposal was not archived.
+  verifyError?: string;
 }
 
 // ProposalVerification says which parts of an archived proposal carry verified

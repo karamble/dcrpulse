@@ -6,6 +6,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"dcrpulse/internal/politeia/archive"
 	"dcrpulse/internal/politeia/pitest"
+	"dcrpulse/internal/politeia/verify"
 	"dcrpulse/internal/types"
 )
 
@@ -250,6 +252,211 @@ func TestBucketStatusesRoundTrip(t *testing.T) {
 			if _, ok := piVoteStatusEnum[st]; !ok {
 				t.Errorf("status %s has no inventory enum", st)
 			}
+		}
+	}
+}
+
+func resetPiDetailCache(t *testing.T) {
+	t.Helper()
+	clear := func() {
+		piCacheMu.Lock()
+		piCachedDetails = map[string]piDetailCacheEntry{}
+		piCacheMu.Unlock()
+	}
+	clear()
+	t.Cleanup(clear)
+}
+
+// piProposalRouter serves one proposal as Politeia does, with the vote
+// status given, and counts the requests.
+func piProposalRouter(t *testing.T, p *pitest.Proposal, status int, calls *int) {
+	t.Helper()
+	token := p.Record.CensorshipRecord.Token
+	reply := func(v any) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			*calls++
+			_ = json.NewEncoder(w).Encode(v)
+		}
+	}
+	piRouter(t, map[string]http.HandlerFunc{
+		"/api/ticketvote/v1/summaries": reply(piSummariesResp{Summaries: map[string]piSummary{token: {
+			Status: status, EndBlockHeight: 802016, EligibleTicketCount: 40000, QuorumPercentage: 20,
+			Results: []piVoteResultEntry{{ID: "yes", VoteBit: 2, Votes: 9000}},
+		}}}),
+		"/api/records/v1/details":    reply(map[string]any{"record": p.Record}),
+		"/api/comments/v1/comments":  reply(map[string]any{"comments": p.Comments}),
+		"/api/ticketvote/v1/details": reply(map[string]any{"auths": p.Auths, "vote": p.Vote}),
+		"/api/pi/v1/billingstatuschanges": reply(map[string]any{
+			"billingstatuschanges": map[string]any{token: p.Billing},
+		}),
+		"/api/records/v1/records": func(w http.ResponseWriter, _ *http.Request) {
+			*calls++
+			_ = json.NewEncoder(w).Encode(map[string]any{"records": map[string]any{token: p.Record}})
+		},
+	})
+}
+
+func TestFinishedDetailIsVerifiedAndArchived(t *testing.T) {
+	pointExternalCfg(t)
+	resetPiDetailCache(t)
+	s, server := useArchive(t)
+	const tok = "7777777777777777"
+	p := pitest.NewProposal(server, tok, pitest.Options{Name: "Fetched", Comments: 2})
+	var calls int
+	piProposalRouter(t, p, 5, &calls)
+
+	d, at, err := GetProposalDetail(context.Background(), tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := d.Verification
+	if v == nil || v.Source != archive.SourceRefresh || v.Comments != 2 || !v.Authorized ||
+		v.VoteStartKey != p.Admin.Pub || v.BillingStatus != "completed" || d.VerifyError != "" {
+		t.Fatalf("detail %+v verification %+v", d, v)
+	}
+	if time.Since(at) > time.Minute {
+		t.Fatalf("fetched at %v", at)
+	}
+	e, ok := s.Get(tok)
+	if !ok || e.Proposal.Summary.Status != "approved" || e.Proposal.Summary.EligibleTickets != 40000 ||
+		len(e.Proposal.Summary.Results) != 1 || e.Proposal.Summary.Results[0].Votes != 9000 {
+		t.Fatalf("archived: %v %+v", ok, e.Proposal)
+	}
+
+	// Billing is completed, so the proposal is closed: the archive answers.
+	before := calls
+	resetPiDetailCache(t)
+	if _, _, err := GetProposalDetail(context.Background(), tok); err != nil || calls != before {
+		t.Fatalf("closed proposal asked Politeia again: %v, %d requests", err, calls-before)
+	}
+}
+
+func TestDetailFailingVerificationIsServedButNotArchived(t *testing.T) {
+	pointExternalCfg(t)
+	resetPiDetailCache(t)
+	s, server := useArchive(t)
+	const tok = "8888888888888888"
+	p := pitest.NewProposal(server, tok, pitest.Options{Name: "Forged"})
+	p.Record.CensorshipRecord.Signature = pitest.NewKey().Sign(p.Record.CensorshipRecord.Merkle + tok)
+	var calls int
+	piProposalRouter(t, p, 6, &calls)
+
+	d, _, err := GetProposalDetail(context.Background(), tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Verification != nil || !strings.Contains(d.VerifyError, "signatures did not verify") ||
+		!strings.Contains(d.Description, "The proposal text.") {
+		t.Fatalf("detail: verification %+v, verifyError %q", d.Verification, d.VerifyError)
+	}
+	if _, ok := s.Get(tok); ok {
+		t.Fatal("a proposal that failed verification was archived")
+	}
+}
+
+// A censored proposal has no files left to verify: it is served as Politeia
+// has it, not reported as failing verification.
+func TestCensoredProposalIsNotArchived(t *testing.T) {
+	pointExternalCfg(t)
+	resetPiDetailCache(t)
+	s, server := useArchive(t)
+	const tok = "cececececececece"
+	p := pitest.NewProposal(server, tok, pitest.Options{Name: "Censored"})
+	p.Record.Status = verify.RecordStatusCensored
+	var calls int
+	piProposalRouter(t, p, 7, &calls)
+
+	d, _, err := GetProposalDetail(context.Background(), tok)
+	if err != nil || d.VerifyError != "" || d.Verification != nil {
+		t.Fatalf("censored proposal: %v %+v", err, d)
+	}
+	if _, ok := s.Get(tok); ok {
+		t.Fatal("a censored proposal was archived")
+	}
+}
+
+func TestOpenArchivedProposalIsFetchedLive(t *testing.T) {
+	pointExternalCfg(t)
+	resetPiDetailCache(t)
+	s, server := useArchive(t)
+	const tok = "9999999999999999"
+	// No billing change yet: the approved proposal still takes updates.
+	old := pitest.NewProposal(server, tok, pitest.Options{Name: "Open", Comments: 1})
+	old.Billing = nil
+	putArchived(t, s, server, archiveFetched(old, "approved", 802016))
+
+	fresh := pitest.NewProposal(server, tok, pitest.Options{Name: "Open", Comments: 3})
+	fresh.Billing = nil
+	var calls int
+	piProposalRouter(t, fresh, 5, &calls)
+	d, _, err := GetProposalDetail(context.Background(), tok)
+	if err != nil || len(d.Comments) != 3 {
+		t.Fatalf("open proposal: %d comments, %v", len(d.Comments), err)
+	}
+	if e, _ := s.Get(tok); len(e.Proposal.Comments) != 3 || e.Proposal.Source != archive.SourceRefresh {
+		t.Fatal("the archived copy was not replaced")
+	}
+
+	// Politeia down: the archived copy answers.
+	resetPiDetailCache(t)
+	piRouter(t, map[string]http.HandlerFunc{})
+	d, _, err = GetProposalDetail(context.Background(), tok)
+	if err != nil || d.Verification == nil || len(d.Comments) != 3 {
+		t.Fatalf("open proposal with Politeia down: %v %+v", err, d)
+	}
+}
+
+func TestRefreshReplacesTheArchivedCopy(t *testing.T) {
+	pointExternalCfg(t)
+	resetPiDetailCache(t)
+	s, server := useArchive(t)
+	const tok = "abababababababab"
+	p := pitest.NewProposal(server, tok, pitest.Options{Name: "Closed", Comments: 1})
+	putArchived(t, s, server, archiveFetched(p, "rejected", 802016))
+	var calls int
+	piProposalRouter(t, p, 6, &calls)
+
+	d, at, err := RefreshProposalDetail(context.Background(), tok)
+	if err != nil || d.Verification == nil || time.Since(at) > time.Minute {
+		t.Fatalf("refresh: %v at %v", err, at)
+	}
+	if e, _ := s.Get(tok); e.Proposal.ArchivedAt == 1800000000 || e.Proposal.Summary.Status != "rejected" {
+		t.Fatalf("archived copy after refresh: %+v", e.Proposal)
+	}
+	if _, _, err := RefreshProposalDetail(context.Background(), tok); !errors.Is(err, ErrProposalsRefreshCoolingDown) {
+		t.Fatalf("second refresh: %v", err)
+	}
+}
+
+func TestStillOpen(t *testing.T) {
+	server := pitest.NewKey()
+	entry := func(status string, billing []uint32, legacy string) archive.Entry {
+		p := pitest.NewProposal(server, arApproved, pitest.Options{Name: "P", LegacyToken: legacy})
+		f := archiveFetched(p, status, 1)
+		f.Billing = nil
+		for _, b := range billing {
+			c := p.Billing[0]
+			c.Status = b
+			f.Billing = append(f.Billing, c)
+		}
+		a := &archive.Proposal{Summary: f.Summary, Billing: f.Billing}
+		return archive.Entry{Proposal: a, Checked: archive.Checked{Metadata: verify.ProposalMetadata{LegacyToken: legacy}}}
+	}
+	cases := []struct {
+		name string
+		e    archive.Entry
+		want bool
+	}{
+		{"approved, no billing yet", entry("approved", nil, ""), true},
+		{"approved, billing active", entry("approved", []uint32{1}, ""), true},
+		{"approved, billing closed", entry("approved", []uint32{1, 2}, ""), false},
+		{"approved, billing completed", entry("approved", []uint32{3}, ""), false},
+		{"rejected", entry("rejected", nil, ""), false},
+		{"approved, migrated", entry("approved", nil, "27f87171d98b7923"), false},
+	}
+	for _, c := range cases {
+		if got := stillOpen(c.e); got != c.want {
+			t.Errorf("%s: stillOpen = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

@@ -92,6 +92,15 @@ describe('ProposalDetailPage verification', () => {
     await show(detail());
     expect(screen.queryByText('Signatures')).toBeNull();
     expect(screen.queryByText('Tally reported by Politeia, not signed.')).toBeNull();
+    expect(screen.queryByText(/did not verify/)).toBeNull();
     expect(screen.getByText(/^updated /)).toBeTruthy();
+  });
+
+  it('says when Politeia sent a proposal whose signatures did not verify', async () => {
+    await show({ ...detail(), verifyError: 'signatures did not verify: invalid signature' });
+    expect(
+      screen.getByText(/did not verify, so it was not archived.*: signatures did not verify: invalid/),
+    ).toBeTruthy();
+    expect(screen.queryByText('Signatures')).toBeNull();
   });
 });

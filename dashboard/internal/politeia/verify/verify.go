@@ -26,10 +26,10 @@ import (
 // as its /api version reply publishes it.
 const PinnedServerKey = "a3a3b37951a1dd5de6ab2a35e19e266b6df2daad39aad4c2da04034ca95672f5"
 
-const (
-	// recordStatusCensored is a record whose files were deleted.
-	recordStatusCensored = 3
+// RecordStatusCensored is a record whose files Politeia deleted.
+const RecordStatusCensored = 3
 
+const (
 	usermdPluginID         = "usermd"
 	streamIDUserMetadata   = 1
 	streamIDStatusChanges  = 2
@@ -63,7 +63,7 @@ func VerifySignature(sigHex, pubKeyHex, msg string) error {
 // root and that the server signed Merkle+Token. A file kept without its
 // payload counts by its digest, which the signed root still covers.
 func CensorshipRecordVerify(r Record, serverKey string) error {
-	if r.Status == recordStatusCensored {
+	if r.Status == RecordStatusCensored {
 		return errors.New("censored record: its files were deleted")
 	}
 	if len(r.Files) == 0 {
