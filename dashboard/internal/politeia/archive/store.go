@@ -119,6 +119,44 @@ func (s *Store) Put(p *Proposal) (Entry, error) {
 	return e, err
 }
 
+// SetVoteCheck records a vote check on an archived proposal and keeps the
+// ballots it read, as politeiaverify's votes bundle.
+func (s *Store) SetVoteCheck(token string, vc VoteCheck, bundle []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loadLocked()
+	e, ok := s.entries[token]
+	if !ok {
+		return fmt.Errorf("proposal %s is not archived", token)
+	}
+	p := *e.Proposal
+	p.VoteCheck = &vc
+	raw, err := json.Marshal(&p)
+	if err != nil {
+		return err
+	}
+	votes := filepath.Join(s.dir, "votes")
+	if err := os.MkdirAll(votes, 0o700); err != nil {
+		return err
+	}
+	if err := fsutil.WriteFileAtomic(filepath.Join(votes, token+".json"), bundle, 0o600); err != nil {
+		return err
+	}
+	if err := fsutil.WriteFileAtomic(filepath.Join(s.dir, token+".json"), raw, 0o600); err != nil {
+		return err
+	}
+	s.entries[token] = Entry{Proposal: &p, Checked: e.Checked}
+	return nil
+}
+
+// VotesFile is where the ballots of a checked proposal are kept.
+func (s *Store) VotesFile(token string) (string, error) {
+	if !tokenRe.MatchString(token) {
+		return "", fmt.Errorf("invalid token %q", token)
+	}
+	return filepath.Join(s.dir, "votes", token+".json"), nil
+}
+
 // put verifies and writes p. With onlyNewer it keeps a held copy fetched at
 // the same time or later, and reports false.
 func (s *Store) put(p *Proposal, onlyNewer bool) (Entry, bool, error) {

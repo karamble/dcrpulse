@@ -7,6 +7,7 @@ package archive_test
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -126,5 +127,45 @@ func TestImportRefusesOtherFiles(t *testing.T) {
 	}
 	if res, err := s.Import(strings.NewReader(`{"format":"dcrpulse-politeia-archive","schemaVersion":1,"proposals":[]}`)); err != nil || res.Imported != 0 {
 		t.Fatalf("empty archive: %+v %v", res, err)
+	}
+}
+
+func TestVoteCheckIsStoredButNeverImported(t *testing.T) {
+	server := pitest.NewKey()
+	dir := t.TempDir()
+	s := archive.NewStore(dir, server.Pub)
+	stored(t, s, server, token, 1)
+	vc := archive.VoteCheck{Ballots: 3, Counted: 2, Counts: map[string]int64{"yes": 2}, CheckedAt: 7,
+		Problems: []archive.BallotProblem{{Ticket: "aa", Problem: "ticket was not eligible"}}}
+	if err := s.SetVoteCheck(token, vc, []byte(`{"votes":[]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetVoteCheck("fedcba9876543210", vc, nil); err == nil {
+		t.Fatal("a vote check was recorded on a proposal not archived")
+	}
+
+	reopened := archive.NewStore(dir, server.Pub)
+	e, _ := reopened.Get(token)
+	if e.Proposal.VoteCheck == nil || e.Proposal.VoteCheck.Counted != 2 || len(e.Proposal.VoteCheck.Problems) != 1 {
+		t.Fatalf("reloaded vote check: %+v", e.Proposal.VoteCheck)
+	}
+	path, err := reopened.VotesFile(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if raw, _ := os.ReadFile(path); err != nil || info.Mode().Perm() != 0o600 || string(raw) != `{"votes":[]}` {
+		t.Fatalf("votes file: %v %v", info, err)
+	}
+	if _, err := reopened.VotesFile("../" + token); err == nil {
+		t.Fatal("a path that is not a token named a votes file")
+	}
+
+	dst := archive.NewStore(t.TempDir(), server.Pub)
+	if res, err := dst.Import(bytes.NewReader(exported(t, reopened))); err != nil || res.Imported != 1 {
+		t.Fatalf("import: %+v %v", res, err)
+	}
+	if e, _ := dst.Get(token); e.Proposal.VoteCheck != nil {
+		t.Fatal("an imported file's vote check was taken on trust")
 	}
 }

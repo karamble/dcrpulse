@@ -1218,7 +1218,50 @@ export interface ProposalVerification {
   billingStatus?: string;
   source: 'snapshot' | 'refresh' | 'import';
   archivedAt: number;
+  voteCheck?: ProposalVoteCheck;
 }
+
+// ProposalVoteCheck is the dashboard's own check of a proposal's ballots.
+export interface ProposalVoteCheck {
+  ballots: number;
+  counted: number;
+  counts: Record<string, number>;
+  tallyMatches: boolean;
+  problems?: { ticket: string; problem: string }[];
+  checkedAt: number;
+}
+
+export interface ProposalVoteCheckProgress {
+  running: boolean;
+  done: number;
+  total: number;
+  error?: string;
+}
+
+// startProposalVoteCheck starts checking an archived proposal's ballots in the
+// background; getProposalVoteCheck reports how far it got.
+export const startProposalVoteCheck = async (token: string): Promise<ProposalVoteCheckProgress> => {
+  const response = await api.post<ProposalVoteCheckProgress>(
+    `/wallet/governance/proposals/${encodeURIComponent(token)}/verify-votes`,
+  );
+  return response.data;
+};
+
+export const getProposalVoteCheck = async (token: string): Promise<ProposalVoteCheckProgress> => {
+  const response = await api.get<ProposalVoteCheckProgress>(
+    `/wallet/governance/proposals/${encodeURIComponent(token)}/verify-votes`,
+  );
+  return response.data;
+};
+
+// downloadProposalVotes fetches the checked ballots as politeiaverify's votes
+// bundle.
+export const downloadProposalVotes = async (token: string) => {
+  return api.get(`/wallet/governance/proposals/${encodeURIComponent(token)}/votes`, {
+    responseType: 'blob',
+    timeout: 300000,
+  });
+};
 
 export interface CastVoteResult {
   cast: number;

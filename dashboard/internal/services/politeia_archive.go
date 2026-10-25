@@ -172,6 +172,10 @@ func archiveFromPoliteia(ctx context.Context, token string, sum piSummary, sourc
 	if err != nil {
 		return archive.Entry{}, &notVerifiedError{err}
 	}
+	// A finished vote's ballots do not change, so neither does their check.
+	if old, ok := s.Get(token); ok {
+		p.VoteCheck = old.Proposal.VoteCheck
+	}
 	e, err := s.Put(p)
 	if err != nil {
 		// Verified but not written: still serve it.
@@ -313,6 +317,15 @@ func detailFromArchive(e archive.Entry, serverKey string) *types.ProposalDetail 
 	}
 	if n := len(p.Billing); n > 0 {
 		v.BillingStatus = billingStatusNames[p.Billing[n-1].Status]
+	}
+	if vc := p.VoteCheck; vc != nil {
+		v.VoteCheck = &types.ProposalVoteCheck{
+			Ballots: vc.Ballots, Counted: vc.Counted, Counts: vc.Counts,
+			TallyMatches: vc.TallyMatches, CheckedAt: vc.CheckedAt,
+		}
+		for _, b := range vc.Problems {
+			v.VoteCheck.Problems = append(v.VoteCheck.Problems, types.ProposalBallotProblem(b))
+		}
 	}
 	d.Verification = v
 	return d

@@ -65,6 +65,25 @@ type Proposal struct {
 	Summary         Summary                      `json:"summary"`
 	Source          string                       `json:"source"`
 	ArchivedAt      int64                        `json:"archivedAt"`
+	VoteCheck       *VoteCheck                   `json:"voteCheck,omitempty"`
+}
+
+// VoteCheck is this dashboard's own check of a proposal's ballots against
+// their signatures, Politeia's receipts, the eligible tickets and each
+// ticket's commitment address on the chain.
+type VoteCheck struct {
+	Ballots      int              `json:"ballots"`
+	Counted      int              `json:"counted"`
+	Counts       map[string]int64 `json:"counts"`
+	TallyMatches bool             `json:"tallyMatches"`
+	Problems     []BallotProblem  `json:"problems,omitempty"`
+	CheckedAt    int64            `json:"checkedAt"`
+}
+
+// BallotProblem is a ballot the check did not count, and why.
+type BallotProblem struct {
+	Ticket  string `json:"ticket"`
+	Problem string `json:"problem"`
 }
 
 // Token is the proposal's censorship token.

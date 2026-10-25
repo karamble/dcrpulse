@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -301,6 +303,48 @@ func ImportPoliteiaArchiveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, res)
+}
+
+// StartProposalVoteCheckHandler starts checking an archived proposal's
+// ballots in the background.
+func StartProposalVoteCheckHandler(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(mux.Vars(r)["token"])
+	err := services.StartProposalVoteCheck(token)
+	switch {
+	case err == nil:
+		writeJSON(w, services.ProposalVoteCheckProgress(token))
+	case errors.Is(err, services.ErrPoliteiaDisabled), errors.Is(err, services.ErrShuttingDown):
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	case errors.Is(err, services.ErrVoteCheckRunning):
+		http.Error(w, err.Error(), http.StatusConflict)
+	default:
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+}
+
+// ProposalVoteCheckProgressHandler reports a proposal's vote check.
+func ProposalVoteCheckProgressHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, services.ProposalVoteCheckProgress(strings.TrimSpace(mux.Vars(r)["token"])))
+}
+
+// ProposalVotesHandler downloads the ballots of a checked proposal as
+// politeiaverify's votes bundle.
+func ProposalVotesHandler(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(mux.Vars(r)["token"])
+	path, err := services.ProposalVotesFile(token)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		http.Error(w, "check the votes first", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+token+`-votes.json"`)
+	_, _ = io.Copy(w, f)
 }
 
 // writeProposalDetailResponse encodes the proposal-detail envelope (record +

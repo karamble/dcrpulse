@@ -149,3 +149,14 @@ type BillingStatusChange struct {
 	Receipt   string `json:"receipt"`
 	Timestamp int64  `json:"timestamp"`
 }
+
+// CastVote is a ballot as Politeia records it.
+type CastVote struct {
+	Token     string `json:"token"`
+	Ticket    string `json:"ticket"`
+	VoteBit   string `json:"votebit"`
+	Address   string `json:"address"`
+	Signature string `json:"signature"`
+	Receipt   string `json:"receipt"`
+	Timestamp int64  `json:"timestamp"`
+}

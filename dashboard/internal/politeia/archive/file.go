@@ -82,7 +82,9 @@ func (s *Store) Import(r io.Reader) (ImportResult, error) {
 				if err := dec.Decode(&p); err != nil {
 					return res, err
 				}
+				// The file's vote check is a claim, not a signature.
 				p.Source = SourceImport
+				p.VoteCheck = nil
 				switch _, stored, err := s.put(&p, true); {
 				case err != nil:
 					res.Refused = append(res.Refused, Refusal{Token: p.Token(), Reason: err.Error()})

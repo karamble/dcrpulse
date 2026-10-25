@@ -28,6 +28,7 @@ import {
 import { VoteModal } from './VoteModal';
 import { useWalletReady } from '../../hooks/useWalletReady';
 import { VoteResultsBar } from './VoteResultsBar';
+import { VoteCheckCard } from './VoteCheckCard';
 import { apiError } from '../../utils/apiError';
 
 const POLITEIA_BASE = 'https://proposals.decred.org/record';
@@ -439,6 +440,15 @@ export const ProposalDetailPage = () => {
       </div>
 
       {detail.verification && <VerificationPanel v={detail.verification} />}
+
+      {detail.verification?.voteStartKey && token && (
+        <VoteCheckCard
+          token={token}
+          check={detail.verification.voteCheck}
+          tally={detail.voteCounts}
+          onChecked={load}
+        />
+      )}
 
       {isVoting && !isWatchOnly && (
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-3">

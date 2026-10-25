@@ -481,6 +481,9 @@ func main() {
 	api.HandleFunc("/wallet/governance/votetrickle/events", handlers.StreamVoteTrickleEventsHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/proposals/{token}/refresh", handlers.RefreshProposalDetailHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/proposals/{token}/vote-eligibility", handlers.PrepareProposalVoteHandler).Methods("POST")
+	api.HandleFunc("/wallet/governance/proposals/{token}/verify-votes", handlers.StartProposalVoteCheckHandler).Methods("POST")
+	api.HandleFunc("/wallet/governance/proposals/{token}/verify-votes", handlers.ProposalVoteCheckProgressHandler).Methods("GET")
+	api.HandleFunc("/wallet/governance/proposals/{token}/votes", handlers.ProposalVotesHandler).Methods("GET")
 	api.HandleFunc("/br/version", handlers.BisonrelayVersionHandler).Methods("GET")
 	api.HandleFunc("/br/status", handlers.BisonrelayStatusHandler).Methods("GET")
 	api.Handle("/br/setup",

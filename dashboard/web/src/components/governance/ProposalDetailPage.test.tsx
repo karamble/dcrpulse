@@ -15,6 +15,7 @@ vi.mock('../../services/api', async (importOriginal) => ({
 }));
 vi.mock('../../hooks/useWalletReady', () => ({ useWalletReady: () => ({ isWatchOnly: false }) }));
 vi.mock('./VoteModal', () => ({ VoteModal: () => null }));
+vi.mock('./VoteCheckCard', () => ({ VoteCheckCard: () => <div>vote check card</div> }));
 
 const serverKey = 'a3a3b37951a1dd5de6ab2a35e19e266b6df2daad39aad4c2da04034ca95672f5';
 const authorKey = 'b'.repeat(64);
@@ -68,6 +69,7 @@ describe('ProposalDetailPage verification', () => {
     expect(screen.getByText('Tally reported by Politeia, not signed.')).toBeTruthy();
     expect(screen.getByText(/^Fetched from Politeia on .*, arrived with an imported archive file\.$/)).toBeTruthy();
     expect(screen.getByText(/^archived /)).toBeTruthy();
+    expect(screen.getByText('vote check card')).toBeTruthy();
     expect(screen.getByText('No comments on this proposal yet.')).toBeTruthy();
   });
 
@@ -85,6 +87,7 @@ describe('ProposalDetailPage verification', () => {
     expect(screen.getByText('not archived: the 2021 migration left them without signatures'))
       .toBeTruthy();
     expect(screen.queryByText('Vote start:')).toBeNull();
+    expect(screen.queryByText('vote check card')).toBeNull();
     expect(screen.getByText('Comments of proposals migrated in 2021 are not archived.')).toBeTruthy();
     expect(screen.getByText(/, arrived with the snapshot shipped with dcrpulse\.$/)).toBeTruthy();
   });
