@@ -8,6 +8,7 @@ import { AlertCircle, Archive, ExternalLink, Filter, Loader2, RefreshCw, ShieldO
 import { Proposal, getProposals, refreshProposals, loadMoreProposals } from '../../services/api';
 import { VoteResultsBar } from './VoteResultsBar';
 import { VoteTrickleCard } from './VoteTrickleCard';
+import { PoliteiaArchiveCard } from './PoliteiaArchiveCard';
 import { apiError } from '../../utils/apiError';
 
 // Status tabs, mirroring Decrediton. There is no "all" bucket: each tab fetches
@@ -67,6 +68,8 @@ export const ProposalsTab = () => {
   const [disabled, setDisabled] = useState(false);
   const [offline, setOffline] = useState<'disabled' | 'unreachable' | undefined>();
   const [filter, setFilter] = useState<(typeof statusBuckets)[number]>('voting');
+  // reload re-fetches the tab after an archive import.
+  const [reload, setReload] = useState(0);
   // now (unix seconds) drives the live countdown / "updated X ago" display.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
@@ -104,7 +107,7 @@ export const ProposalsTab = () => {
     return () => {
       cancelled = true;
     };
-  }, [filter]);
+  }, [filter, reload]);
 
   // Tick the clock once a minute so the countdown and age stay current.
   useEffect(() => {
@@ -218,6 +221,10 @@ export const ProposalsTab = () => {
           </div>
         )}
       </div>
+
+      {(filter === 'finished' || filter === 'abandoned') && (
+        <PoliteiaArchiveCard onImported={() => setReload((n) => n + 1)} />
+      )}
 
       {refreshError && (
         <div className="text-xs text-destructive flex items-center gap-1">

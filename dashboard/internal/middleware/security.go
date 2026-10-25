@@ -204,8 +204,9 @@ func SecurityHeaders(next http.Handler) http.Handler {
 // bodies surface as a read error inside handlers, which already return 4xx.
 //
 // The exempt paths are the upload routes, which stream to brclientd under their
-// own larger cap; an outer reader would be the one that trips, so the cap has to
-// be skipped rather than raised. Exempting by path and not by Content-Type is
+// own larger cap, and the Politeia archive import, which decodes one proposal at
+// a time; an outer reader would be the one that trips, so the cap has to be
+// skipped rather than raised. Exempting by path and not by Content-Type is
 // the point: a caller chooses its own header, but not the route it reached.
 func LimitJSONBody(maxBytes int64, exempt map[string]bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

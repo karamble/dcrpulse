@@ -135,9 +135,10 @@ const CommentThread = ({ node, now, depth }: { node: CommentNode; now: number; d
   );
 };
 
-const sourceLabel: Record<ProposalVerification['source'], string> = {
+// arrivedWith names how a copy reached the dashboard other than by its own
+// fetch from Politeia.
+const arrivedWith: Partial<Record<ProposalVerification['source'], string>> = {
   snapshot: 'the snapshot shipped with dcrpulse',
-  refresh: 'a fetch from Politeia',
   import: 'an imported archive file',
 };
 
@@ -227,8 +228,8 @@ const VerificationPanel = ({ v }: { v: ProposalVerification }) => (
       </SignatureRow>
     </ul>
     <p className="text-xs text-muted-foreground pt-2 border-t border-border/30">
-      Archived from {sourceLabel[v.source] ?? v.source} on{' '}
-      {new Date(v.archivedAt * 1000).toLocaleDateString()}.
+      Fetched from Politeia on {new Date(v.archivedAt * 1000).toLocaleDateString()}
+      {arrivedWith[v.source] && `, arrived with ${arrivedWith[v.source]}`}.
     </p>
   </div>
 );

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"path/filepath"
 	"sort"
 	"sync/atomic"
@@ -32,6 +33,18 @@ func politeiaArchive() *archive.Store {
 		return s
 	}
 	return piArchiveStore.Load()
+}
+
+// PoliteiaArchiveCount is how many proposals the archive holds.
+func PoliteiaArchiveCount() int { return len(politeiaArchive().All()) }
+
+// ExportPoliteiaArchive returns every archived proposal.
+func ExportPoliteiaArchive() archive.File { return politeiaArchive().Export() }
+
+// ImportPoliteiaArchive stores the proposals of an exported archive that
+// verify with the pinned server key.
+func ImportPoliteiaArchive(r io.Reader) (archive.ImportResult, error) {
+	return politeiaArchive().Import(r)
 }
 
 // ArchiveOnlyError carries a list served from the archive alone because

@@ -243,12 +243,14 @@ func main() {
 	// far larger cap; the router-wide one has to stand aside rather than be
 	// raised, because the outer reader is the one that would trip. Registered
 	// below at /br/backup/restore, /br/files/send, /br/files/add and
-	// /br/store/files/upload.
+	// /br/store/files/upload. The Politeia archive import decodes its file one
+	// proposal at a time and verifies each.
 	uploadRoutes := map[string]bool{
-		"/api/br/backup/restore":     true,
-		"/api/br/files/send":         true,
-		"/api/br/files/add":          true,
-		"/api/br/store/files/upload": true,
+		"/api/br/backup/restore":                true,
+		"/api/br/files/send":                    true,
+		"/api/br/files/add":                     true,
+		"/api/br/store/files/upload":            true,
+		"/api/wallet/governance/archive/import": true,
 	}
 
 	// API routes. The body cap is Bison Relay's payload maximum on the protocol
@@ -470,6 +472,9 @@ func main() {
 	api.HandleFunc("/wallet/governance/proposals/cast-vote", handlers.CastPoliteiaVoteHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/proposals/refresh", handlers.RefreshProposalsHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/proposals/load-more", handlers.LoadMoreProposalsHandler).Methods("POST")
+	api.HandleFunc("/wallet/governance/archive", handlers.GetPoliteiaArchiveHandler).Methods("GET")
+	api.HandleFunc("/wallet/governance/archive/export", handlers.ExportPoliteiaArchiveHandler).Methods("GET")
+	api.HandleFunc("/wallet/governance/archive/import", handlers.ImportPoliteiaArchiveHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/votetrickle/start", handlers.StartVoteTrickleHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/votetrickle/stop", handlers.StopVoteTrickleHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/votetrickle/status", handlers.VoteTrickleStatusHandler).Methods("GET")

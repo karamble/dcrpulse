@@ -1330,6 +1330,34 @@ export const refreshProposals = async (status: string): Promise<ProposalsRespons
   return response.data;
 };
 
+export interface PoliteiaArchiveImportResult {
+  imported: number;
+  kept: number;
+  refused?: { token: string; reason: string }[];
+}
+
+// getPoliteiaArchive reports how many proposals the archive holds.
+export const getPoliteiaArchive = async (): Promise<{ proposals: number }> => {
+  const response = await api.get<{ proposals: number }>('/wallet/governance/archive');
+  return response.data;
+};
+
+// exportPoliteiaArchive downloads every archived proposal as one JSON file.
+export const exportPoliteiaArchive = async () => {
+  return api.get('/wallet/governance/archive/export', { responseType: 'blob', timeout: 300000 });
+};
+
+// importPoliteiaArchive sends an exported archive file as is; the backend
+// verifies each proposal before storing it.
+export const importPoliteiaArchive = async (file: File): Promise<PoliteiaArchiveImportResult> => {
+  const response = await api.post<PoliteiaArchiveImportResult>(
+    '/wallet/governance/archive/import',
+    file,
+    { headers: { 'Content-Type': 'application/json' }, timeout: 300000 },
+  );
+  return response.data;
+};
+
 // loadMoreProposals appends the next Politeia inventory page for each of the
 // bucket's vote statuses; the reply carries the full merged list.
 export const loadMoreProposals = async (status: string): Promise<ProposalsResponse> => {

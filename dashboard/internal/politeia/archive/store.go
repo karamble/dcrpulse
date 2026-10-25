@@ -115,28 +115,38 @@ func (s *Store) All() []Entry {
 
 // Put verifies a proposal and writes it, replacing any earlier copy.
 func (s *Store) Put(p *Proposal) (Entry, error) {
+	e, _, err := s.put(p, false)
+	return e, err
+}
+
+// put verifies and writes p. With onlyNewer it keeps a held copy fetched at
+// the same time or later, and reports false.
+func (s *Store) put(p *Proposal, onlyNewer bool) (Entry, bool, error) {
 	token := p.Token()
 	if !tokenRe.MatchString(token) {
-		return Entry{}, fmt.Errorf("invalid token %q", token)
+		return Entry{}, false, fmt.Errorf("invalid token %q", token)
 	}
 	ck, err := Verify(p, s.serverKey)
 	if err != nil {
-		return Entry{}, err
+		return Entry{}, false, err
 	}
 	raw, err := json.Marshal(p)
 	if err != nil {
-		return Entry{}, err
+		return Entry{}, false, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.loadLocked()
+	if old, ok := s.entries[token]; ok && onlyNewer && old.Proposal.ArchivedAt >= p.ArchivedAt {
+		return old, false, nil
+	}
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
-		return Entry{}, err
+		return Entry{}, false, err
 	}
 	if err := fsutil.WriteFileAtomic(filepath.Join(s.dir, token+".json"), raw, 0o600); err != nil {
-		return Entry{}, err
+		return Entry{}, false, err
 	}
 	e := Entry{Proposal: p, Checked: ck}
 	s.entries[token] = e
-	return e, nil
+	return e, true, nil
 }

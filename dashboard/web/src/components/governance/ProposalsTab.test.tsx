@@ -15,6 +15,13 @@ vi.mock('../../services/api', async (importOriginal) => ({
   refreshProposals: vi.fn(),
 }));
 vi.mock('./VoteTrickleCard', () => ({ VoteTrickleCard: () => <div>vote trickle</div> }));
+vi.mock('./PoliteiaArchiveCard', () => ({
+  PoliteiaArchiveCard: ({ onImported }: { onImported: () => void }) => (
+    <button type="button" onClick={onImported}>
+      archive card
+    </button>
+  ),
+}));
 
 const row = (token: string, voteStatus: string, archived: boolean): Proposal => ({
   token, name: `Proposal ${token}`, username: 'author', status: 'finished', voteStatus,
@@ -102,5 +109,19 @@ describe('ProposalsTab archive', () => {
     expect(screen.queryByText(/Showing the archived/)).toBeNull();
     expect(screen.queryByText('archived')).toBeNull();
     expect(screen.getByText('vote trickle')).toBeTruthy();
+    expect(screen.queryByText('archive card')).toBeNull();
+  });
+
+  it('offers the archive on the finished tabs and reloads after an import', async () => {
+    vi.mocked(api.getProposals).mockResolvedValue(answer([row('eeee5555', 'approved', true)]));
+    show();
+    await screen.findByText('Proposal eeee5555');
+    pick('finished');
+    fireEvent.click(await screen.findByText('archive card'));
+    await waitFor(() => expect(api.getProposals).toHaveBeenCalledTimes(3));
+    const buckets = vi.mocked(api.getProposals).mock.calls.map((c) => c[0]);
+    expect(buckets).toEqual(['voting', 'finished', 'finished']);
+    pick('abandoned');
+    expect(await screen.findByText('archive card')).toBeTruthy();
   });
 });

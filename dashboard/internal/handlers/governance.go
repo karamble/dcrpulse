@@ -7,6 +7,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -278,6 +279,28 @@ func LoadMoreProposalsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, services.ProposalsHaveMore(bucket), "")
+}
+
+// GetPoliteiaArchiveHandler reports how many proposals the archive holds.
+func GetPoliteiaArchiveHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]int{"proposals": services.PoliteiaArchiveCount()})
+}
+
+// ExportPoliteiaArchiveHandler downloads the archive as one JSON file.
+func ExportPoliteiaArchiveHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Disposition", `attachment; filename="dcrpulse-politeia-archive.json"`)
+	writeJSON(w, services.ExportPoliteiaArchive())
+}
+
+// ImportPoliteiaArchiveHandler stores the proposals of an exported archive
+// that verify; each one that does not is listed with its reason.
+func ImportPoliteiaArchiveHandler(w http.ResponseWriter, r *http.Request) {
+	res, err := services.ImportPoliteiaArchive(r.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("import stopped after %d proposals: %v", res.Imported, err), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, res)
 }
 
 // writeProposalDetailResponse encodes the proposal-detail envelope (record +

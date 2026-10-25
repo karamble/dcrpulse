@@ -54,7 +54,7 @@ describe('ProposalDetailPage verification', () => {
     await show(
       detail({
         serverKey, authorKey, migrated: false, comments: 2, commentsLeftOut: 1, authorized: true,
-        voteStartKey: adminKey, billingStatus: 'completed', source: 'snapshot', archivedAt: 1800000000,
+        voteStartKey: adminKey, billingStatus: 'completed', source: 'import', archivedAt: 1800000000,
       }),
     );
     expect(screen.getByText('Signatures')).toBeTruthy();
@@ -66,7 +66,7 @@ describe('ProposalDetailPage verification', () => {
     expect(screen.getByText('signed by the author, with a server receipt')).toBeTruthy();
     expect(screen.getByText('completed, signed by an admin, with a server receipt')).toBeTruthy();
     expect(screen.getByText('Tally reported by Politeia, not signed.')).toBeTruthy();
-    expect(screen.getByText(/Archived from the snapshot shipped with dcrpulse on/)).toBeTruthy();
+    expect(screen.getByText(/^Fetched from Politeia on .*, arrived with an imported archive file\.$/)).toBeTruthy();
     expect(screen.getByText(/^archived /)).toBeTruthy();
     expect(screen.getByText('No comments on this proposal yet.')).toBeTruthy();
   });
@@ -86,6 +86,17 @@ describe('ProposalDetailPage verification', () => {
       .toBeTruthy();
     expect(screen.queryByText('Vote start:')).toBeNull();
     expect(screen.getByText('Comments of proposals migrated in 2021 are not archived.')).toBeTruthy();
+    expect(screen.getByText(/, arrived with the snapshot shipped with dcrpulse\.$/)).toBeTruthy();
+  });
+
+  it('dates a copy the dashboard fetched itself without a source note', async () => {
+    await show(
+      detail({
+        serverKey, migrated: true, comments: 0, commentsLeftOut: 0, authorized: false,
+        source: 'refresh', archivedAt: 1800000000,
+      }),
+    );
+    expect(screen.getByText(/^Fetched from Politeia on [^,]*\.$/)).toBeTruthy();
   });
 
   it('shows no verification on a live proposal', async () => {
