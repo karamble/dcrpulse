@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"dcrpulse/internal/merkle"
 )
 
 func TestVerifyAuthPathValidBranch(t *testing.T) {
@@ -18,8 +20,8 @@ func TestVerifyAuthPathValidBranch(t *testing.T) {
 		h := sha256.Sum256([]byte{byte(i)})
 		leaves[i] = &h
 	}
-	br := AuthPath(leaves, leaves[3])
-	want, err := VerifyAuthPath(br)
+	br := merkle.AuthPath(leaves, leaves[3])
+	want, err := merkle.VerifyAuthPath(br)
 	if err != nil {
 		t.Fatalf("upstream: %v", err)
 	}
@@ -31,7 +33,7 @@ func TestVerifyAuthPathValidBranch(t *testing.T) {
 
 func TestVerifyAuthPathMalformedBranch(t *testing.T) {
 	h := sha256.Sum256([]byte("leaf"))
-	for _, br := range []*Branch{
+	for _, br := range []*merkle.Branch{
 		{NumLeaves: 4, Hashes: [][sha256.Size]byte{h}},
 		{NumLeaves: 8, Hashes: [][sha256.Size]byte{h}, Flags: []byte{0xff}},
 	} {
@@ -44,7 +46,7 @@ func TestVerifyAuthPathMalformedBranch(t *testing.T) {
 
 func TestValidateProofMalformedPath(t *testing.T) {
 	h := sha256.Sum256([]byte("leaf"))
-	path, err := json.Marshal(Branch{NumLeaves: 4, Hashes: [][sha256.Size]byte{h}})
+	path, err := json.Marshal(merkle.Branch{NumLeaves: 4, Hashes: [][sha256.Size]byte{h}})
 	if err != nil {
 		t.Fatal(err)
 	}

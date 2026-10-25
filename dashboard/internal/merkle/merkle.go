@@ -4,11 +4,10 @@
 // license that can be found in the LICENSE file.
 
 // This file is copied verbatim from github.com/decred/dcrtime/merkle/merkle.go
-// (only the package name differs) so a dcrtime proof can be verified locally
-// without importing the full dcrtime module. Keep it byte-for-byte in sync with
-// upstream.
+// so dcrtime proofs and Politeia records can be verified without importing the
+// full dcrtime module. Keep it byte-for-byte in sync with upstream.
 
-package timestamp
+package merkle
 
 import (
 	"bytes"

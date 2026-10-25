@@ -13,6 +13,7 @@ import (
 	"errors"
 	"strings"
 
+	"dcrpulse/internal/merkle"
 	"dcrpulse/internal/services"
 )
 
@@ -37,13 +38,13 @@ type Validation struct {
 
 // verifyAuthPath runs the upstream check, which indexes a malformed path
 // without bounds checks, and reports its panic as an error.
-func verifyAuthPath(br *Branch) (root *[sha256.Size]byte, err error) {
+func verifyAuthPath(br *merkle.Branch) (root *[sha256.Size]byte, err error) {
 	defer func() {
 		if recover() != nil {
 			root, err = nil, errors.New("malformed merkle path")
 		}
 	}()
-	return VerifyAuthPath(br)
+	return merkle.VerifyAuthPath(br)
 }
 
 // ValidateProof verifies a dcrtime proof for digest without trusting dcrtime:
@@ -64,7 +65,7 @@ func ValidateProof(ctx context.Context, digest, merkleRoot string, merklePath js
 	v.HasProof = true
 
 	// 1. The merkle path resolves to a root.
-	var br Branch
+	var br merkle.Branch
 	if err := json.Unmarshal(merklePath, &br); err != nil {
 		v.Note = "Invalid merkle path: " + err.Error()
 		return v
