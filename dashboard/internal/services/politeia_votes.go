@@ -232,7 +232,7 @@ func checkVotes(ctx context.Context, token string, e archive.Entry) error {
 	if err != nil {
 		return err
 	}
-	return politeiaArchive().SetVoteCheck(token, vc, bundle)
+	return politeiaArchive().SetVoteCheck(token, e.Proposal, vc, bundle)
 }
 
 // canonicalTicket reports whether t is a transaction hash spelled as dcrd

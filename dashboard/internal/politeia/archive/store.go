@@ -119,15 +119,19 @@ func (s *Store) Put(p *Proposal) (Entry, error) {
 	return e, err
 }
 
-// SetVoteCheck records a vote check on an archived proposal and keeps the
-// ballots it read, as politeiaverify's votes bundle.
-func (s *Store) SetVoteCheck(token string, vc VoteCheck, bundle []byte) error {
+// SetVoteCheck records a vote check on the archived copy it was made against
+// and keeps the ballots it read, as politeiaverify's votes bundle. A copy
+// replaced during the check gets no result.
+func (s *Store) SetVoteCheck(token string, checked *Proposal, vc VoteCheck, bundle []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.loadLocked()
 	e, ok := s.entries[token]
 	if !ok {
 		return fmt.Errorf("proposal %s is not archived", token)
+	}
+	if e.Proposal != checked {
+		return errors.New("the archived proposal changed during the check")
 	}
 	p := *e.Proposal
 	p.VoteCheck = &vc

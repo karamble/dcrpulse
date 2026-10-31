@@ -172,9 +172,11 @@ func archiveFromPoliteia(ctx context.Context, token string, sum piSummary, sourc
 	if err != nil {
 		return archive.Entry{}, &notVerifiedError{err}
 	}
-	// A finished vote's ballots do not change, so neither does their check.
-	if old, ok := s.Get(token); ok {
-		p.VoteCheck = old.Proposal.VoteCheck
+	// A finished vote's ballots do not change, but the reported tally may.
+	if old, ok := s.Get(token); ok && old.Proposal.VoteCheck != nil {
+		vc := *old.Proposal.VoteCheck
+		vc.TallyMatches = tallyMatches(vc.Counts, p.Summary.Results)
+		p.VoteCheck = &vc
 	}
 	e, err := s.Put(p)
 	if err != nil {
@@ -321,7 +323,8 @@ func detailFromArchive(e archive.Entry, serverKey string) *types.ProposalDetail 
 	if vc := p.VoteCheck; vc != nil {
 		v.VoteCheck = &types.ProposalVoteCheck{
 			Ballots: vc.Ballots, Counted: vc.Counted, Counts: vc.Counts,
-			TallyMatches: vc.TallyMatches, CheckedAt: vc.CheckedAt,
+			// Against the tally shown, which may differ from the one checked.
+			TallyMatches: tallyMatches(vc.Counts, p.Summary.Results), CheckedAt: vc.CheckedAt,
 		}
 		for _, b := range vc.Problems {
 			v.VoteCheck.Problems = append(v.VoteCheck.Problems, types.ProposalBallotProblem(b))

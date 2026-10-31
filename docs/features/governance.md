@@ -213,7 +213,7 @@ An approved proposal still takes author updates and replies until its billing is
 - that the vote bit is one of the vote's options;
 - that the ballot was signed with the ticket's largest commitment address, read from your own dcrd.
 
-The result is stored with the proposal: how many ballots verified, whether their count matches Politeia's tally option by option, and each ballot that was not counted with its reason. **Download votes** then saves the ballots as `<token>-votes.json`, the votes bundle `politeiaverify` reads, so you can check them with Politeia's own tool too. One check runs at a time.
+The result is stored with the proposal: how many ballots verified, the count for each option, and each ballot that was not counted with its reason. The page compares that count, option by option, with the tally it shows. **Download votes** then saves the ballots as `<token>-votes.json`, the votes bundle `politeiaverify` reads, so you can check them with Politeia's own tool too. One check runs at a time.
 
 **Export and import.** The **finished** and **abandoned** filters show an archive card with the number of archived proposals:
 

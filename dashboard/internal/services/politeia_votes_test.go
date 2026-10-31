@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -293,6 +294,8 @@ func TestVoteCheckRefusals(t *testing.T) {
 	}
 }
 
+// A refresh keeps the counted ballots but compares them with the tally
+// Politeia reports now (yes=9000 against yes=1, no=1 counted).
 func TestRefreshKeepsTheVoteCheck(t *testing.T) {
 	fx := newVoteFixture(t, 1, 1)
 	if err := StartProposalVoteCheck(vcToken); err != nil {
@@ -301,11 +304,67 @@ func TestRefreshKeepsTheVoteCheck(t *testing.T) {
 	waitVoteCheck(t, vcToken)
 	var calls int
 	piProposalRouter(t, fx.p, 5, &calls)
+	d, _, err := RefreshProposalDetail(context.Background(), vcToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, _ := fx.store.Get(vcToken)
+	vc := e.Proposal.VoteCheck
+	if vc == nil || vc.Counted != 2 || vc.TallyMatches || e.Proposal.Source != archive.SourceRefresh {
+		t.Fatalf("after refresh: %+v %+v", e.Proposal, vc)
+	}
+	if d.Verification.VoteCheck == nil || d.Verification.VoteCheck.TallyMatches {
+		t.Fatalf("served after refresh: %+v", d.Verification.VoteCheck)
+	}
+}
+
+// The served match is judged against the tally shown, whatever was stored.
+func TestServedVoteCheckComparesWithShownTally(t *testing.T) {
+	fx := newVoteFixture(t, 1, 1)
+	if err := StartProposalVoteCheck(vcToken); err != nil {
+		t.Fatal(err)
+	}
+	waitVoteCheck(t, vcToken)
+	e, _ := fx.store.Get(vcToken)
+	p := *e.Proposal
+	p.Summary.Results = []archive.Result{{ID: "yes", VoteBit: 2, Votes: 5000}}
+	if _, err := fx.store.Put(&p); err != nil {
+		t.Fatal(err)
+	}
+	politeiaOff(t)
+	d, _, err := GetProposalDetail(context.Background(), vcToken)
+	if err != nil || d.Verification.VoteCheck == nil || !p.VoteCheck.TallyMatches || d.Verification.VoteCheck.TallyMatches {
+		t.Fatalf("served: %v %+v", err, d.Verification.VoteCheck)
+	}
+}
+
+// A check whose archived copy was replaced while it ran records nothing on
+// the replacement.
+func TestVoteCheckDropsResultForReplacedCopy(t *testing.T) {
+	fx := newVoteFixture(t, 1, 1)
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	commitments(t, func(ticket string) (string, error) {
+		once.Do(func() { close(started) })
+		<-release
+		return fx.owners[ticket], nil
+	})
+	if err := StartProposalVoteCheck(vcToken); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	var calls int
+	piProposalRouter(t, fx.p, 5, &calls)
 	if _, _, err := RefreshProposalDetail(context.Background(), vcToken); err != nil {
 		t.Fatal(err)
 	}
-	if e, _ := fx.store.Get(vcToken); e.Proposal.VoteCheck == nil || e.Proposal.Source != archive.SourceRefresh {
-		t.Fatalf("after refresh: %+v", e.Proposal)
+	close(release)
+	waitVoteCheck(t, vcToken)
+	if st := ProposalVoteCheckProgress(vcToken); !strings.Contains(st.Error, "changed during the check") {
+		t.Fatalf("progress %+v", st)
+	}
+	if e, _ := fx.store.Get(vcToken); e.Proposal.VoteCheck != nil || e.Proposal.Source != archive.SourceRefresh {
+		t.Fatalf("replacement: %+v", e.Proposal)
 	}
 }
 

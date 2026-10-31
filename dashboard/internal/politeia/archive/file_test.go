@@ -134,14 +134,24 @@ func TestVoteCheckIsStoredButNeverImported(t *testing.T) {
 	server := pitest.NewKey()
 	dir := t.TempDir()
 	s := archive.NewStore(dir, server.Pub)
-	stored(t, s, server, token, 1)
+	held := stored(t, s, server, token, 1)
 	vc := archive.VoteCheck{Ballots: 3, Counted: 2, Counts: map[string]int64{"yes": 2}, CheckedAt: 7,
 		Problems: []archive.BallotProblem{{Ticket: "aa", Problem: "ticket was not eligible"}}}
-	if err := s.SetVoteCheck(token, vc, []byte(`{"votes":[]}`)); err != nil {
+	if err := s.SetVoteCheck(token, held, vc, []byte(`{"votes":[]}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetVoteCheck("fedcba9876543210", vc, nil); err == nil {
+	if err := s.SetVoteCheck("fedcba9876543210", held, vc, nil); err == nil {
 		t.Fatal("a vote check was recorded on a proposal not archived")
+	}
+	// The copy was replaced after the check began: no result is recorded.
+	other := archive.NewStore(t.TempDir(), server.Pub)
+	stale := stored(t, other, server, token, 1)
+	current := stored(t, other, server, token, 2)
+	if err := other.SetVoteCheck(token, stale, vc, nil); err == nil {
+		t.Fatal("a vote check was recorded on a copy replaced during the check")
+	}
+	if err := other.SetVoteCheck(token, current, vc, nil); err != nil {
+		t.Fatal(err)
 	}
 
 	reopened := archive.NewStore(dir, server.Pub)
