@@ -179,6 +179,35 @@ func TestVoteCheckCountsWhatVerifies(t *testing.T) {
 	}
 }
 
+// Another spelling of a ticket hash names the same ticket on dcrd, so only
+// the canonical spelling counts, even when Politeia lists them all.
+func TestVoteCheckCountsEachTicketOnce(t *testing.T) {
+	fx := newVoteFixture(t, 1, 0)
+	h := strings.Repeat("ab", 32)
+	spellings := []string{h, strings.ToUpper(h), "A" + h[1:], h[1:]}
+	v := pitest.NewVoter()
+	fx.p.Vote.EligibleTickets = spellings
+	fx.ballots = nil
+	for _, sp := range spellings {
+		fx.owners[sp] = v.Address
+		fx.ballots = append(fx.ballots, v.Ballot(fx.server, vcToken, sp, "2"))
+	}
+	if err := StartProposalVoteCheck(vcToken); err != nil {
+		t.Fatal(err)
+	}
+	waitVoteCheck(t, vcToken)
+	e, _ := fx.store.Get(vcToken)
+	vc := e.Proposal.VoteCheck
+	if vc == nil || vc.Counted != 1 || vc.Counts["yes"] != 1 || len(vc.Problems) != 3 {
+		t.Fatalf("vote check %+v", vc)
+	}
+	for _, p := range vc.Problems {
+		if p.Problem != "ticket is not a transaction hash" {
+			t.Errorf("ticket %s: %q", p.Ticket, p.Problem)
+		}
+	}
+}
+
 func TestVoteCheckComparesWithPoliteiasTally(t *testing.T) {
 	fx := newVoteFixture(t, 9000, 1)
 	if err := StartProposalVoteCheck(vcToken); err != nil {

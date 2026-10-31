@@ -192,6 +192,8 @@ func checkVotes(ctx context.Context, token string, e archive.Entry) error {
 		switch {
 		case b.Token != token:
 			problem = "ballot is for another proposal"
+		case !canonicalTicket(b.Ticket):
+			problem = "ticket is not a transaction hash"
 		case seen[b.Ticket]:
 			problem = "a second ballot for the ticket"
 		case !eligible[b.Ticket]:
@@ -231,6 +233,13 @@ func checkVotes(ctx context.Context, token string, e archive.Entry) error {
 		return err
 	}
 	return politeiaArchive().SetVoteCheck(token, vc, bundle)
+}
+
+// canonicalTicket reports whether t is a transaction hash spelled as dcrd
+// writes it, so each ticket has a single spelling to count.
+func canonicalTicket(t string) bool {
+	h, err := chainhash.NewHashFromStr(t)
+	return err == nil && h.String() == t
 }
 
 // tallyMatches reports whether the counted ballots equal Politeia's tally,

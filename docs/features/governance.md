@@ -209,7 +209,7 @@ An approved proposal still takes author updates and replies until its billing is
 **Votes.** On an archived proposal whose vote started, **Verify votes** fetches every ballot from Politeia and checks each one in the background, the way Politeia's `politeiaverify` tool does:
 
 - the ticket's signature over the token, ticket and vote bit, and the server's receipt;
-- that the ticket was in the eligible-ticket list Politeia reports for the vote, and voted once;
+- that the ticket is a transaction hash written as dcrd writes it, was in the eligible-ticket list Politeia reports for the vote, and voted once;
 - that the vote bit is one of the vote's options;
 - that the ballot was signed with the ticket's largest commitment address, read from your own dcrd.
 
