@@ -115,7 +115,7 @@ export const PoliteiaArchiveCard = ({ onImported }: { onImported: () => void }) 
       {result && (
         <div className="space-y-1">
           <p className="text-success">
-            Imported {result.imported}, kept {result.kept} already archived at the same time or later.
+            Imported {result.imported}, kept {result.kept} the dashboard already holds.
           </p>
           {result.refused && result.refused.length > 0 && (
             <div className="text-destructive">

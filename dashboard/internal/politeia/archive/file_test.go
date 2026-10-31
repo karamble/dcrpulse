@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"dcrpulse/internal/politeia/archive"
 	"dcrpulse/internal/politeia/pitest"
@@ -60,29 +61,60 @@ func TestExportImportRoundTrip(t *testing.T) {
 	}
 }
 
-func TestImportKeepsTheNewerCopy(t *testing.T) {
+// An import never replaces a copy this dashboard fetched itself, whatever
+// date the file claims; among imports the newer one wins.
+func TestImportNeverReplacesTheDashboardsOwnCopy(t *testing.T) {
 	server := pitest.NewKey()
+	now := time.Now().Unix()
 	dst := archive.NewStore(t.TempDir(), server.Pub)
-	stored(t, dst, server, token, 50)
-
-	older := archive.NewStore(t.TempDir(), server.Pub)
-	stored(t, older, server, token, 40)
-	res, err := dst.Import(bytes.NewReader(exported(t, older)))
-	if err != nil || res.Kept != 1 || res.Imported != 0 {
-		t.Fatalf("older copy: %+v %v", res, err)
-	}
-	if e, _ := dst.Get(token); e.Proposal.ArchivedAt != 50 || e.Proposal.Source != archive.SourceRefresh {
-		t.Fatalf("held copy replaced by an older one: %+v", e.Proposal)
-	}
+	stored(t, dst, server, token, now-3600)
 
 	newer := archive.NewStore(t.TempDir(), server.Pub)
-	stored(t, newer, server, token, 60)
-	res, err = dst.Import(bytes.NewReader(exported(t, newer)))
-	if err != nil || res.Imported != 1 {
-		t.Fatalf("newer copy: %+v %v", res, err)
+	stored(t, newer, server, token, now)
+	res, err := dst.Import(bytes.NewReader(exported(t, newer)))
+	if err != nil || res.Kept != 1 || res.Imported != 0 {
+		t.Fatalf("newer import over the dashboard's copy: %+v %v", res, err)
 	}
-	if e, _ := dst.Get(token); e.Proposal.ArchivedAt != 60 {
-		t.Fatalf("newer copy not stored: %+v", e.Proposal)
+	if e, _ := dst.Get(token); e.Proposal.ArchivedAt != now-3600 || e.Proposal.Source != archive.SourceRefresh {
+		t.Fatalf("the dashboard's copy was replaced: %+v", e.Proposal)
+	}
+}
+
+func TestImportReplacesOnlyAnOlderImport(t *testing.T) {
+	server := pitest.NewKey()
+	now := time.Now().Unix()
+	dst := archive.NewStore(t.TempDir(), server.Pub)
+	at := func(when int64) []byte {
+		src := archive.NewStore(t.TempDir(), server.Pub)
+		stored(t, src, server, token, when)
+		return exported(t, src)
+	}
+	if res, err := dst.Import(bytes.NewReader(at(now - 7200))); err != nil || res.Imported != 1 {
+		t.Fatalf("first import: %+v %v", res, err)
+	}
+	if res, err := dst.Import(bytes.NewReader(at(now - 3600))); err != nil || res.Imported != 1 {
+		t.Fatalf("newer import: %+v %v", res, err)
+	}
+	if res, err := dst.Import(bytes.NewReader(at(now - 5400))); err != nil || res.Kept != 1 {
+		t.Fatalf("older import: %+v %v", res, err)
+	}
+	if e, _ := dst.Get(token); e.Proposal.ArchivedAt != now-3600 || e.Proposal.Source != archive.SourceImport {
+		t.Fatalf("held import: %+v", e.Proposal)
+	}
+}
+
+// A file cannot date its copy after the import, which would keep every later
+// import out.
+func TestImportClampsAFutureDate(t *testing.T) {
+	server := pitest.NewKey()
+	src := archive.NewStore(t.TempDir(), server.Pub)
+	stored(t, src, server, token, time.Now().AddDate(1, 0, 0).Unix())
+	dst := archive.NewStore(t.TempDir(), server.Pub)
+	if res, err := dst.Import(bytes.NewReader(exported(t, src))); err != nil || res.Imported != 1 {
+		t.Fatalf("import: %+v %v", res, err)
+	}
+	if e, _ := dst.Get(token); e.Proposal.ArchivedAt > time.Now().Unix() {
+		t.Fatalf("future date kept: %d", e.Proposal.ArchivedAt)
 	}
 }
 

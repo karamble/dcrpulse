@@ -202,7 +202,7 @@ A record or vote start that fails is not stored at all, and the page says so abo
 
 The 115 proposals Politeia moved off its old backend in 2021 lost their author signature, comment signatures and vote records in the move. For those, only the text is archived, signed by today's server.
 
-An approved proposal still takes author updates and replies until its billing is closed or completed, so it is fetched again while Politeia answers and served from the archive otherwise. Any other archived proposal is read from the archive; **Refresh** on its page fetches and verifies it again.
+An approved proposal still takes author updates and replies until its billing is closed or completed, so it is fetched again while Politeia answers and served from the archive otherwise. So is a copy that came from an imported file, whose status is the file's claim. Any other archived proposal is read from the archive; **Refresh** on its page fetches and verifies it again.
 
 **Signatures panel.** An archived proposal's page lists what each signature covers and which key made it, and labels what Politeia reports without signing it: the vote tally, statuses, dates and comment votes. The tally under the results bar carries the same label.
 
@@ -218,7 +218,7 @@ The result is stored with the proposal: how many ballots verified, the count for
 **Export and import.** The **finished** and **abandoned** filters show an archive card with the number of archived proposals:
 
 - **Export** downloads every archived proposal as one JSON file.
-- **Import** reads such a file one proposal at a time and verifies each against the pinned server key before storing it; nothing in the file is trusted. A proposal the archive already holds from the same fetch or a later one is kept as it is, and each one that fails is listed with its reason. A vote check in the file is not imported.
+- **Import** reads such a file one proposal at a time and verifies each against the pinned server key before storing it; nothing in the file is trusted. An import adds proposals the archive does not hold and replaces only an earlier import; it never replaces a copy the dashboard fetched itself or the shipped snapshot. A date in the file later than the import is set to the import time. Each proposal that fails is listed with its reason. A vote check in the file is not imported.
 
 #### Casting a Politeia vote
 

@@ -5,6 +5,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -351,6 +352,38 @@ func TestDetailFailingVerificationIsServedButNotArchived(t *testing.T) {
 	}
 	if _, ok := s.Get(tok); ok {
 		t.Fatal("a proposal that failed verification was archived")
+	}
+}
+
+// An imported copy carries the file's unsigned status, so it is fetched and
+// verified again while Politeia answers, and served as imported otherwise.
+func TestImportedCopyIsFetchedAgain(t *testing.T) {
+	pointExternalCfg(t)
+	resetPiDetailCache(t)
+	_, server := useArchive(t)
+	const tok = "dededededededede"
+	p := pitest.NewProposal(server, tok, pitest.Options{Name: "Imported", Comments: 1})
+	a, err := archive.New(archiveFetched(p, "rejected", 500), server.Pub, archive.SourceRefresh, time.Now().Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(archive.File{Format: archive.FileFormat, SchemaVersion: archive.SchemaVersion, Proposals: []*archive.Proposal{a}})
+	if res, err := ImportPoliteiaArchive(bytes.NewReader(raw)); err != nil || res.Imported != 1 {
+		t.Fatalf("import: %+v %v", res, err)
+	}
+
+	politeiaOff(t)
+	d, _, err := GetProposalDetail(context.Background(), tok)
+	if err != nil || d.Verification == nil || d.Verification.Source != archive.SourceImport || d.VoteStatus != "rejected" {
+		t.Fatalf("Politeia off: %v %+v", err, d)
+	}
+
+	pointExternalCfg(t)
+	var calls int
+	piProposalRouter(t, p, 5, &calls)
+	d, _, err = GetProposalDetail(context.Background(), tok)
+	if err != nil || calls == 0 || d.Verification == nil || d.Verification.Source != archive.SourceRefresh || d.VoteStatus != "approved" {
+		t.Fatalf("Politeia on: %v calls=%d %+v", err, calls, d)
 	}
 }
 

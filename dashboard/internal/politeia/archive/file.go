@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"time"
 )
 
 // FileFormat names an exported archive.
@@ -48,8 +49,8 @@ type Refusal struct {
 }
 
 // Import reads an exported archive one proposal at a time. Each is verified
-// and stored unless the archive holds a copy fetched at the same time or
-// later; one that fails is refused and the rest go on.
+// and stored unless the archive already holds it from Politeia or from a
+// newer import; one that fails is refused and the rest go on.
 func (s *Store) Import(r io.Reader) (ImportResult, error) {
 	var res ImportResult
 	dec := json.NewDecoder(r)
@@ -82,9 +83,12 @@ func (s *Store) Import(r io.Reader) (ImportResult, error) {
 				if err := dec.Decode(&p); err != nil {
 					return res, err
 				}
-				// The file's vote check is a claim, not a signature.
+				// The file's vote check and date are claims, not signatures.
 				p.Source = SourceImport
 				p.VoteCheck = nil
+				if now := time.Now().Unix(); p.ArchivedAt > now {
+					p.ArchivedAt = now
+				}
 				switch _, stored, err := s.put(&p, true); {
 				case err != nil:
 					res.Refused = append(res.Refused, Refusal{Token: p.Token(), Reason: err.Error()})

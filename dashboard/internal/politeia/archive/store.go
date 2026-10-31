@@ -161,8 +161,9 @@ func (s *Store) VotesFile(token string) (string, error) {
 	return filepath.Join(s.dir, "votes", token+".json"), nil
 }
 
-// put verifies and writes p. With onlyNewer it keeps a held copy fetched at
-// the same time or later, and reports false.
+// put verifies and writes p. With onlyNewer, as for an import, it keeps a
+// held copy this dashboard did not import, or an import as new or newer, and
+// reports false.
 func (s *Store) put(p *Proposal, onlyNewer bool) (Entry, bool, error) {
 	token := p.Token()
 	if !tokenRe.MatchString(token) {
@@ -179,7 +180,8 @@ func (s *Store) put(p *Proposal, onlyNewer bool) (Entry, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.loadLocked()
-	if old, ok := s.entries[token]; ok && onlyNewer && old.Proposal.ArchivedAt >= p.ArchivedAt {
+	if old, ok := s.entries[token]; ok && onlyNewer &&
+		(old.Proposal.Source != SourceImport || old.Proposal.ArchivedAt >= p.ArchivedAt) {
 		return old, false, nil
 	}
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {

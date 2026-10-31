@@ -44,7 +44,7 @@ describe('PoliteiaArchiveCard', () => {
 
     const file = new File(['{}'], 'archive.json', { type: 'application/json' });
     pickFile(file);
-    await screen.findByText('Imported 2, kept 1 already archived at the same time or later.');
+    await screen.findByText('Imported 2, kept 1 the dashboard already holds.');
     expect(api.importPoliteiaArchive).toHaveBeenCalledWith(file);
     expect(screen.getByText('1 refused:')).toBeTruthy();
     expect(screen.getByText('abcdabcdabcdabcd')).toBeTruthy();

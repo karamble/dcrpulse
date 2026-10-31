@@ -536,7 +536,8 @@ func GetProposalDetail(ctx context.Context, token string) (*types.ProposalDetail
 		return nil, time.Time{}, fmt.Errorf("token required")
 	}
 	e, archived := politeiaArchive().Get(token)
-	if archived && (!PoliteiaEnabled() || !stillOpen(e)) {
+	// An imported copy is fetched again and verified while Politeia answers.
+	if archived && (!PoliteiaEnabled() || (!stillOpen(e) && e.Proposal.Source != archive.SourceImport)) {
 		return archivedDetail(ctx, e)
 	}
 	if !PoliteiaEnabled() {
