@@ -36,6 +36,7 @@ const (
 	fileNameProposalMeta   = "proposalmetadata.json"
 	authActionAuthorize    = "authorize"
 	authActionRevoke       = "revoke"
+	proposalUpdateHint     = "proposalupdate"
 	billingStatusActive    = 1
 	billingStatusCompleted = 3
 )
@@ -167,27 +168,46 @@ func ProposalMetadataDecode(r Record) (ProposalMetadata, error) {
 	return pm, errors.New("proposal metadata not found")
 }
 
-// CommentVerify checks a comment's signature and the server's receipt. A
-// deleted comment carries the deletion's signature, an edited one (version
-// above 1) the edit's, which also covers its comment ID.
+// CommentVerify checks a comment's shape, its signature and the server's
+// receipt. A deleted comment carries the deletion's signature.
 func CommentVerify(c Comment, serverKey string) error {
+	if err := commentShape(c); err != nil {
+		return err
+	}
 	state := strconv.FormatUint(uint64(c.State), 10)
-	id := strconv.FormatUint(uint64(c.CommentID), 10)
-	parent := strconv.FormatUint(uint64(c.ParentID), 10)
-	var msg string
-	switch {
-	case c.Deleted:
-		msg = state + c.Token + id + c.Reason
-	case c.Version > 1:
-		msg = state + c.Token + parent + id + c.Comment + c.ExtraData + c.ExtraDataHint
-	default:
-		msg = state + c.Token + parent + c.Comment + c.ExtraData + c.ExtraDataHint
+	msg := state + c.Token + strconv.FormatUint(uint64(c.ParentID), 10) + c.Comment + c.ExtraData + c.ExtraDataHint
+	if c.Deleted {
+		msg = state + c.Token + strconv.FormatUint(uint64(c.CommentID), 10) + c.Reason
 	}
 	if err := VerifySignature(c.Signature, c.PublicKey, msg); err != nil {
 		return fmt.Errorf("comment %d: %w", c.CommentID, err)
 	}
 	if err := VerifySignature(c.Receipt, serverKey, c.Signature); err != nil {
 		return fmt.Errorf("comment %d receipt: %w", c.CommentID, err)
+	}
+	return nil
+}
+
+// commentShape refuses fields Politeia never sets together: the signature
+// covers their concatenation, not where one field ends and the next begins.
+func commentShape(c Comment) error {
+	switch {
+	case c.CommentID == 0:
+		return errors.New("comment without an ID")
+	case c.Deleted && (c.Comment != "" || c.ExtraData != "" || c.ExtraDataHint != ""):
+		return fmt.Errorf("comment %d: deleted but carries content", c.CommentID)
+	case !c.Deleted && c.Reason != "":
+		return fmt.Errorf("comment %d: deletion reason on a comment not deleted", c.CommentID)
+	case c.ExtraData == "" && c.ExtraDataHint == "":
+		return nil
+	case c.ExtraDataHint != proposalUpdateHint:
+		return fmt.Errorf("comment %d: extra data hint %q", c.CommentID, c.ExtraDataHint)
+	}
+	var u struct {
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal([]byte(c.ExtraData), &u); err != nil || u.Title == "" {
+		return fmt.Errorf("comment %d: proposal update without a title", c.CommentID)
 	}
 	return nil
 }

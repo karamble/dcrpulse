@@ -144,8 +144,19 @@ func New(f Fetched, serverKey, source string, now int64) (*Proposal, error) {
 		return nil, err
 	}
 	token := rec.CensorshipRecord.Token
+	var verified []verify.Comment
+	ids := make(map[uint32]int)
 	for _, c := range f.Comments {
 		if c.Token != token || verify.CommentVerify(c, serverKey) != nil {
+			p.DroppedComments = append(p.DroppedComments, c.CommentID)
+			continue
+		}
+		verified = append(verified, c)
+		ids[c.CommentID]++
+	}
+	// Nothing tells which of two comments sharing an ID is Politeia's.
+	for _, c := range verified {
+		if ids[c.CommentID] > 1 {
 			p.DroppedComments = append(p.DroppedComments, c.CommentID)
 			continue
 		}
@@ -209,10 +220,15 @@ func Verify(p *Proposal, serverKey string) (Checked, error) {
 		return ck, err
 	}
 	token := rec.CensorshipRecord.Token
+	ids := make(map[uint32]bool, len(p.Comments))
 	for _, c := range p.Comments {
 		if c.Token != token {
 			return ck, fmt.Errorf("comment %d is for another proposal", c.CommentID)
 		}
+		if ids[c.CommentID] {
+			return ck, fmt.Errorf("comment %d appears twice", c.CommentID)
+		}
+		ids[c.CommentID] = true
 		if err := verify.CommentVerify(c, serverKey); err != nil {
 			return ck, err
 		}

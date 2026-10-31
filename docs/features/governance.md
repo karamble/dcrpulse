@@ -195,7 +195,7 @@ Finished proposals no longer change on Politeia, so dcrpulse keeps them on the d
 
 - the **text** against the Politeia server key pinned in dcrpulse (`a3a3b37951a1dd5de6ab2a35e19e266b6df2daad39aad4c2da04034ca95672f5`), over the merkle root of every file, images included;
 - the signature over the same root by the key the record names as its **author**, and each status change;
-- each **comment** (new, edited or deleted) with its signer's key and the server's receipt;
+- each **comment** (new or deleted) with its signer's key and the server's receipt, in a shape Politeia produces: a deleted comment carries no text, only a deleted one has a reason, extra data only as an author update with a title, and no two comments share an ID;
 - the **vote authorization**, the admin's **vote start** and the **billing status changes**, each with its receipt.
 
 A record or vote start that fails is not stored at all, and the page says so above the text, showing what Politeia sent. A single comment, authorization or billing change that fails is left out and the rest is kept. Images are used for the check and then dropped; only their digests are kept. A censored proposal has no files left to check, so it is shown as Politeia has it and not archived.

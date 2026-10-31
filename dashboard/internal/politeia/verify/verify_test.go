@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"testing"
 
 	"dcrpulse/internal/merkle"
@@ -199,15 +200,13 @@ func TestCommentVerify(t *testing.T) {
 		t.Fatal("a receipt by another server verified")
 	}
 
+	// Politeia takes no comment edits, so an edit's signature form is refused.
 	edited := c
 	edited.Version = 2
-	if CommentVerify(edited, server.pub) == nil {
-		t.Fatal("an edited comment carrying a new comment's signature verified")
-	}
 	edited.Signature = user.sign("2" + "0123456789abcdef" + "3" + "7" + "Looks good." + `{"title":"Update 1"}` + "proposalupdate")
 	edited.Receipt = server.sign(edited.Signature)
-	if err := CommentVerify(edited, server.pub); err != nil {
-		t.Fatalf("edited comment: %v", err)
+	if CommentVerify(edited, server.pub) == nil {
+		t.Fatal("an edit's signature verified")
 	}
 
 	deleted := Comment{
@@ -222,6 +221,46 @@ func TestCommentVerify(t *testing.T) {
 	deleted.Reason = "off topic"
 	if CommentVerify(deleted, server.pub) == nil {
 		t.Fatal("a deletion with a changed reason verified")
+	}
+}
+
+// Each shape below carries a valid signature over the same bytes as a
+// comment Politeia did sign, split into its fields another way.
+func TestCommentShapesPoliteiaNeverProduces(t *testing.T) {
+	server, user := newKey(t), newKey(t)
+	signed := func(c Comment) Comment {
+		c.State, c.Token, c.PublicKey = 2, "0123456789abcdef", user.pub
+		msg := "2" + c.Token + strconv.FormatUint(uint64(c.ParentID), 10) + c.Comment + c.ExtraData + c.ExtraDataHint
+		if c.Deleted {
+			msg = "2" + c.Token + strconv.FormatUint(uint64(c.CommentID), 10) + c.Reason
+		}
+		c.Signature = user.sign(msg)
+		c.Receipt = server.sign(c.Signature)
+		return c
+	}
+	for _, tc := range []struct {
+		name string
+		c    Comment
+		ok   bool
+	}{
+		{"plain comment", Comment{CommentID: 4, Comment: "Looks good. Really."}, true},
+		{"proposal update", Comment{CommentID: 4, Comment: "Done.", ExtraData: `{"title":"Update 1"}`, ExtraDataHint: "proposalupdate"}, true},
+		{"deleted comment", Comment{CommentID: 4, ParentID: 1, Deleted: true, Reason: "spam"}, true},
+		{"text moved into extra data", Comment{CommentID: 4, Comment: "Looks good.", ExtraData: " Really."}, false},
+		{"text moved into the hint", Comment{CommentID: 4, Comment: "Looks good.", ExtraDataHint: " Really."}, false},
+		{"update without JSON", Comment{CommentID: 4, ExtraData: "Done.", ExtraDataHint: "proposalupdate"}, false},
+		{"update without a title", Comment{CommentID: 4, ExtraData: `{"title":""}`, ExtraDataHint: "proposalupdate"}, false},
+		{"update with a malformed title", Comment{CommentID: 4, ExtraData: `{"title":"Update 1","title":5}`, ExtraDataHint: "proposalupdate"}, false},
+		{"update under another hint", Comment{CommentID: 4, ExtraData: `{"title":"Update 1"}`, ExtraDataHint: "update"}, false},
+		{"top-level comment shown as deleted", Comment{Deleted: true, Reason: "Looks good."}, false},
+		{"deleted with text", Comment{CommentID: 4, Deleted: true, Comment: "Looks good."}, false},
+		{"deleted with extra data", Comment{CommentID: 4, Deleted: true, ExtraData: "x"}, false},
+		{"reason on a comment not deleted", Comment{CommentID: 4, Comment: "Looks good.", Reason: "spam"}, false},
+		{"no comment ID", Comment{Comment: "Looks good."}, false},
+	} {
+		if err := CommentVerify(signed(tc.c), server.pub); (err == nil) != tc.ok {
+			t.Errorf("%s: err %v, want ok %v", tc.name, err, tc.ok)
+		}
 	}
 }
 

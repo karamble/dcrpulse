@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"dcrpulse/internal/politeia/archive"
@@ -67,6 +68,24 @@ func TestNewLeavesOutFailingPartsAndRefusesFailingRecordOrVote(t *testing.T) {
 	}
 	if len(got.Billing) != 0 {
 		t.Fatal("a changed billing status was kept")
+	}
+
+	dup := pitest.NewProposal(server, token, pitest.Options{Name: "P", Comments: 3})
+	dup.Comments[1].CommentID = 1
+	got, err = archive.New(fetched(dup), server.Pub, archive.SourceSnapshot, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Comments) != 1 || got.Comments[0].CommentID != 3 || !slices.Equal(got.DroppedComments, []uint32{1, 1}) {
+		t.Fatalf("shared ID: comments %+v dropped %v", got.Comments, got.DroppedComments)
+	}
+	kept, err := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "P", Comments: 2})), server.Pub, archive.SourceSnapshot, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept.Comments[1].CommentID = 1
+	if _, err := archive.Verify(kept, server.Pub); err == nil {
+		t.Fatal("a stored proposal with two comments sharing an ID verified")
 	}
 
 	bad := pitest.NewProposal(server, token, pitest.Options{Name: "P"})
