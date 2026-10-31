@@ -54,8 +54,8 @@ describe('ProposalDetailPage verification', () => {
   it('lists what the signatures cover on an archived proposal', async () => {
     await show(
       detail({
-        serverKey, authorKey, migrated: false, comments: 2, commentsLeftOut: 1, authorized: true,
-        voteStartKey: adminKey, billingStatus: 'completed', source: 'import', archivedAt: 1800000000,
+        serverKey, authorKey, authorKeyBound: true, migrated: false, comments: 2, commentsLeftOut: 1,
+        authorized: true, voteStartKey: adminKey, billingStatus: 'completed', source: 'import', archivedAt: 1800000000,
       }),
     );
     expect(screen.getByText('Signatures')).toBeTruthy();
@@ -64,7 +64,9 @@ describe('ProposalDetailPage verification', () => {
     expect(screen.getByText(adminKey)).toBeTruthy();
     expect(screen.getByText(/2 verified, each with its signature and server receipt; 1 left out/))
       .toBeTruthy();
-    expect(screen.getByText('signed by the author, with a server receipt')).toBeTruthy();
+    expect(screen.getByText('signed by the key that authorized the vote, with a server receipt'))
+      .toBeTruthy();
+    expect(screen.getByText('usernames, the vote tally, statuses, dates and comment votes')).toBeTruthy();
     expect(screen.getByText('completed, signed by an admin, with a server receipt')).toBeTruthy();
     expect(screen.getByText('Tally reported by Politeia, not signed.')).toBeTruthy();
     expect(screen.getByText(/^Fetched from Politeia on .*, arrived with an imported archive file\.$/)).toBeTruthy();
@@ -73,11 +75,24 @@ describe('ProposalDetailPage verification', () => {
     expect(screen.getByText('No comments on this proposal yet.')).toBeTruthy();
   });
 
+  it('calls an author key self-asserted unless it authorized the vote', async () => {
+    await show(
+      detail({
+        serverKey, authorKey, authorKeyBound: false, migrated: false, comments: 0, commentsLeftOut: 0,
+        authorized: false, source: 'import', archivedAt: 1800000000,
+      }),
+    );
+    expect(screen.getByText(authorKey)).toBeTruthy();
+    expect(screen.getByText('signed by a key the record carries itself; nothing binds it to the author'))
+      .toBeTruthy();
+    expect(screen.queryByText(/authorized the vote/)).toBeNull();
+  });
+
   it('says what a 2021 migration left unsigned', async () => {
     const legacy = '27f87171d98b7923a1bd2bee6affed929fa2d2a6e178b5c80a9971a92a5c7f50';
     await show(
       detail({
-        serverKey, migrated: true, legacyToken: legacy, comments: 0, commentsLeftOut: 0,
+        serverKey, authorKeyBound: false, migrated: true, legacyToken: legacy, comments: 0, commentsLeftOut: 0,
         authorized: false, source: 'snapshot', archivedAt: 1800000000,
       }),
     );
@@ -95,8 +110,8 @@ describe('ProposalDetailPage verification', () => {
   it('dates a copy the dashboard fetched itself without a source note', async () => {
     await show(
       detail({
-        serverKey, migrated: true, comments: 0, commentsLeftOut: 0, authorized: false,
-        source: 'refresh', archivedAt: 1800000000,
+        serverKey, authorKeyBound: false, migrated: true, comments: 0, commentsLeftOut: 0,
+        authorized: false, source: 'refresh', archivedAt: 1800000000,
       }),
     );
     expect(screen.getByText(/^Fetched from Politeia on [^,]*\.$/)).toBeTruthy();

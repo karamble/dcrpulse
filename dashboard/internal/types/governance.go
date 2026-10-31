@@ -204,6 +204,9 @@ type ProposalVerification struct {
 	ServerKey string `json:"serverKey"`
 	// AuthorKey signed the text; empty for a migrated proposal.
 	AuthorKey string `json:"authorKey,omitempty"`
+	// AuthorKeyBound reports that AuthorKey also made a vote authorization
+	// the server receipted, which Politeia takes only from the record author.
+	AuthorKeyBound bool `json:"authorKeyBound"`
 	// Migrated proposals were moved off Politeia's old backend in 2021,
 	// which blanked their author signature, comments and vote records.
 	Migrated        bool   `json:"migrated"`

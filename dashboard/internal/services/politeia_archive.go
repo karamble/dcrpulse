@@ -313,6 +313,12 @@ func detailFromArchive(e archive.Entry, serverKey string) *types.ProposalDetail 
 	}
 	if e.Checked.Author != nil {
 		v.AuthorKey = e.Checked.Author.PublicKey
+		for _, a := range p.Auths {
+			if a.PublicKey == v.AuthorKey {
+				v.AuthorKeyBound = true
+				break
+			}
+		}
 	}
 	if p.Vote != nil {
 		v.VoteStartKey = p.Vote.PublicKey

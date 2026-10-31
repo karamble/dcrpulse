@@ -1209,6 +1209,8 @@ export interface ProposalDetail extends Proposal {
 export interface ProposalVerification {
   serverKey: string;
   authorKey?: string;
+  // authorKeyBound: the author key also made a receipted vote authorization.
+  authorKeyBound: boolean;
   migrated: boolean;
   legacyToken?: string;
   comments: number;

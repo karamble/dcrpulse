@@ -207,7 +207,7 @@ func TestArchivedDetailCarriesItsVerification(t *testing.T) {
 		t.Fatalf("%d comments, want the 2 that verified", len(d.Comments))
 	}
 	want := types.ProposalVerification{
-		ServerKey: server.Pub, AuthorKey: p.Author.Pub, Comments: 2, CommentsLeftOut: 1,
+		ServerKey: server.Pub, AuthorKey: p.Author.Pub, AuthorKeyBound: true, Comments: 2, CommentsLeftOut: 1,
 		Authorized: true, VoteStartKey: p.Admin.Pub, BillingStatus: "completed",
 		Source: archive.SourceSnapshot, ArchivedAt: 1800000000,
 	}
@@ -230,6 +230,28 @@ func TestArchivedDetailCarriesItsVerification(t *testing.T) {
 
 	if _, _, err := GetProposalDetail(ctx, "6666666666666666"); !errors.Is(err, ErrPoliteiaDisabled) {
 		t.Fatalf("unarchived proposal with Politeia off: %v", err)
+	}
+}
+
+// A record can name any key that signs its merkle root, so only the key that
+// authorized the vote counts as the author's.
+func TestSelfAssertedAuthorKeyIsNotBound(t *testing.T) {
+	politeiaOff(t)
+	s, server := useArchive(t)
+
+	const tok = "7a7a7a7a7a7a7a7a"
+	p := pitest.NewProposal(server, tok, pitest.Options{Name: "Claimed"})
+	other := pitest.NewKey()
+	um, _ := json.Marshal(verify.UserMetadata{UserID: "u", PublicKey: other.Pub, Signature: other.Sign(p.Record.CensorshipRecord.Merkle)})
+	p.Record.Metadata[0].Payload = string(um)
+	putArchived(t, s, server, archiveFetched(p, "approved", 500))
+
+	d, _, err := GetProposalDetail(context.Background(), tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := d.Verification; v.AuthorKey != other.Pub || v.AuthorKeyBound {
+		t.Fatalf("author key %s bound %v, want the claimed key unbound", v.AuthorKey, v.AuthorKeyBound)
 	}
 }
 

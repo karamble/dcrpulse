@@ -183,8 +183,10 @@ const VerificationPanel = ({ v }: { v: ProposalVerification }) => (
         <Mono text={v.serverKey} />
       </SignatureRow>
       {v.authorKey ? (
-        <SignatureRow signed label="Author">
-          signed by the author
+        <SignatureRow signed={v.authorKeyBound} label="Author">
+          {v.authorKeyBound
+            ? 'signed by the key that authorized the vote, with a server receipt'
+            : 'signed by a key the record carries itself; nothing binds it to the author'}
           <Mono text={v.authorKey} />
         </SignatureRow>
       ) : (
@@ -225,7 +227,7 @@ const VerificationPanel = ({ v }: { v: ProposalVerification }) => (
         </>
       )}
       <SignatureRow signed={false} label="Reported by Politeia, not signed">
-        the vote tally, statuses, dates and comment votes
+        usernames, the vote tally, statuses, dates and comment votes
       </SignatureRow>
     </ul>
     <p className="text-xs text-muted-foreground pt-2 border-t border-border/30">

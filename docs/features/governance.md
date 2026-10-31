@@ -194,7 +194,7 @@ Finished proposals no longer change on Politeia, so dcrpulse keeps them on the d
 **What goes in.** Opening or refreshing a finished proposal (approved, rejected, finished or ineligible) while Politeia answers fetches all of it: the full record with its images, the comments, the vote authorization and vote start, and the billing status changes. Every signature is checked before anything is stored:
 
 - the **text** against the Politeia server key pinned in dcrpulse (`a3a3b37951a1dd5de6ab2a35e19e266b6df2daad39aad4c2da04034ca95672f5`), over the merkle root of every file, images included;
-- the **author's** signature over the same root, and each status change;
+- the signature over the same root by the key the record names as its **author**, and each status change;
 - each **comment** (new, edited or deleted) with its signer's key and the server's receipt;
 - the **vote authorization**, the admin's **vote start** and the **billing status changes**, each with its receipt.
 
@@ -204,7 +204,7 @@ The 115 proposals Politeia moved off its old backend in 2021 lost their author s
 
 An approved proposal still takes author updates and replies until its billing is closed or completed, so it is fetched again while Politeia answers and served from the archive otherwise. So is a copy that came from an imported file, whose status is the file's claim. Any other archived proposal is read from the archive; **Refresh** on its page fetches and verifies it again.
 
-**Signatures panel.** An archived proposal's page lists what each signature covers and which key made it, and labels what Politeia reports without signing it: the vote tally, statuses, dates and comment votes. The tally under the results bar carries the same label.
+**Signatures panel.** An archived proposal's page lists what each signature covers and which key made it, and labels what Politeia reports without signing it: usernames, the vote tally, statuses, dates and comment votes. The tally under the results bar carries the same label. The author key counts as the author's only when the same key authorized the vote, which Politeia accepts only from the record's author and receipts; otherwise the panel says the key is self-asserted.
 
 **Votes.** On an archived proposal whose vote started, **Verify votes** fetches every ballot from Politeia and checks each one in the background, the way Politeia's `politeiaverify` tool does:
 
