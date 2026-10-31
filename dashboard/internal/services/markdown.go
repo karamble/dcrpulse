@@ -18,6 +18,8 @@ import (
 	"github.com/yuin/goldmark/renderer/html"
 )
 
+var codeLanguageClass = regexp.MustCompile(`^language-[A-Za-z0-9_+-]+$`)
+
 // Built once at first use; safe for concurrent use.
 var (
 	mdRendererOnce sync.Once
@@ -61,7 +63,9 @@ func initMDRenderer() {
 		"a",
 	)
 	mdPolicy.AllowAttrs("href").OnElements("a")
-	mdPolicy.AllowAttrs("class").OnElements("code", "pre")
+	// Only goldmark's fence language class; any other class would let the
+	// text pick dashboard styles.
+	mdPolicy.AllowAttrs("class").Matching(codeLanguageClass).OnElements("code")
 	mdPolicy.RequireNoFollowOnLinks(true)
 	mdPolicy.AddTargetBlankToFullyQualifiedLinks(true)
 
@@ -81,7 +85,7 @@ func initMDRenderer() {
 		"a",
 	)
 	mdPagePolicy.AllowAttrs("href").OnElements("a")
-	mdPagePolicy.AllowAttrs("class").OnElements("code", "pre")
+	mdPagePolicy.AllowAttrs("class").Matching(codeLanguageClass).OnElements("code")
 	mdPagePolicy.AllowURLSchemes("http", "https", "mailto", "br")
 	mdPagePolicy.AllowRelativeURLs(true)
 	mdPagePolicy.RequireNoFollowOnLinks(true)

@@ -38,3 +38,17 @@ func TestBRQuoteSnippet(t *testing.T) {
 		}
 	}
 }
+
+// A fence's info string names the code's language; it must not carry other
+// classes onto the page.
+func TestCodeKeepsOnlyItsLanguageClass(t *testing.T) {
+	for name, render := range map[string]func(string) string{"post": RenderMarkdownHTML, "page": renderPageMarkdownHTML} {
+		if got := render("```go\nx := 1\n```"); !strings.Contains(got, `<code class="language-go">`) {
+			t.Errorf("%s: language class dropped: %s", name, got)
+		}
+		got := render("```a&#32;fixed&#32;inset-0\nX\n```")
+		if strings.Contains(got, "fixed") || strings.Contains(got, "class") {
+			t.Errorf("%s: extra classes kept: %s", name, got)
+		}
+	}
+}
