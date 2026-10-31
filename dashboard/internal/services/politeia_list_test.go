@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
@@ -66,6 +67,31 @@ func piRouter(t *testing.T, routes map[string]http.HandlerFunc) {
 	prev := piHTTPClient
 	piHTTPClient = &http.Client{Transport: piRedirect{to: srv.URL, rt: srv.Client().Transport}}
 	t.Cleanup(func() { piHTTPClient = prev })
+}
+
+// Politeia sees a browser, never Go's default client name.
+func TestPoliteiaRequestsCarryABrowserUserAgent(t *testing.T) {
+	var agents []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agents = append(agents, r.UserAgent())
+		w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+	prevShared, prevBallot := piHTTPClient, piBallotClient
+	piHTTPClient = &http.Client{Transport: piRedirect{to: srv.URL, rt: srv.Client().Transport}}
+	piBallotClient = &http.Client{Transport: piRedirect{to: srv.URL, rt: srv.Client().Transport}}
+	t.Cleanup(func() { piHTTPClient, piBallotClient = prevShared, prevBallot })
+
+	var out struct{}
+	if err := piPost(context.Background(), "/records/v1/records", struct{}{}, &out, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := piPostBallot(context.Background(), struct{}{}, &out, 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 2 || agents[0] != utils.BrowserUserAgent || agents[1] != utils.BrowserUserAgent {
+		t.Fatalf("user agents %q", agents)
+	}
 }
 
 func resetPiListCache(t *testing.T) {

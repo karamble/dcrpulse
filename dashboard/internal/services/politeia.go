@@ -26,6 +26,7 @@ import (
 	"dcrpulse/internal/politeia/verify"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
@@ -1401,6 +1402,7 @@ func piPostWith(ctx context.Context, client *http.Client, path string, body any,
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", utils.BrowserUserAgent)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
