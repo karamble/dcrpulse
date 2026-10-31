@@ -20,6 +20,7 @@ vi.mock('./VoteCheckCard', () => ({ VoteCheckCard: () => <div>vote check card</d
 const serverKey = 'a3a3b37951a1dd5de6ab2a35e19e266b6df2daad39aad4c2da04034ca95672f5';
 const authorKey = 'b'.repeat(64);
 const adminKey = 'c'.repeat(64);
+const now = Math.floor(Date.now() / 1000);
 
 const detail = (verification?: ProposalVerification): ProposalDetail => ({
   token: '1111111111111111', name: 'Marketing', username: 'author', status: 'finished',
@@ -32,7 +33,7 @@ const detail = (verification?: ProposalVerification): ProposalDetail => ({
 const show = async (d: ProposalDetail) => {
   vi.mocked(api.getProposalDetail).mockResolvedValue({
     detail: d,
-    fetchedAt: 1800000000,
+    fetchedAt: now,
     refreshAvailableAt: 0,
   });
   render(
@@ -55,7 +56,7 @@ describe('ProposalDetailPage verification', () => {
     await show(
       detail({
         serverKey, authorKey, authorKeyBound: true, migrated: false, comments: 2, commentsLeftOut: 1,
-        authorized: true, voteStartKey: adminKey, billingStatus: 'completed', source: 'import', archivedAt: 1800000000,
+        authorized: true, voteStartKey: adminKey, billingStatus: 'completed', source: 'import', archivedAt: now - 3600,
       }),
     );
     expect(screen.getByText('Signatures')).toBeTruthy();
@@ -79,7 +80,7 @@ describe('ProposalDetailPage verification', () => {
     await show(
       detail({
         serverKey, authorKey, authorKeyBound: false, migrated: false, comments: 0, commentsLeftOut: 0,
-        authorized: false, source: 'import', archivedAt: 1800000000,
+        authorized: false, source: 'import', archivedAt: now - 3600,
       }),
     );
     expect(screen.getByText(authorKey)).toBeTruthy();
@@ -93,7 +94,7 @@ describe('ProposalDetailPage verification', () => {
     await show(
       detail({
         serverKey, authorKeyBound: false, migrated: true, legacyToken: legacy, comments: 0, commentsLeftOut: 0,
-        authorized: false, source: 'snapshot', archivedAt: 1800000000,
+        authorized: false, source: 'snapshot', archivedAt: now - 3600,
       }),
     );
     expect(screen.getByText(/original signature lost when Politeia migrated this proposal in 2021/))
@@ -111,7 +112,7 @@ describe('ProposalDetailPage verification', () => {
     await show(
       detail({
         serverKey, authorKeyBound: false, migrated: true, comments: 0, commentsLeftOut: 0,
-        authorized: false, source: 'refresh', archivedAt: 1800000000,
+        authorized: false, source: 'refresh', archivedAt: now - 3600,
       }),
     );
     expect(screen.getByText(/^Fetched from Politeia on [^,]*\.$/)).toBeTruthy();

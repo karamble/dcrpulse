@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"dcrpulse/internal/politeia/archive"
 	"dcrpulse/internal/politeia/pitest"
@@ -29,7 +30,8 @@ func fetched(p *pitest.Proposal) archive.Fetched {
 func TestNewKeepsWhatVerifiesAndStripsTheRest(t *testing.T) {
 	server := pitest.NewKey()
 	p := pitest.NewProposal(server, token, pitest.Options{Name: "Marketing", Comments: 3})
-	got, err := archive.New(fetched(p), server.Pub, archive.SourceRefresh, 1800000000)
+	now := time.Now().Unix()
+	got, err := archive.New(fetched(p), server.Pub, archive.SourceRefresh, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +47,7 @@ func TestNewKeepsWhatVerifiesAndStripsTheRest(t *testing.T) {
 	if got.Vote.EligibleTickets != nil {
 		t.Fatal("eligible tickets were archived")
 	}
-	if got.Source != archive.SourceRefresh || got.ArchivedAt != 1800000000 || got.Summary.Status != "approved" {
+	if got.Source != archive.SourceRefresh || got.ArchivedAt != now || got.Summary.Status != "approved" {
 		t.Fatalf("source %q at %d status %q", got.Source, got.ArchivedAt, got.Summary.Status)
 	}
 	ck, err := archive.Verify(got, server.Pub)
@@ -56,10 +58,11 @@ func TestNewKeepsWhatVerifiesAndStripsTheRest(t *testing.T) {
 
 func TestNewLeavesOutFailingPartsAndRefusesFailingRecordOrVote(t *testing.T) {
 	server := pitest.NewKey()
+	now := time.Now().Unix()
 	p := pitest.NewProposal(server, token, pitest.Options{Name: "P", Comments: 3})
 	p.Comments[1].Comment = "Edited after signing."
 	p.Billing[0].Status = 1
-	got, err := archive.New(fetched(p), server.Pub, archive.SourceSnapshot, 1)
+	got, err := archive.New(fetched(p), server.Pub, archive.SourceSnapshot, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,14 +75,14 @@ func TestNewLeavesOutFailingPartsAndRefusesFailingRecordOrVote(t *testing.T) {
 
 	dup := pitest.NewProposal(server, token, pitest.Options{Name: "P", Comments: 3})
 	dup.Comments[1].CommentID = 1
-	got, err = archive.New(fetched(dup), server.Pub, archive.SourceSnapshot, 1)
+	got, err = archive.New(fetched(dup), server.Pub, archive.SourceSnapshot, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got.Comments) != 1 || got.Comments[0].CommentID != 3 || !slices.Equal(got.DroppedComments, []uint32{1, 1}) {
 		t.Fatalf("shared ID: comments %+v dropped %v", got.Comments, got.DroppedComments)
 	}
-	kept, err := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "P", Comments: 2})), server.Pub, archive.SourceSnapshot, 1)
+	kept, err := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "P", Comments: 2})), server.Pub, archive.SourceSnapshot, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,28 +93,28 @@ func TestNewLeavesOutFailingPartsAndRefusesFailingRecordOrVote(t *testing.T) {
 
 	bad := pitest.NewProposal(server, token, pitest.Options{Name: "P"})
 	bad.Record.Files[0].Payload = base64.StdEncoding.EncodeToString([]byte("# Other text"))
-	if _, err := archive.New(fetched(bad), server.Pub, archive.SourceSnapshot, 1); err == nil {
+	if _, err := archive.New(fetched(bad), server.Pub, archive.SourceSnapshot, now); err == nil {
 		t.Fatal("a changed text was archived")
 	}
 	bad = pitest.NewProposal(server, token, pitest.Options{Name: "P"})
 	bad.Vote.Params.PassPercentage = 50
-	if _, err := archive.New(fetched(bad), server.Pub, archive.SourceSnapshot, 1); err == nil {
+	if _, err := archive.New(fetched(bad), server.Pub, archive.SourceSnapshot, now); err == nil {
 		t.Fatal("a changed vote start was archived")
 	}
-	if _, err := archive.New(fetched(p), pitest.NewKey().Pub, archive.SourceSnapshot, 1); err == nil {
+	if _, err := archive.New(fetched(p), pitest.NewKey().Pub, archive.SourceSnapshot, now); err == nil {
 		t.Fatal("a proposal signed by another server was archived")
 	}
 	// The digest alone still verifies against the merkle root, but there
 	// would be no text to read.
 	textless := pitest.NewProposal(server, token, pitest.Options{Name: "P"})
 	textless.Record.Files[0].Payload = ""
-	if _, err := archive.New(fetched(textless), server.Pub, archive.SourceSnapshot, 1); err == nil {
+	if _, err := archive.New(fetched(textless), server.Pub, archive.SourceSnapshot, now); err == nil {
 		t.Fatal("a proposal without its text was archived")
 	}
 	other := pitest.NewProposal(server, "fedcba9876543210", pitest.Options{Name: "Q"})
 	mixed := fetched(p)
 	mixed.Vote = other.Vote
-	if _, err := archive.New(mixed, server.Pub, archive.SourceSnapshot, 1); err == nil {
+	if _, err := archive.New(mixed, server.Pub, archive.SourceSnapshot, now); err == nil {
 		t.Fatal("another proposal's vote start was archived")
 	}
 }
@@ -120,10 +123,11 @@ func TestNewLeavesOutFailingPartsAndRefusesFailingRecordOrVote(t *testing.T) {
 // today's server signed; its author signature was blanked.
 func TestMigratedProposalKeepsOnlyItsText(t *testing.T) {
 	server := pitest.NewKey()
+	now := time.Now().Unix()
 	p := pitest.NewProposal(server, token, pitest.Options{Name: "Old", LegacyToken: "27f87171d98b7923a1bd2bee6affed929fa2d2a6e178b5c80a9971a92a5c7f50"})
 	f := fetched(p)
 	f.Comments = pitest.NewProposal(server, token, pitest.Options{Name: "Old", Comments: 2}).Comments
-	got, err := archive.New(f, server.Pub, archive.SourceSnapshot, 1)
+	got, err := archive.New(f, server.Pub, archive.SourceSnapshot, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +147,7 @@ func TestMigratedProposalKeepsOnlyItsText(t *testing.T) {
 func TestStoreKeepsVerifiedProposalsOnDisk(t *testing.T) {
 	server := pitest.NewKey()
 	dir := filepath.Join(t.TempDir(), "politeia")
-	p, err := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "Kept", Comments: 1})), server.Pub, archive.SourceRefresh, 1)
+	p, err := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "Kept", Comments: 1})), server.Pub, archive.SourceRefresh, time.Now().Unix())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +175,8 @@ func TestStoreKeepsVerifiedProposalsOnDisk(t *testing.T) {
 func TestStoreLeavesOutTamperedAndUnreadableFiles(t *testing.T) {
 	server := pitest.NewKey()
 	dir := t.TempDir()
-	p, err := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "Real", Comments: 1})), server.Pub, archive.SourceRefresh, 1)
+	now := time.Now().Unix()
+	p, err := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "Real", Comments: 1})), server.Pub, archive.SourceRefresh, now-60)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,11 +193,11 @@ func TestStoreLeavesOutTamperedAndUnreadableFiles(t *testing.T) {
 		t.Fatal("a tampered or unreadable file was loaded")
 	}
 
-	good, _ := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "Real"})), server.Pub, archive.SourceRefresh, 2)
+	good, _ := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "Real"})), server.Pub, archive.SourceRefresh, now)
 	if _, err := s.Put(good); err != nil {
 		t.Fatal(err)
 	}
-	if e, ok := archive.NewStore(dir, server.Pub).Get(token); !ok || e.Proposal.ArchivedAt != 2 {
+	if e, ok := archive.NewStore(dir, server.Pub).Get(token); !ok || e.Proposal.ArchivedAt != now {
 		t.Fatal("a verified fetch did not replace the tampered file")
 	}
 }
@@ -200,7 +205,7 @@ func TestStoreLeavesOutTamperedAndUnreadableFiles(t *testing.T) {
 func TestStoreRefusesUnverifiedOrMisnamedProposals(t *testing.T) {
 	server := pitest.NewKey()
 	s := archive.NewStore(t.TempDir(), server.Pub)
-	p, _ := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "P", Comments: 1})), server.Pub, archive.SourceImport, 1)
+	p, _ := archive.New(fetched(pitest.NewProposal(server, token, pitest.Options{Name: "P", Comments: 1})), server.Pub, archive.SourceImport, time.Now().Unix())
 	p.Comments[0].Receipt = pitest.NewKey().Sign(p.Comments[0].Signature)
 	if _, err := s.Put(p); err == nil {
 		t.Fatal("a proposal with a forged receipt was stored")

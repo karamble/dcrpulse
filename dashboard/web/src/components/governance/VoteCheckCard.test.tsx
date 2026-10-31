@@ -24,9 +24,10 @@ vi.mock('../../hooks/useVisiblePoll', () => ({
 }));
 
 const token = 'cdcdcdcdcdcdcdcd';
+const now = Math.floor(Date.now() / 1000);
 const idle = { running: false, done: 0, total: 0 };
 const check = (over: Partial<ProposalVoteCheck> = {}): ProposalVoteCheck => ({
-  ballots: 6, counted: 2, counts: { yes: 1, no: 1 }, tallyMatches: true, checkedAt: 1800000000, ...over,
+  ballots: 6, counted: 2, counts: { yes: 1, no: 1 }, tallyMatches: true, checkedAt: now, ...over,
 });
 
 afterEach(() => {

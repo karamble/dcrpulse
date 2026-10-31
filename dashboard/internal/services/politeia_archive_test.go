@@ -54,9 +54,12 @@ func archiveFetched(p *pitest.Proposal, status string, endBlock int64) archive.F
 	}
 }
 
+// archivedAt dates the copies putArchived stores, an hour before the run.
+var archivedAt = time.Now().Add(-time.Hour).Unix()
+
 func putArchived(t *testing.T, s *archive.Store, server pitest.Key, f archive.Fetched) {
 	t.Helper()
-	p, err := archive.New(f, server.Pub, archive.SourceSnapshot, 1800000000)
+	p, err := archive.New(f, server.Pub, archive.SourceSnapshot, archivedAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +199,7 @@ func TestArchivedDetailCarriesItsVerification(t *testing.T) {
 	if !strings.Contains(d.Description, "The proposal text.") || !strings.Contains(d.DescriptionHTML, "The proposal text.") {
 		t.Fatalf("description %q html %q", d.Description, d.DescriptionHTML)
 	}
-	if !at.Equal(time.Unix(1800000000, 0)) || !d.Archived || d.Name != "Commented" {
+	if !at.Equal(time.Unix(archivedAt, 0)) || !d.Archived || d.Name != "Commented" {
 		t.Fatalf("at %v archived %v name %q", at, d.Archived, d.Name)
 	}
 	// The signed vote start's options, not the reported summary's order.
@@ -209,7 +212,7 @@ func TestArchivedDetailCarriesItsVerification(t *testing.T) {
 	want := types.ProposalVerification{
 		ServerKey: server.Pub, AuthorKey: p.Author.Pub, AuthorKeyBound: true, Comments: 2, CommentsLeftOut: 1,
 		Authorized: true, VoteStartKey: p.Admin.Pub, BillingStatus: "completed",
-		Source: archive.SourceSnapshot, ArchivedAt: 1800000000,
+		Source: archive.SourceSnapshot, ArchivedAt: archivedAt,
 	}
 	if d.Verification == nil || *d.Verification != want {
 		t.Fatalf("verification %+v, want %+v", d.Verification, want)
@@ -475,7 +478,7 @@ func TestRefreshReplacesTheArchivedCopy(t *testing.T) {
 	if err != nil || d.Verification == nil || time.Since(at) > time.Minute {
 		t.Fatalf("refresh: %v at %v", err, at)
 	}
-	if e, _ := s.Get(tok); e.Proposal.ArchivedAt == 1800000000 || e.Proposal.Summary.Status != "rejected" {
+	if e, _ := s.Get(tok); e.Proposal.ArchivedAt == archivedAt || e.Proposal.Summary.Status != "rejected" {
 		t.Fatalf("archived copy after refresh: %+v", e.Proposal)
 	}
 	if _, _, err := RefreshProposalDetail(context.Background(), tok); !errors.Is(err, ErrProposalsRefreshCoolingDown) {

@@ -40,8 +40,9 @@ func exported(t *testing.T, s *archive.Store) []byte {
 func TestExportImportRoundTrip(t *testing.T) {
 	server := pitest.NewKey()
 	src := archive.NewStore(t.TempDir(), server.Pub)
-	stored(t, src, server, "fedcba9876543210", 10)
-	stored(t, src, server, token, 20)
+	now := time.Now().Unix()
+	stored(t, src, server, "fedcba9876543210", now-20)
+	stored(t, src, server, token, now-10)
 
 	f := src.Export()
 	if f.Format != archive.FileFormat || f.SchemaVersion != archive.SchemaVersion || f.ServerKey != server.Pub ||
@@ -56,7 +57,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 	}
 	// Reopened from disk.
 	e, ok := archive.NewStore(dir, server.Pub).Get(token)
-	if !ok || e.Proposal.Source != archive.SourceImport || e.Proposal.ArchivedAt != 20 || len(e.Proposal.Comments) != 1 {
+	if !ok || e.Proposal.Source != archive.SourceImport || e.Proposal.ArchivedAt != now-10 || len(e.Proposal.Comments) != 1 {
 		t.Fatalf("imported: %v %+v", ok, e.Proposal)
 	}
 }
@@ -121,8 +122,9 @@ func TestImportClampsAFutureDate(t *testing.T) {
 func TestImportRefusesWhatDoesNotVerify(t *testing.T) {
 	server := pitest.NewKey()
 	src := archive.NewStore(t.TempDir(), server.Pub)
-	stored(t, src, server, token, 1)
-	stored(t, src, server, "fedcba9876543210", 1)
+	now := time.Now().Unix()
+	stored(t, src, server, token, now)
+	stored(t, src, server, "fedcba9876543210", now)
 	f := src.Export()
 	f.Proposals[0].Comments[0].Comment = "Changed in the file."
 	raw, _ := json.Marshal(f)
@@ -166,8 +168,9 @@ func TestVoteCheckIsStoredButNeverImported(t *testing.T) {
 	server := pitest.NewKey()
 	dir := t.TempDir()
 	s := archive.NewStore(dir, server.Pub)
-	held := stored(t, s, server, token, 1)
-	vc := archive.VoteCheck{Ballots: 3, Counted: 2, Counts: map[string]int64{"yes": 2}, CheckedAt: 7,
+	now := time.Now().Unix()
+	held := stored(t, s, server, token, now-60)
+	vc := archive.VoteCheck{Ballots: 3, Counted: 2, Counts: map[string]int64{"yes": 2}, CheckedAt: now,
 		Problems: []archive.BallotProblem{{Ticket: "aa", Problem: "ticket was not eligible"}}}
 	if err := s.SetVoteCheck(token, held, vc, []byte(`{"votes":[]}`)); err != nil {
 		t.Fatal(err)
@@ -177,8 +180,8 @@ func TestVoteCheckIsStoredButNeverImported(t *testing.T) {
 	}
 	// The copy was replaced after the check began: no result is recorded.
 	other := archive.NewStore(t.TempDir(), server.Pub)
-	stale := stored(t, other, server, token, 1)
-	current := stored(t, other, server, token, 2)
+	stale := stored(t, other, server, token, now-60)
+	current := stored(t, other, server, token, now)
 	if err := other.SetVoteCheck(token, stale, vc, nil); err == nil {
 		t.Fatal("a vote check was recorded on a copy replaced during the check")
 	}

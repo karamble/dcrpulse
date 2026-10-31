@@ -7,6 +7,7 @@ package pitest
 import (
 	"bytes"
 	"encoding/hex"
+	"time"
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/chaincfg/v3"
@@ -47,6 +48,6 @@ func (v Voter) Ballot(server Key, token, ticket, voteBit string) verify.CastVote
 	sig := hex.EncodeToString(ecdsa.SignCompact(v.priv, chainhash.HashB(buf.Bytes()), true))
 	return verify.CastVote{
 		Token: token, Ticket: ticket, VoteBit: voteBit, Address: v.Address,
-		Signature: sig, Receipt: server.Sign(sig), Timestamp: 1700100000,
+		Signature: sig, Receipt: server.Sign(sig), Timestamp: time.Now().AddDate(0, -1, 0).Unix(),
 	}
 }

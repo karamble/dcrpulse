@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	"dcrpulse/internal/merkle"
 
@@ -74,6 +75,7 @@ type Options struct {
 // billing status change, each signed as Politeia signs it.
 func NewProposal(server Key, token string, o Options) *Proposal {
 	p := &Proposal{Server: server, Author: NewKey(), Admin: NewKey()}
+	created := time.Now().AddDate(0, -2, 0).Unix()
 	md, _ := json.Marshal(verify.ProposalMetadata{Name: o.Name, Amount: 1000000, Domain: "development", LegacyToken: o.LegacyToken})
 	files := []verify.File{
 		File("index.md", "text/plain; charset=utf-8", "# "+o.Name+"\n\nThe proposal text."),
@@ -94,7 +96,7 @@ func NewProposal(server Key, token string, o Options) *Proposal {
 	}
 	um, _ := json.Marshal(verify.UserMetadata{UserID: "4a1f6c3e-0000-4000-8000-000000000001", PublicKey: p.Author.Pub, Signature: authorSig})
 	p.Record = verify.Record{
-		State: 2, Status: 2, Version: 1, Timestamp: 1700000000, Username: "author",
+		State: 2, Status: 2, Version: 1, Timestamp: created, Username: "author",
 		Metadata: []verify.MetadataStream{{PluginID: "usermd", StreamID: 1, Payload: string(um)}},
 		Files:    files,
 		CensorshipRecord: verify.CensorshipRecord{
@@ -109,7 +111,7 @@ func NewProposal(server Key, token string, o Options) *Proposal {
 		c := verify.Comment{
 			UserID: "u", Username: "commenter", State: 2, Token: token,
 			Comment: fmt.Sprintf("Comment %d.", i), PublicKey: p.Author.Pub,
-			CommentID: uint32(i), Version: 1, CreatedAt: 1700000000 + int64(i), Upvotes: 2,
+			CommentID: uint32(i), Version: 1, CreatedAt: created + int64(i), Upvotes: 2,
 		}
 		c.Signature = p.Author.Sign("2" + token + "0" + c.Comment)
 		c.Receipt = server.Sign(c.Signature)
