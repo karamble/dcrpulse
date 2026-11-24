@@ -105,7 +105,7 @@ export const DexSettingsPanel = () => {
             {backedUp ? 'Backed up' : 'Not backed up yet'}
           </div>
         )}
-        <DexSeedBackup onDone={refreshBackedUp} />
+        <DexSeedBackup onRecorded={refreshBackedUp} />
       </Card>
     </div>
   );

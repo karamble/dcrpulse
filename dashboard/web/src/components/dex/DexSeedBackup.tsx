@@ -2,17 +2,18 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useState } from 'react';
-import { AlertCircle, AlertTriangle, Check, Copy } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertCircle, AlertTriangle, Check, CheckCircle, Copy } from 'lucide-react';
 import { exportDexSeed, markDexSeedBackedUp } from '../../services/dcrdexApi';
 import { apiError } from '../../utils/apiError';
 import { secretFieldProps } from '../../utils/secretField';
 
 // DexSeedBackup is the guided app-seed backup flow: reveal the 15-word seed
 // (re-entering the app password), have the user confirm they have written it
-// down, then record the backup. Used inline in DEX Settings and inside the
-// unlock backup-reminder modal. onDone fires after the backup is recorded.
-export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
+// down, then record the backup and confirm it. Used inline in DEX Settings and
+// inside the unlock backup-reminder modal. onRecorded fires once the backup is
+// recorded, onDone when the user leaves the confirmation.
+export const DexSeedBackup = ({ onRecorded, onDone }: { onRecorded?: () => void; onDone?: () => void }) => {
   const [appPass, setAppPass] = useState('');
   const [seed, setSeed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -23,6 +24,12 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
   const [verifying, setVerifying] = useState(false);
   const [indices, setIndices] = useState<number[]>([]);
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  // Recorded and verified: the confirmation shows until the user clicks Done.
+  const [done, setDone] = useState(false);
+  const doneRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (done) doneRef.current?.focus();
+  }, [done]);
 
   // pickIndices selects `count` distinct word positions over `total`, sorted.
   const pickIndices = (count: number, total: number): number[] => {
@@ -76,18 +83,48 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
     setErr(null);
     try {
       await markDexSeedBackedUp();
-      // Recorded: drop the seed and the typed words and start over.
+      // Recorded: drop the seed and the typed words, then confirm.
       setSeed(null);
       setIndices([]);
       setAnswers({});
       setVerifying(false);
       setBusy(false);
-      onDone?.();
+      setDone(true);
+      onRecorded?.();
     } catch (e: any) {
       setErr(apiError(e, 'Failed to record backup'));
       setBusy(false);
     }
   };
+
+  if (done) {
+    return (
+      <div role="status" className="text-center space-y-4 py-2">
+        <div className="flex justify-center">
+          <div className="p-3 rounded-full bg-success/10 border border-success/30">
+            <CheckCircle className="h-10 w-10 text-success" />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold text-success">Seed backup verified</h3>
+          <p className="text-sm text-muted-foreground">
+            Your 15 words are confirmed. Keep them offline; we won't remind you again.
+          </p>
+        </div>
+        <button
+          ref={doneRef}
+          type="button"
+          onClick={() => {
+            setDone(false);
+            onDone?.();
+          }}
+          className="w-full bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90"
+        >
+          Done
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">

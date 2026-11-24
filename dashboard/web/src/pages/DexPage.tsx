@@ -143,12 +143,7 @@ export const DexPage = () => {
                 <X className="h-4 w-4 text-muted-foreground" />
               </button>
             </div>
-            <DexSeedBackup
-              onDone={() => {
-                setBackupOpen(false);
-                refresh();
-              }}
-            />
+            <DexSeedBackup onRecorded={refresh} onDone={() => setBackupOpen(false)} />
           </div>
         </div>
       )}
