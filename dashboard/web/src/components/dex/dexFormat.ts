@@ -32,6 +32,20 @@ export const fmtAmtParts = (
   };
 };
 
+// fmtMatch renders one match as the order detail shows it: qty @ price.
+export const fmtMatch = (
+  qty: number,
+  rate: number,
+  baseConv: number,
+  quoteConv: number,
+  baseSym: string,
+  quoteSym: string,
+): string =>
+  `${fmtAmt(convQty(qty, baseConv), 8)} ${baseSym} @ ${fmtPrice(convRate(rate, baseConv, quoteConv), quoteSym)} ${quoteSym}`;
+
+// prettyStatus spaces bisonw's CamelCase match status (e.g. "TakerSwapCast").
+export const prettyStatus = (s: string) => (s || '').replace(/([a-z])([A-Z])/g, '$1 $2');
+
 export const fmtPct = (pct: number): string => `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
 export const fmtUsd = (v: number): string =>

@@ -4,9 +4,11 @@ import { ArrowRight, Clock } from 'lucide-react';
 import { getWalletTransactions, WalletTransaction } from '../services/api';
 import { calculateTicketMaturity } from '../services/ticketService';
 import { MaturityBar } from './MaturityBar';
-import { TxCategoryIcon, formatTxAmount, txAmountColor, txCategoryLabel, txWhen } from './walletTxFormat';
+import { DexRecentWhen, TxCategoryIcon, formatTxAmount, isFoldedTx, txAmountColor, txCategoryLabel } from './walletTxFormat';
 
 const RECENT_LIMIT = 5;
+// Folded DEX splits are skipped, so fetch a few more rows than are shown.
+const RECENT_FETCH = 10;
 
 export const RecentTransactions = ({ hideViewAll = false }: { hideViewAll?: boolean } = {}) => {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
@@ -17,9 +19,9 @@ export const RecentTransactions = ({ hideViewAll = false }: { hideViewAll?: bool
     let cancelled = false;
     (async () => {
       try {
-        const data = await getWalletTransactions(RECENT_LIMIT);
+        const data = await getWalletTransactions(RECENT_FETCH);
         if (!cancelled) {
-          setTransactions(data.transactions);
+          setTransactions(data.transactions.filter((tx) => !isFoldedTx(tx)).slice(0, RECENT_LIMIT));
           setError(null);
         }
       } catch (err) {
@@ -80,7 +82,7 @@ export const RecentTransactions = ({ hideViewAll = false }: { hideViewAll?: bool
                   <div className="flex-shrink-0"><TxCategoryIcon tx={tx} className="h-4 w-4" /></div>
                   <div className="min-w-0">
                     <div className="font-medium text-sm truncate">{txCategoryLabel(tx)}</div>
-                    <div className="text-xs text-muted-foreground">{txWhen(tx)}</div>
+                    <DexRecentWhen tx={tx} />
                   </div>
                 </div>
                 <div className={`text-sm font-semibold ml-3 whitespace-nowrap ${txAmountColor(tx)}`}>

@@ -233,6 +233,36 @@ export interface WalletTransaction {
   blocksUntilSpendable?: number; // For votes: remaining blocks until funds are spendable (0 if already spendable)
   isChannelFunding?: boolean;   // LN channel open funding tx
   isChannelClose?: boolean;     // LN channel close settlement
+  dexSwap?: TxDexSwap;          // bisonw trade this tx belongs to (DEX unlocked only)
+}
+
+// TxDexMatch is one match a DEX swap tx settles (bisonw's atomic qty and rate).
+export interface TxDexMatch {
+  qty: number;
+  rate: number;
+  status: string;
+  active?: boolean;
+  revoked?: boolean;
+  refunded?: boolean;
+}
+
+// TxDexSwap mirrors Go's types.TxDexSwap: bisonw's record of a wallet tx it
+// made for a DEX trade.
+export interface TxDexSwap {
+  role: 'swap' | 'redeem' | 'refund' | 'funding';
+  foldedInto?: string; // funding: the swap tx row that carries it
+  orderId: string;
+  host: string;
+  baseId: number;
+  quoteId: number;
+  baseSymbol: string;
+  quoteSymbol: string;
+  baseConv: number;
+  quoteConv: number;
+  sell: boolean;
+  matches?: TxDexMatch[];
+  fundingTxId?: string;
+  fundingFee?: number; // DCR
 }
 
 export interface TransactionListResponse {

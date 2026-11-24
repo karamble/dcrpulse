@@ -21,7 +21,7 @@ import {
   type DexOrderFull,
   type DexWalletState,
 } from '../../services/dcrdexApi';
-import { convQty, convRate, fmtAmt, fmtPrice, isMarketBuy, orderQty } from './dexFormat';
+import { convQty, convRate, fmtAmt, fmtMatch, fmtPrice, isMarketBuy, orderQty, prettyStatus } from './dexFormat';
 import { dexCoinExplorer } from './dexExplorers';
 import { stepIndex, StepBar } from './dexSteps';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
@@ -90,9 +90,6 @@ const refundCountdown = (stampMs: number, maker: boolean): string => {
   if (Date.now() > after) return 'Refund imminent';
   return `Refund available after ${toYMDTime(new Date(after))}`;
 };
-
-// Insert spaces into bisonw's CamelCase match status (e.g. "TakerSwapCast").
-const prettyStatus = (s: string) => (s || '').replace(/([a-z])([A-Z])/g, '$1 $2');
 
 const truncCoin = (c: string) => (c.length > 22 ? `${c.slice(0, 12)}…${c.slice(-8)}` : c);
 
@@ -177,7 +174,7 @@ const MatchCard = ({ m, order, baseSym, quoteSym, baseConv, quoteConv }: {
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-xs">
         <span className="font-medium">{youMaker ? 'Maker' : 'Taker'}</span>
         <span className="font-mono tabular-nums text-muted-foreground">
-          {fmtAmt(convQty(m.qty, baseConv), 8)} {baseSym} @ {fmtPrice(convRate(m.rate, baseConv, quoteConv), quoteSym)} {quoteSym}
+          {fmtMatch(m.qty, m.rate, baseConv, quoteConv, baseSym, quoteSym)}
         </span>
         <span className="ml-auto text-muted-foreground">{prettyStatus(m.status)}</span>
         {m.revoked && <span className="text-destructive">(revoked)</span>}

@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 import { getWalletTransactions, WalletTransaction } from '../services/api';
 import { calculateTicketMaturity } from '../services/ticketService';
 import { MaturityBar } from './MaturityBar';
-import { TxCategoryIcon, formatTxAmount, txAmountColor, txCategoryLabel, txWhen } from './walletTxFormat';
+import { DexStatusChip, DexSwapLine, TxCategoryIcon, formatTxAmount, isFoldedTx, txAmountColor, txCategoryLabel, txWhen } from './walletTxFormat';
 import { Clock, ChevronDown, ChevronUp, Shuffle } from 'lucide-react';
 
 export const TransactionHistory = () => {
@@ -111,6 +111,7 @@ export const TransactionHistory = () => {
     const searchLower = searchText.trim().toLowerCase();
 
     return transactions.filter(tx => {
+      if (isFoldedTx(tx)) return false;
       if (filterCategory !== 'all') {
         if (filterCategory === 'send') {
           if (!((tx.category === 'send' && tx.txType === 'regular') || tx.category === 'vspfee')) return false;
@@ -127,11 +128,15 @@ export const TransactionHistory = () => {
       if (searchLower) {
         const txidMatch = tx.txid.toLowerCase().includes(searchLower);
         const addrMatch = tx.address ? tx.address.toLowerCase().includes(searchLower) : false;
-        if (!txidMatch && !addrMatch) return false;
+        const splitMatch = tx.dexSwap?.fundingTxId ? tx.dexSwap.fundingTxId.toLowerCase().includes(searchLower) : false;
+        if (!txidMatch && !addrMatch && !splitMatch) return false;
       }
       return true;
     });
   }, [transactions, filterCategory, searchText, dateStart, dateEnd]);
+
+  // Folded DEX splits are shown on their swap row, so they are not counted.
+  const visibleTotal = useMemo(() => transactions.filter(tx => !isFoldedTx(tx)).length, [transactions]);
 
   const displayedTransactions = filteredTransactions.slice(0, visibleCount);
   const hasMoreVisible = filteredTransactions.length > visibleCount;
@@ -216,7 +221,7 @@ export const TransactionHistory = () => {
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">Transaction History</h2>
             <span className="text-sm text-muted-foreground">
-              {formatCount(transactions.length)}{hasMoreToFetch ? '+' : ''} transactions
+              {formatCount(visibleTotal)}{hasMoreToFetch ? '+' : ''} transactions
             </span>
           </div>
           <p className="text-sm text-muted-foreground">Recent wallet activity</p>
@@ -413,6 +418,7 @@ export const TransactionHistory = () => {
                       {tx.confirmations} conf
                     </span>
                   )}
+                  {tx.dexSwap && <DexStatusChip swap={tx.dexSwap} />}
                 </div>
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
                   <code className="font-mono text-xs">{truncateTxid(tx.txid)}</code>
@@ -425,6 +431,7 @@ export const TransactionHistory = () => {
                     </>
                   )}
                 </div>
+                {tx.dexSwap && <DexSwapLine swap={tx.dexSwap} />}
                 {tx.txType === 'vote' && (
                   <MaturityBar
                     blocksRemaining={tx.blocksUntilSpendable}
@@ -448,6 +455,11 @@ export const TransactionHistory = () => {
               {tx.fee && tx.fee > 0 && (
                 <div className="text-xs text-muted-foreground">
                   Fee: {tx.fee.toFixed(8)} DCR
+                </div>
+              )}
+              {!!tx.dexSwap?.fundingFee && (
+                <div className="text-xs text-muted-foreground" title={tx.dexSwap.fundingTxId}>
+                  Split fee: {tx.dexSwap.fundingFee.toFixed(8)} DCR
                 </div>
               )}
             </div>
