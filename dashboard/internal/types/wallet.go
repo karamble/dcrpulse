@@ -59,27 +59,58 @@ type AccountInfo struct {
 }
 
 type Transaction struct {
-	TxID                 string    `json:"txid"`
-	Amount               float64   `json:"amount"`
-	Fee                  float64   `json:"fee,omitempty"`
-	Confirmations        int64     `json:"confirmations"`
-	BlockHash            string    `json:"blockHash,omitempty"`
-	BlockTime            int64     `json:"blockTime,omitempty"`
-	Time                 time.Time `json:"time"`
-	Category             string    `json:"category"` // "send", "receive", "immature", "generate"
-	TxType               string    `json:"txType"`   // "regular", "ticket", "vote", "revocation"
-	Address              string    `json:"address,omitempty"`
-	Account              string    `json:"account,omitempty"`
-	Vout                 uint32    `json:"vout"`
-	Generated            bool      `json:"generated,omitempty"`
-	IsMixed              bool      `json:"isMixed,omitempty"`              // CoinJoin/StakeShuffle transaction
-	IsVSPFee             bool      `json:"isVSPFee,omitempty"`             // VSP fee payment
-	RelatedTicket        string    `json:"relatedTicket,omitempty"`        // Ticket txid for VSP fees
-	BlockHeight          int64     `json:"blockHeight,omitempty"`          // Confirmed block height
-	IsTicketMature       bool      `json:"isTicketMature,omitempty"`       // Vote: passed 256-block maturity
-	BlocksUntilSpendable int64     `json:"blocksUntilSpendable,omitempty"` // Vote: blocks until spendable
-	IsChannelFunding     bool      `json:"isChannelFunding,omitempty"`     // LN channel open funding tx
-	IsChannelClose       bool      `json:"isChannelClose,omitempty"`       // LN channel close settlement
+	TxID                 string     `json:"txid"`
+	Amount               float64    `json:"amount"`
+	Fee                  float64    `json:"fee,omitempty"`
+	Confirmations        int64      `json:"confirmations"`
+	BlockHash            string     `json:"blockHash,omitempty"`
+	BlockTime            int64      `json:"blockTime,omitempty"`
+	Time                 time.Time  `json:"time"`
+	Category             string     `json:"category"` // "send", "receive", "immature", "generate"
+	TxType               string     `json:"txType"`   // "regular", "ticket", "vote", "revocation"
+	Address              string     `json:"address,omitempty"`
+	Account              string     `json:"account,omitempty"`
+	Vout                 uint32     `json:"vout"`
+	Generated            bool       `json:"generated,omitempty"`
+	IsMixed              bool       `json:"isMixed,omitempty"`              // CoinJoin/StakeShuffle transaction
+	IsVSPFee             bool       `json:"isVSPFee,omitempty"`             // VSP fee payment
+	RelatedTicket        string     `json:"relatedTicket,omitempty"`        // Ticket txid for VSP fees
+	BlockHeight          int64      `json:"blockHeight,omitempty"`          // Confirmed block height
+	IsTicketMature       bool       `json:"isTicketMature,omitempty"`       // Vote: passed 256-block maturity
+	BlocksUntilSpendable int64      `json:"blocksUntilSpendable,omitempty"` // Vote: blocks until spendable
+	IsChannelFunding     bool       `json:"isChannelFunding,omitempty"`     // LN channel open funding tx
+	IsChannelClose       bool       `json:"isChannelClose,omitempty"`       // LN channel close settlement
+	DexSwap              *TxDexSwap `json:"dexSwap,omitempty"`              // bisonw trade this tx belongs to
+}
+
+// TxDexSwap is what bisonw records about a wallet transaction it made for a
+// DEX trade. Values are bisonw's own: atomic amounts and message-rates with
+// the conversion factors to render them.
+type TxDexSwap struct {
+	Role        string       `json:"role"`                 // swap, redeem, refund or funding
+	FoldedInto  string       `json:"foldedInto,omitempty"` // funding: the swap tx that carries it
+	OrderID     string       `json:"orderId"`
+	Host        string       `json:"host"`
+	BaseID      uint32       `json:"baseId"`
+	QuoteID     uint32       `json:"quoteId"`
+	BaseSymbol  string       `json:"baseSymbol"`
+	QuoteSymbol string       `json:"quoteSymbol"`
+	BaseConv    uint64       `json:"baseConv"`
+	QuoteConv   uint64       `json:"quoteConv"`
+	Sell        bool         `json:"sell"`
+	Matches     []TxDexMatch `json:"matches,omitempty"`
+	FundingTxID string       `json:"fundingTxId,omitempty"`
+	FundingFee  float64      `json:"fundingFee,omitempty"` // DCR, the folded split's fee
+}
+
+// TxDexMatch is one match a swap transaction settles.
+type TxDexMatch struct {
+	Qty      uint64 `json:"qty"`
+	Rate     uint64 `json:"rate"`
+	Status   string `json:"status"`
+	Active   bool   `json:"active,omitempty"`
+	Revoked  bool   `json:"revoked,omitempty"`
+	Refunded bool   `json:"refunded,omitempty"`
 }
 
 type TransactionListResponse struct {

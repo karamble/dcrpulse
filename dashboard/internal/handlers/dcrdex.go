@@ -1449,25 +1449,27 @@ type bwMatch struct {
 	Refund        *bwCoin `json:"refund"`
 	Stamp         uint64  `json:"stamp"`
 	IsCancel      bool    `json:"isCancel"`
+	Active        bool    `json:"active"`
 }
 type bwOrder struct {
-	Host        string     `json:"host"`
-	MarketID    string     `json:"market"`
-	BaseID      uint32     `json:"baseID"`
-	QuoteID     uint32     `json:"quoteID"`
-	ID          string     `json:"id"`
-	Type        uint8      `json:"type"`
-	Sell        bool       `json:"sell"`
-	Stamp       uint64     `json:"stamp"`
-	SubmitTime  uint64     `json:"submitTime"`
-	Rate        uint64     `json:"rate"`
-	Qty         uint64     `json:"qty"`
-	Filled      uint64     `json:"filled"`
-	Status      uint16     `json:"status"`
-	Cancelling  bool       `json:"cancelling"`
-	Canceled    bool       `json:"canceled"`
-	TimeInForce uint8      `json:"tif"`
-	Matches     []*bwMatch `json:"matches"`
+	Host         string     `json:"host"`
+	MarketID     string     `json:"market"`
+	BaseID       uint32     `json:"baseID"`
+	QuoteID      uint32     `json:"quoteID"`
+	ID           string     `json:"id"`
+	Type         uint8      `json:"type"`
+	Sell         bool       `json:"sell"`
+	Stamp        uint64     `json:"stamp"`
+	SubmitTime   uint64     `json:"submitTime"`
+	Rate         uint64     `json:"rate"`
+	Qty          uint64     `json:"qty"`
+	Filled       uint64     `json:"filled"`
+	Status       uint16     `json:"status"`
+	Cancelling   bool       `json:"cancelling"`
+	Canceled     bool       `json:"canceled"`
+	TimeInForce  uint8      `json:"tif"`
+	Matches      []*bwMatch `json:"matches"`
+	FundingCoins []*bwCoin  `json:"fundingCoins"`
 }
 
 // dexHistMatch/dexHistOrder mirror the bisonw myorders JSON (string enums) the

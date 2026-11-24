@@ -388,6 +388,7 @@ func ListTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	annotateDexSwaps(ctx, transactions.Transactions)
 
 	writeJSON(w, transactions)
 }
