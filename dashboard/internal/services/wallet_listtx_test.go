@@ -193,3 +193,37 @@ func TestListTxMinHeight(t *testing.T) {
 		}
 	}
 }
+
+// A grouped row keeps the fee dcrwallet reports: a regular send to several
+// outputs shows it beside its net, a self transfer is only its fee, a CoinJoin's
+// fee is its net cost, and other kinds keep no fee.
+func TestGroupedNetFee(t *testing.T) {
+	const fee = 0.000753
+	sendRows := []listTxEntry{{Amount: -40, Fee: -fee}, {Amount: -40, Fee: -fee}, {Amount: -40, Fee: -fee}}
+	selfRows := []listTxEntry{{Amount: -120.0008, Fee: -0.0000251}, {Amount: 120.0008}}
+	for _, tc := range []struct {
+		name            string
+		txType, cat     string
+		mixed           bool
+		net             float64
+		rows            []listTxEntry
+		wantNet, wantFe float64
+	}{
+		{"multi-output send", "regular", "send", false, -120, sendRows, -120, fee},
+		{"self transfer", "regular", "self", false, 0, selfRows, -0.0000251, 0.0000251},
+		{"coinjoin", "regular", "coinjoin", true, -0.0001, sendRows, -0.0001, 0.0001},
+		{"ticket keeps no fee", "ticket", "send", false, -12, sendRows, -12, 0},
+		{"receive", "regular", "receive", false, 3, []listTxEntry{{Amount: 1}, {Amount: 2}}, 3, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entries := make([]int, len(tc.rows))
+			for i := range entries {
+				entries[i] = i
+			}
+			net, gotFee := groupedNetFee(tc.txType, tc.cat, tc.mixed, tc.net, tc.rows, entries)
+			if net != tc.wantNet || gotFee != tc.wantFe {
+				t.Errorf("groupedNetFee = net %v fee %v, want net %v fee %v", net, gotFee, tc.wantNet, tc.wantFe)
+			}
+		})
+	}
+}

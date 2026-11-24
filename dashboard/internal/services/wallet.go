@@ -1362,24 +1362,7 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				}
 			}
 
-			// CoinJoin fee is the cost to participate
-			var fee float64 = 0
-			if isMixed && netAmount < 0 {
-				fee = -netAmount
-			}
-
-			// Intra-wallet transfer: every output returns to the wallet, so
-			// the wallet's true delta is just the fee, which dcrwallet
-			// attaches (negative) to the debit-side entries.
-			if category == "self" {
-				for _, idx := range group.Entries {
-					if f := rpcTransactions[idx].Fee; f != 0 {
-						fee = math.Abs(f)
-						break
-					}
-				}
-				netAmount = -fee
-			}
+			netAmount, fee := groupedNetFee(rpcTx.TxType, category, isMixed, netAmount, rpcTransactions, group.Entries)
 
 			// The group collapses to one row: net amount, derived category and
 			// fee replace the entry's own, and per-output fields are cleared.
@@ -1458,6 +1441,34 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 		Transactions: transactions,
 		Total:        len(transactions),
 	}, nil
+}
+
+// groupedNetFee returns a grouped row's net amount and fee. A CoinJoin's fee
+// is its net cost; a self transfer's delta is just its fee; a regular send to
+// several outputs keeps its net and carries the fee dcrwallet attaches
+// (negative) to its debit-side entries.
+func groupedNetFee(txType, category string, isMixed bool, net float64, rows []listTxEntry, entries []int) (float64, float64) {
+	entryFee := func() float64 {
+		for _, idx := range entries {
+			if f := rows[idx].Fee; f != 0 {
+				return math.Abs(f)
+			}
+		}
+		return 0
+	}
+	switch {
+	case isMixed:
+		if net < 0 {
+			return net, -net
+		}
+		return net, 0
+	case category == "self":
+		fee := entryFee()
+		return -fee, fee
+	case category == "send" && txType == "regular":
+		return net, entryFee()
+	}
+	return net, 0
 }
 
 // listTxFacts carries what listtransactions cannot supply for a row: the
