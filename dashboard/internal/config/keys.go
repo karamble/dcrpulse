@@ -56,6 +56,10 @@ const (
 	// whether to prompt.
 	KeyDcrdexSeedBackedUp = "dcrdex_seed_backed_up"
 
+	// KeyDcrdexRateSources maps a dcrdex fiat rate source to whether this
+	// wallet's dcrdex may ask it. An absent source is on.
+	KeyDcrdexRateSources = "dcrdex_rate_sources"
+
 	// Dashboard app-password gate (optional, off by default). Lives in the
 	// global config so it protects the whole dashboard regardless of the active
 	// wallet. KeyAuthPasswordHash is a bcrypt hash; KeyAuthSessionSecret is the

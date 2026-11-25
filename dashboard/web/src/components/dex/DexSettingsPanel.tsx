@@ -3,8 +3,9 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Bell, Check, KeyRound } from 'lucide-react';
-import { getDexStatus } from '../../services/dcrdexApi';
+import { AlertTriangle, Bell, Check, DollarSign, KeyRound } from 'lucide-react';
+import { getDexRateSources, getDexStatus, saveDexRateSources, type DexRateSources } from '../../services/dcrdexApi';
+import { apiError } from '../../utils/apiError';
 import { DexSeedBackup } from './DexSeedBackup';
 import {
   CATEGORY_LABELS,
@@ -41,8 +42,14 @@ const Toggle = ({
   </label>
 );
 
+// Where each choosable DCRDEX price source is fetched from.
+const RATE_SOURCE_HOSTS: Record<string, string> = {
+  Coinpaprika: 'api.coinpaprika.com',
+  dcrdata: 'explorer.dcrdata.org',
+};
+
 // DexSettingsPanel holds DEX-view preferences: desktop notification settings
-// (client-side) and app-seed backup (password-gated).
+// (client-side), the wallet's price sources and app-seed backup (password-gated).
 export const DexSettingsPanel = () => {
   const [prefs, setPrefs] = useState<DexNotifPrefs>(loadNotifPrefs);
   const [permission, setPermission] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
@@ -75,6 +82,30 @@ export const DexSettingsPanel = () => {
   };
   useEffect(refreshBackedUp, []);
 
+  const [rates, setRates] = useState<DexRateSources | null>(null);
+  const [rateBusy, setRateBusy] = useState(false);
+  const [rateMsg, setRateMsg] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
+  useEffect(() => {
+    getDexRateSources()
+      .then(setRates)
+      .catch((e) => setRateMsg({ kind: 'error', text: apiError(e, 'Could not load the price sources.') }));
+  }, []);
+
+  const setRateSource = async (name: string, enabled: boolean) => {
+    if (!rates) return;
+    setRateBusy(true);
+    setRateMsg(null);
+    try {
+      const { applied } = await saveDexRateSources({ [name]: enabled });
+      setRates({ ...rates, sources: rates.sources.map((s) => (s.name === name ? { ...s, enabled } : s)) });
+      if (!applied) setRateMsg({ kind: 'info', text: 'Saved. DCRDEX picks this up the next time it is unlocked.' });
+    } catch (e) {
+      setRateMsg({ kind: 'error', text: apiError(e, 'Could not save the price source.') });
+    } finally {
+      setRateBusy(false);
+    }
+  };
+
   return (
     <div className="px-3 lg:px-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
       <Card title="Notifications" icon={Bell}>
@@ -95,6 +126,31 @@ export const DexSettingsPanel = () => {
         </div>
         <p className="text-[11px] text-muted-foreground">
           Fires an OS notification for new DEX activity in the enabled categories. The bell always shows them.
+        </p>
+      </Card>
+
+      <Card title="Price sources" icon={DollarSign}>
+        {rates?.sources.map((s) => (
+          <Toggle
+            key={s.name}
+            label={RATE_SOURCE_HOSTS[s.name] ? `${s.name} (${RATE_SOURCE_HOSTS[s.name]})` : s.name}
+            checked={s.enabled}
+            disabled={rateBusy || !rates.exchangeRates}
+            onChange={(v) => setRateSource(s.name, v)}
+          />
+        ))}
+        {rates && !rates.exchangeRates && (
+          <p className="text-[11px] text-warning">
+            Exchange rates are off in Settings &gt; Privacy, so DCRDEX asks no price source.
+          </p>
+        )}
+        {rateMsg && (
+          <p className={`text-[11px] ${rateMsg.kind === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
+            {rateMsg.text}
+          </p>
+        )}
+        <p className="text-[11px] text-muted-foreground">
+          Where this wallet's DCRDEX looks up the USD prices it shows.
         </p>
       </Card>
 

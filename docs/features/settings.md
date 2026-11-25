@@ -110,7 +110,8 @@ optional, convenience-only data. Each is on by default:
 - **Exchange rates** - fetch DCR and BTC prices for USD amounts. It covers every
   component: dcrpulse's own lookups (CryptoCompare and Kraken), Bison Relay's
   rate feed in brclientd (api.decred.org, with Kraken as fallback) and DCRDEX's
-  rate sources (Messari, Coinpaprika, dcrdata). When disabled, none of them is
+  rate sources (Coinpaprika and dcrdata; each wallet can narrow them in DEX >
+  Settings, and Messari is always off). When disabled, none of them is
   asked and no USD amounts are shown. brclientd applies the change at once;
   DCRDEX needs a session to change its sources, so a locked DCRDEX picks it up
   the next time it is unlocked, and the save says so.

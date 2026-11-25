@@ -858,6 +858,25 @@ export const markDexSeedBackedUp = async (): Promise<void> => {
   await api.post('/dcrdex/seed/backed-up');
 };
 
+// DexRateSources is the active wallet's DCRDEX price-source choice; exchangeRates
+// is the Privacy switch, without which DCRDEX asks no source at all.
+export interface DexRateSources {
+  exchangeRates: boolean;
+  sources: { name: string; enabled: boolean }[];
+}
+
+export const getDexRateSources = async (): Promise<DexRateSources> => {
+  const { data } = await api.get<DexRateSources>('/dcrdex/rate-sources');
+  return data;
+};
+
+// saveDexRateSources stores the named sources' choice; applied is false while
+// DCRDEX is locked or not running, which picks it up on its next unlock.
+export const saveDexRateSources = async (sources: Record<string, boolean>): Promise<{ applied: boolean }> => {
+  const { data } = await api.post<{ applied: boolean }>('/dcrdex/rate-sources', { sources });
+  return data;
+};
+
 // DexRates maps an asset symbol (lowercase) to its USD price, sourced from
 // Kraken (with a Bison Relay fallback). Covers the coins those sources list;
 // others are absent.

@@ -243,6 +243,20 @@ func (c *WalletCfg) UpsertPoliteiaVote(token, choice string, count int) error {
 	return c.setMapEntry(KeyPoliteiaVoteCounts, token, count)
 }
 
+// DexRateSources returns the dcrdex rate-source choices; an absent source is on.
+func (c *WalletCfg) DexRateSources() (map[string]bool, error) {
+	m := map[string]bool{}
+	if _, err := c.Get(KeyDcrdexRateSources, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// SetDexRateSource records whether dcrdex may ask the named rate source.
+func (c *WalletCfg) SetDexRateSource(source string, on bool) error {
+	return c.setMapEntry(KeyDcrdexRateSources, source, on)
+}
+
 // SetLastAccess records a unix-seconds timestamp under last_access.
 func (c *WalletCfg) SetLastAccess(ts int64) error {
 	return c.Set(KeyLastAccess, ts)

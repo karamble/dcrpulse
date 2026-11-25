@@ -348,6 +348,7 @@ Editing an existing bot jumps straight to the config step with the market and ty
 The **Settings** tab holds DEX-view preferences:
 
 - **Notifications** - Toggle desktop (OS) notifications for new DEX activity and choose which categories fire them. The in-app notification bell always shows activity regardless of this setting.
+- **Price sources** - Choose which fiat rate sources this wallet's DCRDEX asks for the USD prices it shows: Coinpaprika (api.coinpaprika.com) and dcrdata (explorer.dcrdata.org), both on by default. The choice is kept per wallet and handed to DCRDEX on every unlock; a change made while DCRDEX is locked applies at the next unlock. Messari is always turned off, since its free API is gone. While **Exchange rates** is off in Settings > Privacy, DCRDEX asks no source and the switches are locked.
 - **Back up app seed** - The same guided seed-backup flow described above, with a "Backed up" / "Not backed up yet" indicator. Available any time.
 
 The notification bell lives in the top sub-nav next to the **Lock** control, and surfaces live DEX activity.
@@ -399,6 +400,8 @@ The DEX feature is served under `/api/dcrdex/...`. The handlers proxy to the bis
 - `GET /api/dcrdex/dexconfig` - a server's markets and bond config
 - `GET /api/dcrdex/assets` - the supported-asset catalog
 - `GET /api/dcrdex/rates` - fiat rates for value display
+- `GET /api/dcrdex/rate-sources` - the wallet's DCRDEX price-source choice
+- `POST /api/dcrdex/rate-sources` - change it; `applied` is false while DCRDEX is locked
 
 **Orders and trading**
 - `GET /api/dcrdex/myorders` - active/recent orders (trade-view feed)

@@ -330,6 +330,8 @@ func main() {
 	api.HandleFunc("/dcrdex/wallet/peers", handlers.RemoveDcrdexWalletPeerHandler).Methods("DELETE")
 	api.HandleFunc("/dcrdex/notifications", handlers.GetDcrdexNotificationsHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/rates", handlers.GetDcrdexRatesHandler).Methods("GET")
+	api.HandleFunc("/dcrdex/rate-sources", handlers.GetDcrdexRateSourcesHandler).Methods("GET")
+	api.HandleFunc("/dcrdex/rate-sources", handlers.SaveDcrdexRateSourcesHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/seed", handlers.ExportDcrdexSeedHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/seed/backed-up", handlers.MarkDcrdexSeedBackedUpHandler).Methods("POST")
 	api.Handle("/dcrdex/discover-account",

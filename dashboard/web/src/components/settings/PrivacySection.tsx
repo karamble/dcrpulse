@@ -183,7 +183,7 @@ export const PrivacySection = () => {
         />
         <Toggle
           label="Exchange rates"
-          description="Fetch DCR and BTC prices for USD amounts: dcrpulse asks CryptoCompare and Kraken, Bison Relay asks api.decred.org (with Kraken as fallback), DCRDEX asks Messari, Coinpaprika and dcrdata. When disabled, none of them is asked and no USD amounts are shown."
+          description="Fetch DCR and BTC prices for USD amounts: dcrpulse asks CryptoCompare and Kraken, Bison Relay asks api.decred.org (with Kraken as fallback), DCRDEX asks Coinpaprika and dcrdata, which each wallet can narrow in DEX > Settings. When disabled, none of them is asked and no USD amounts are shown."
           checked={external.exchangeRates}
           disabled={externalBusy}
           onChange={(v) => updateExternal({ ...external, exchangeRates: v })}
