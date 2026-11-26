@@ -648,6 +648,8 @@ func main() {
 	api.HandleFunc("/wallet/ln/channels", handlers.LightningChannelsHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/channels/open", handlers.LightningOpenChannelHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/channels/close", handlers.LightningCloseChannelHandler).Methods("POST")
+	api.HandleFunc("/wallet/ln/peers", handlers.LightningPeersHandler).Methods("GET")
+	api.HandleFunc("/wallet/ln/peers/reconnect", handlers.LightningReconnectPeerHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/peer-presets", handlers.LightningPeerPresetsHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/liquidity/defaults", handlers.LightningLiquidityDefaultsHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/liquidity/estimate", handlers.LightningLiquidityEstimateHandler).Methods("POST")

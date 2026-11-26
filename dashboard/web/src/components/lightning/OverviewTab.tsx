@@ -20,6 +20,7 @@ import {
   getLightningInfo,
 } from '../../services/lightningApi';
 import { NetworkStats } from './NetworkStats';
+import { PeersCard } from './PeersCard';
 import { StatCard } from './StatCard';
 import { formatAtomsDcr } from '../../utils/amounts';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
@@ -127,6 +128,8 @@ export const OverviewTab = () => {
             </div>
           );
         })()}
+
+      <PeersCard />
 
       {balance && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">

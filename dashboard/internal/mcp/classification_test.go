@@ -115,6 +115,7 @@ var goldenReadOnlyTools = []string{
 	"ln_liquidity_estimate",
 	"ln_network",
 	"ln_peer_presets",
+	"ln_peers",
 	"ln_watchtowers",
 	"node_blockchain_info",
 	"node_dashboard",

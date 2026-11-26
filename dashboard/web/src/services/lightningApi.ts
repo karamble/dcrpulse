@@ -554,6 +554,46 @@ export const removeLnWatchtower = async (pubKeyHex: string): Promise<void> => {
   await api.post('/wallet/ln/watchtowers/remove', { pubKeyHex });
 };
 
+export interface LightningPeer {
+  pubkey: string;
+  alias?: string;
+  address: string;
+  inbound: boolean;
+  tor: boolean;
+  pingMicros: number;
+  bytesSent: number;
+  bytesRecv: number;
+  atomsSent: number;
+  atomsRecv: number;
+  flapCount?: number;
+  lastFlapUnix?: number;
+  lastError?: string;
+  lastErrorUnix?: number;
+  hasChannel: boolean;
+}
+
+export interface LightningOfflinePeer {
+  pubkey: string;
+  alias?: string;
+  addresses: string[];
+  channels: number;
+}
+
+export interface LightningPeers {
+  peers: LightningPeer[];
+  offlineChannelPeers: LightningOfflinePeer[];
+}
+
+export const getLightningPeers = async (): Promise<LightningPeers> => {
+  const { data } = await api.get<LightningPeers>('/wallet/ln/peers');
+  return data;
+};
+
+// The server tries each graph address in turn, up to 60s over Tor.
+export const reconnectLightningPeer = async (pubKeyHex: string): Promise<void> => {
+  await api.post('/wallet/ln/peers/reconnect', { pubKeyHex }, { timeout: 65000 });
+};
+
 export const queryLnNode = async (pubkey: string): Promise<LightningNodeInfo> => {
   const { data } = await api.get<LightningNodeInfo>('/wallet/ln/graph/node', { params: { pubkey } });
   return data;

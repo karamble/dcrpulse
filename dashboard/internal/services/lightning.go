@@ -652,6 +652,27 @@ func lightningChannelTxIDs(ctx context.Context) (funding, closing map[string]boo
 // rather than hand it back.
 var ErrSpendStarted = errors.New("the spend was already requested")
 
+// ErrInvalidNodePubkey marks a node pubkey that is not 33 bytes of hex.
+var ErrInvalidNodePubkey = errors.New("invalid pubkey")
+
+// parseNodePubkey decodes a hex node pubkey and checks its compressed length.
+func parseNodePubkey(pubkeyHex string) ([]byte, error) {
+	pubkey, err := hex.DecodeString(strings.TrimSpace(pubkeyHex))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidNodePubkey, err)
+	}
+	if len(pubkey) != 33 {
+		return nil, fmt.Errorf("%w length: got %d, want 33", ErrInvalidNodePubkey, len(pubkey))
+	}
+	return pubkey, nil
+}
+
+// isAlreadyConnected reports dcrlnd refusing a connect because the peer is
+// already connected, which the callers treat as done.
+func isAlreadyConnected(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "already connected")
+}
+
 func OpenLightningChannel(ctx context.Context, req *types.OpenChannelRequest) (*types.OpenChannelResponse, error) {
 	client := rpc.Dcrlnd().Lightning
 	if client == nil {
@@ -661,18 +682,15 @@ func OpenLightningChannel(ctx context.Context, req *types.OpenChannelRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	pubkey, err := hex.DecodeString(strings.TrimSpace(pubkeyHex))
+	pubkey, err := parseNodePubkey(pubkeyHex)
 	if err != nil {
-		return nil, fmt.Errorf("invalid pubkey: %w", err)
-	}
-	if len(pubkey) != 33 {
-		return nil, fmt.Errorf("invalid pubkey length: got %d, want 33", len(pubkey))
+		return nil, err
 	}
 	if hostPort != "" {
 		_, cerr := client.ConnectPeer(ctx, &lnrpc.ConnectPeerRequest{
 			Addr: &lnrpc.LightningAddress{Pubkey: pubkeyHex, Host: hostPort},
 		})
-		if cerr != nil && !strings.Contains(strings.ToLower(cerr.Error()), "already connected") {
+		if cerr != nil && !isAlreadyConnected(cerr) {
 			return nil, fmt.Errorf("ConnectPeer: %w", cerr)
 		}
 	}

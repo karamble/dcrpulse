@@ -311,6 +311,22 @@ func fetchNetworkInfo(ctx context.Context, snap *chainSnapshot) (*types.NetworkI
 	}, nil
 }
 
+// torProxyIPs resolves the Tor container's IPs, to flag INBOUND onion peers:
+// Tor terminates inbound connections at the local tor proxy, so the daemon
+// reports the source as the tor container's docker IP rather than a .onion.
+// (Outbound onion peers carry a .onion addr directly.)
+func torProxyIPs() map[string]bool {
+	ips := map[string]bool{}
+	if torHost := os.Getenv("TOR_PROXY_IP"); torHost != "" {
+		if addrs, err := net.LookupHost(torHost); err == nil {
+			for _, ip := range addrs {
+				ips[ip] = true
+			}
+		}
+	}
+	return ips
+}
+
 func fetchPeers(ctx context.Context, snap *chainSnapshot) ([]types.Peer, error) {
 	peerInfo, err := snap.peers(ctx)
 	if err != nil {
@@ -320,18 +336,7 @@ func fetchPeers(ctx context.Context, snap *chainSnapshot) ([]types.Peer, error) 
 	peers := make([]types.Peer, 0, len(peerInfo))
 	now := time.Now().Unix()
 
-	// Resolve the Tor container IP(s) to flag INBOUND onion peers: Tor terminates
-	// inbound connections at the local tor proxy, so dcrd reports the source as the
-	// tor container's docker IP rather than a .onion. (Outbound onion peers carry a
-	// .onion addr directly.)
-	torIPs := map[string]bool{}
-	if torHost := os.Getenv("TOR_PROXY_IP"); torHost != "" {
-		if ips, lerr := net.LookupHost(torHost); lerr == nil {
-			for _, ip := range ips {
-				torIPs[ip] = true
-			}
-		}
-	}
+	torIPs := torProxyIPs()
 
 	for i, p := range peerInfo {
 		// Convert pingtime from microseconds to milliseconds

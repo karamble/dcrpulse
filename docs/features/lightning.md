@@ -116,6 +116,17 @@ When the node shows as still "syncing", a contextual hint explains why:
 - **No peers connected**: dcrlnd cannot receive the gossiped channel graph until at least one peer is reachable, so the graph never finishes syncing.
 - **Peers but no channels**: the node is idle. A link is offered to **open a channel** so you can start routing.
 
+### Peers
+
+The Peers card lists the peers dcrlnd is connected to and refreshes every 15 seconds:
+
+- **Name** (the node's alias from the channel graph, else a short pubkey), a **channel** tag when you have an open channel with it, and **inbound** when the peer connected to you.
+- **Address**, with the onion icon when the connection runs over Tor (an onion address, or an inbound connection through your onion service).
+- **Ping**, **traffic** (bytes sent and received), and **reconnects**, the number of times dcrlnd saw the peer go offline or come back (shown when it is not zero).
+- The peer's **last error**, when it sent one. This text comes from the remote node.
+
+Below the list, **Channel peers not connected** shows every node you have an open channel with that is not connected right now, with its number of channels and the addresses the channel graph has for it. **Reconnect** asks dcrlnd to connect to those addresses in turn (20 seconds each) and stops at the first that answers. Only graph addresses are dialled. dcrlnd also retries channel peers on its own, so a peer can come back without the button.
+
 ### Balance Cards
 
 A grid of six balance cards summarizes your funds:
@@ -348,6 +359,8 @@ All Lightning endpoints live under the `/api/wallet/ln/` route group. The dashbo
 - `GET  /api/wallet/ln/balance` - merged wallet and channel balances
 - `GET  /api/wallet/ln/activity` - merged recent invoices and payments
 - `GET  /api/wallet/ln/network` - global network statistics plus top nodes
+- `GET  /api/wallet/ln/peers` - connected peers and the channel peers that are not connected
+- `POST /api/wallet/ln/peers/reconnect` - connect to a channel peer at its channel-graph addresses
 
 ### Channels
 - `GET  /api/wallet/ln/channels` - open, pending, and closed channels
@@ -433,7 +446,7 @@ All Lightning endpoints live under the `/api/wallet/ln/` route group. The dashbo
 **Problem**: Chain or graph never shows synced.
 
 **Solutions:**
-1. **No peers**: dcrlnd cannot fetch the channel graph without a peer. Open a channel or connect to a peer.
+1. **No peers**: dcrlnd cannot fetch the channel graph without a peer. Check the **Peers** card: channel peers that are not connected can be reconnected there. With no channels, open one.
 2. **No channels**: the node is idle. Open a channel to begin routing.
 
 ### Wrong Passphrase on Unlock

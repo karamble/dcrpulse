@@ -156,6 +156,44 @@ type LightningChannels struct {
 	Channels []LightningChannel `json:"channels"`
 }
 
+// LightningPeer is one connected dcrlnd peer.
+type LightningPeer struct {
+	Pubkey     string `json:"pubkey"`
+	Alias      string `json:"alias,omitempty"`
+	Address    string `json:"address"`
+	Inbound    bool   `json:"inbound"`
+	Tor        bool   `json:"tor"`
+	PingMicros int64  `json:"pingMicros"`
+	BytesSent  uint64 `json:"bytesSent"`
+	BytesRecv  uint64 `json:"bytesRecv"`
+	AtomsSent  int64  `json:"atomsSent"`
+	AtomsRecv  int64  `json:"atomsRecv"`
+	// FlapCount counts the times dcrlnd saw this peer go offline or come back.
+	FlapCount     int32  `json:"flapCount,omitempty"`
+	LastFlapUnix  int64  `json:"lastFlapUnix,omitempty"`
+	LastError     string `json:"lastError,omitempty"`
+	LastErrorUnix int64  `json:"lastErrorUnix,omitempty"`
+	HasChannel    bool   `json:"hasChannel"`
+}
+
+// LightningOfflinePeer is the remote of an open channel that is not connected.
+type LightningOfflinePeer struct {
+	Pubkey    string   `json:"pubkey"`
+	Alias     string   `json:"alias,omitempty"`
+	Addresses []string `json:"addresses"`
+	Channels  int      `json:"channels"`
+}
+
+type LightningPeers struct {
+	Peers               []LightningPeer        `json:"peers"`
+	OfflineChannelPeers []LightningOfflinePeer `json:"offlineChannelPeers"`
+}
+
+// LightningReconnectRequest is the body for /wallet/ln/peers/reconnect.
+type LightningReconnectRequest struct {
+	PubKeyHex string `json:"pubKeyHex"`
+}
+
 type OpenChannelRequest struct {
 	PeerURI    string `json:"peerUri"`    // `pubkey@host:port` or bare pubkey
 	LocalAtoms int64  `json:"localAtoms"` // local funding amount

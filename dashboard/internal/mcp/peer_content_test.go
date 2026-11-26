@@ -24,7 +24,7 @@ func TestPeerAuthoredResultsSayWhoWroteThem(t *testing.T) {
 			t.Errorf("%s is marked as peer content but is not a tool", name)
 		}
 	}
-	for _, name := range []string{"br_pm_history", "br_groupchat_history", "br_page_fetch", "br_shop_place_order"} {
+	for _, name := range []string{"br_pm_history", "br_groupchat_history", "br_page_fetch", "br_shop_place_order", "ln_peers"} {
 		if !peerContentTools[name] {
 			t.Errorf("%s returns peer-written text but is not marked", name)
 		}

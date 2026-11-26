@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -215,6 +216,39 @@ func LightningChannelsHandler(w http.ResponseWriter, r *http.Request) {
 	lightningList(w, r, 15*time.Second, "ListLightningChannels", func(ctx context.Context) (any, error) {
 		return services.ListLightningChannels(ctx)
 	})
+}
+
+// LightningPeersHandler lists connected peers and unconnected channel peers.
+func LightningPeersHandler(w http.ResponseWriter, r *http.Request) {
+	lightningList(w, r, 10*time.Second, "ListLightningPeers", func(ctx context.Context) (any, error) {
+		return services.ListLightningPeers(ctx)
+	})
+}
+
+// LightningReconnectPeerHandler dials an open-channel peer at its graph
+// addresses. The timeout covers several Tor dials.
+func LightningReconnectPeerHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.LightningReconnectRequest
+	if !decodeRequest(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.PubKeyHex) == "" {
+		http.Error(w, "pubKeyHex required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	err := services.ReconnectLightningPeer(ctx, req.PubKeyHex)
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, services.ErrInvalidNodePubkey),
+		errors.Is(err, services.ErrNotChannelPeer),
+		errors.Is(err, services.ErrNoPeerAddress):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		lightningWriteErr(w, "ReconnectLightningPeer", err)
+	}
 }
 
 // LightningOpenChannelHandler — ConnectPeer + OpenChannelSync.
