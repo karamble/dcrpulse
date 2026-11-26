@@ -854,6 +854,8 @@ Lightning Network operations backed by the optional `dcrlnd` daemon, under `/api
 | `POST` | `/api/wallet/ln/channels/open` | Open a channel |
 | `POST` | `/api/wallet/ln/channels/close` | Close a channel |
 | `GET` | `/api/wallet/ln/peer-presets` | Suggested peer presets (Bison Relay seeder) |
+| `GET` | `/api/wallet/ln/peers` | Connected peers and the channel peers that are not connected |
+| `POST` | `/api/wallet/ln/peers/reconnect` | Connect to a channel peer at its channel-graph addresses |
 | `GET` | `/api/wallet/ln/channel-events` | WebSocket stream of channel events |
 | `GET`/`POST` | `/api/wallet/ln/liquidity/*` | Liquidity-ad defaults, estimate, request |
 | `GET`/`POST` | `/api/wallet/ln/autopilot` | Autopilot status / configure |
@@ -1209,7 +1211,7 @@ gate is on, the session cookie.
 | `GET` | `/api/explorer/search` |  |
 | `GET` | `/api/explorer/transactions/{txhash}` |  |
 
-### Lightning (36 routes)
+### Lightning (38 routes)
 
 | Method | Path | Notes |
 |---|---|---|
@@ -1241,6 +1243,8 @@ gate is on, the session cookie.
 | `GET` | `/api/wallet/ln/network` |  |
 | `GET` | `/api/wallet/ln/payments` |  |
 | `GET` | `/api/wallet/ln/peer-presets` |  |
+| `GET` | `/api/wallet/ln/peers` |  |
+| `POST` | `/api/wallet/ln/peers/reconnect` |  |
 | `GET` | `/api/wallet/ln/send` | WebSocket |
 | `POST` | `/api/wallet/ln/send/decode` |  |
 | `POST` | `/api/wallet/ln/setup` |  |
@@ -1250,7 +1254,7 @@ gate is on, the session cookie.
 | `POST` | `/api/wallet/ln/watchtowers/add` |  |
 | `POST` | `/api/wallet/ln/watchtowers/remove` |  |
 
-### DEX (DCRDEX) (60 routes)
+### DEX (DCRDEX) (62 routes)
 
 | Method | Path | Notes |
 |---|---|---|
@@ -1291,6 +1295,8 @@ gate is on, the session cookie.
 | `POST` | `/api/dcrdex/postbond` |  |
 | `GET` | `/api/dcrdex/postbond/status` |  |
 | `POST` | `/api/dcrdex/preorder` |  |
+| `GET` | `/api/dcrdex/rate-sources` |  |
+| `POST` | `/api/dcrdex/rate-sources` |  |
 | `GET` | `/api/dcrdex/rates` |  |
 | `POST` | `/api/dcrdex/seed` |  |
 | `POST` | `/api/dcrdex/seed/backed-up` |  |
